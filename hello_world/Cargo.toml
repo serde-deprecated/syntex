@@ -1,0 +1,8 @@
+[package]
+name = "hello_world"
+version = "0.1.0"
+authors = [ "erick.tryzelaar@gmail.com" ]
+build = "build.rs"
+
+[build-dependencies.syntex]
+path = ".."

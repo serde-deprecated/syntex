@@ -1,0 +1,3 @@
+fn hello_world() -> int {
+    my_syntax!()
+}
