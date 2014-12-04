@@ -1,0 +1,7 @@
+[package]
+name = "syntex"
+version = "0.1.0"
+authors = [ "erick.tryzelaar@gmail.com" ]
+
+[dependencies.syntax]
+path = "syntax"
