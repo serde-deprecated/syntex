@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use ast::{MetaItem, Item, Expr, mod};
+use ast::{MetaItem, Item, Expr, self};
 use codemap::Span;
 use ext::base::ExtCtxt;
 use ext::build::AstBuilder;
@@ -17,11 +17,13 @@ use ext::deriving::generic::ty::*;
 use parse::token::InternedString;
 use ptr::P;
 
-pub fn expand_deriving_eq(cx: &mut ExtCtxt,
-                          span: Span,
-                          mitem: &MetaItem,
-                          item: &Item,
-                          push: |P<Item>|) {
+pub fn expand_deriving_eq<F>(cx: &mut ExtCtxt,
+                             span: Span,
+                             mitem: &MetaItem,
+                             item: &Item,
+                             push: F) where
+    F: FnOnce(P<Item>),
+{
     // structures are equal if all fields are equal, and non equal, if
     // any fields are not equal or if the enum variants are different
     fn cs_eq(cx: &mut ExtCtxt, span: Span, substr: &Substructure) -> P<Expr> {
@@ -38,7 +40,7 @@ pub fn expand_deriving_eq(cx: &mut ExtCtxt,
                 cx.expr_binary(span, ast::BiAnd, subexpr, eq)
             },
             cx.expr_bool(span, true),
-            |cx, span, _, _| cx.expr_bool(span, false),
+            box |cx, span, _, _| cx.expr_bool(span, false),
             cx, span, substr)
     }
     fn cs_ne(cx: &mut ExtCtxt, span: Span, substr: &Substructure) -> P<Expr> {
@@ -55,11 +57,11 @@ pub fn expand_deriving_eq(cx: &mut ExtCtxt,
                 cx.expr_binary(span, ast::BiOr, subexpr, eq)
             },
             cx.expr_bool(span, false),
-            |cx, span, _, _| cx.expr_bool(span, true),
+            box |cx, span, _, _| cx.expr_bool(span, true),
             cx, span, substr)
     }
 
-    macro_rules! md (
+    macro_rules! md {
         ($name:expr, $f:ident) => { {
             let inline = cx.meta_word(span, InternedString::new("inline"));
             let attrs = vec!(cx.attribute(span, inline));
@@ -70,12 +72,12 @@ pub fn expand_deriving_eq(cx: &mut ExtCtxt,
                 args: vec!(borrowed_self()),
                 ret_ty: Literal(Path::new(vec!("bool"))),
                 attributes: attrs,
-                combine_substructure: combine_substructure(|a, b, c| {
+                combine_substructure: combine_substructure(box |a, b, c| {
                     $f(a, b, c)
                 })
             }
         } }
-    );
+    }
 
     let trait_def = TraitDef {
         span: span,

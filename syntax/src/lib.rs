@@ -23,15 +23,27 @@
        html_root_url = "http://doc.rust-lang.org/nightly/")]
 
 #![allow(unknown_features)]
-#![feature(if_let, macro_rules, globs, default_type_params, phase, slicing_syntax)]
-#![feature(quote, unsafe_destructor, import_shadowing)]
+#![feature(macro_rules, globs, default_type_params, phase, slicing_syntax)]
+#![feature(quote, unsafe_destructor)]
+#![feature(unboxed_closures)]
+#![feature(old_orphan_check)]
+#![feature(associated_types)]
 
 extern crate arena;
 extern crate fmt_macros;
-#[phase(plugin, link)] extern crate log;
 extern crate serialize;
 extern crate term;
 extern crate libc;
+
+#[cfg(stage0)]
+#[phase(plugin, link)]
+extern crate log;
+
+#[cfg(not(stage0))]
+#[macro_use]
+extern crate log;
+
+extern crate "serialize" as rustc_serialize; // used by deriving
 
 pub mod util {
     pub mod interner;

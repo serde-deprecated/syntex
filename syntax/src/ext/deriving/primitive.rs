@@ -18,11 +18,13 @@ use ext::deriving::generic::ty::*;
 use parse::token::InternedString;
 use ptr::P;
 
-pub fn expand_deriving_from_primitive(cx: &mut ExtCtxt,
-                                      span: Span,
-                                      mitem: &MetaItem,
-                                      item: &Item,
-                                      push: |P<Item>|) {
+pub fn expand_deriving_from_primitive<F>(cx: &mut ExtCtxt,
+                                         span: Span,
+                                         mitem: &MetaItem,
+                                         item: &Item,
+                                         push: F) where
+    F: FnOnce(P<Item>),
+{
     let inline = cx.meta_word(span, InternedString::new("inline"));
     let attrs = vec!(cx.attribute(span, inline));
     let trait_def = TraitDef {
@@ -44,7 +46,7 @@ pub fn expand_deriving_from_primitive(cx: &mut ExtCtxt,
                                            true)),
                 // #[inline] liable to cause code-bloat
                 attributes: attrs.clone(),
-                combine_substructure: combine_substructure(|c, s, sub| {
+                combine_substructure: combine_substructure(box |c, s, sub| {
                     cs_from("i64", c, s, sub)
                 }),
             },
@@ -60,7 +62,7 @@ pub fn expand_deriving_from_primitive(cx: &mut ExtCtxt,
                                            true)),
                 // #[inline] liable to cause code-bloat
                 attributes: attrs,
-                combine_substructure: combine_substructure(|c, s, sub| {
+                combine_substructure: combine_substructure(box |c, s, sub| {
                     cs_from("u64", c, s, sub)
                 }),
             })

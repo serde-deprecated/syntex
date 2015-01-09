@@ -24,11 +24,12 @@ use util::interner;
 use serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::fmt;
 use std::mem;
+use std::ops::Deref;
 use std::path::BytesContainer;
 use std::rc::Rc;
 
 #[allow(non_camel_case_types)]
-#[deriving(Clone, Encodable, Decodable, PartialEq, Eq, Hash, Show)]
+#[derive(Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, Hash, Show, Copy)]
 pub enum BinOpToken {
     Plus,
     Minus,
@@ -43,7 +44,7 @@ pub enum BinOpToken {
 }
 
 /// A delimeter token
-#[deriving(Clone, Encodable, Decodable, PartialEq, Eq, Hash, Show)]
+#[derive(Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, Hash, Show, Copy)]
 pub enum DelimToken {
     /// A round parenthesis: `(` or `)`
     Paren,
@@ -53,14 +54,29 @@ pub enum DelimToken {
     Brace,
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq, Eq, Hash, Show)]
+#[derive(Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, Hash, Show, Copy)]
 pub enum IdentStyle {
     /// `::` follows the identifier with no whitespace in-between.
     ModName,
     Plain,
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq, Eq, Hash, Show)]
+#[derive(Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, Hash, Show, Copy)]
+pub enum SpecialMacroVar {
+    /// `$crate` will be filled in with the name of the crate a macro was
+    /// imported from, if any.
+    CrateMacroVar,
+}
+
+impl SpecialMacroVar {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SpecialMacroVar::CrateMacroVar => "crate",
+        }
+    }
+}
+
+#[derive(Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, Hash, Show, Copy)]
 pub enum Lit {
     Byte(ast::Name),
     Char(ast::Name),
@@ -86,7 +102,7 @@ impl Lit {
 }
 
 #[allow(non_camel_case_types)]
-#[deriving(Clone, Encodable, Decodable, PartialEq, Eq, Hash, Show)]
+#[derive(Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, Hash, Show)]
 pub enum Token {
     /* Expression-operator symbols. */
     Eq,
@@ -142,6 +158,8 @@ pub enum Token {
     // In right-hand-sides of MBE macros:
     /// A syntactic variable that will be filled in by macro expansion.
     SubstNt(ast::Ident, IdentStyle),
+    /// A macro variable with special meaning.
+    SpecialVarNt(SpecialMacroVar),
 
     // Junk. These carry no data because we don't really care about the data
     // they *would* carry, and don't really want to allocate a new ident for
@@ -264,6 +282,13 @@ impl Token {
         }
     }
 
+    pub fn is_keyword_allow_following_colon(&self, kw: keywords::Keyword) -> bool {
+        match *self {
+            Ident(sid, _) => { kw.to_name() == sid.name }
+            _ => { false }
+        }
+    }
+
     /// Returns `true` if the token is either a special identifier, or a strict
     /// or reserved keyword.
     #[allow(non_upper_case_globals)]
@@ -334,7 +359,7 @@ impl Token {
     }
 }
 
-#[deriving(Clone, Encodable, Decodable, PartialEq, Eq, Hash)]
+#[derive(Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, Hash)]
 /// For interpolation during macro expansion.
 pub enum Nonterminal {
     NtItem(P<ast::Item>),
@@ -430,6 +455,7 @@ macro_rules! declare_special_idents_and_keywords {(
         pub use self::Keyword::*;
         use ast;
 
+        #[derive(Copy)]
         pub enum Keyword {
             $( $sk_variant, )*
             $( $rk_variant, )*
@@ -453,7 +479,7 @@ macro_rules! declare_special_idents_and_keywords {(
         $(init_vec.push($si_str);)*
         $(init_vec.push($sk_str);)*
         $(init_vec.push($rk_str);)*
-        interner::StrInterner::prefill(init_vec.as_slice())
+        interner::StrInterner::prefill(init_vec[])
     }
 }}
 
@@ -548,6 +574,7 @@ declare_special_idents_and_keywords! {
         (56,                         Abstract,   "abstract");
         (57,                         Final,      "final");
         (58,                         Override,   "override");
+        (59,                         Macro,      "macro");
     }
 }
 
@@ -560,7 +587,7 @@ pub type IdentInterner = StrInterner;
 pub fn get_ident_interner() -> Rc<IdentInterner> {
     thread_local!(static KEY: Rc<::parse::token::IdentInterner> = {
         Rc::new(mk_fresh_ident_interner())
-    })
+    });
     KEY.with(|k| k.clone())
 }
 
@@ -579,7 +606,7 @@ pub fn reset_ident_interner() {
 /// destroyed. In particular, they must not access string contents. This can
 /// be fixed in the future by just leaking all strings until task death
 /// somehow.
-#[deriving(Clone, PartialEq, Hash, PartialOrd, Eq, Ord)]
+#[derive(Clone, PartialEq, Hash, PartialOrd, Eq, Ord)]
 pub struct InternedString {
     string: RcStr,
 }
@@ -601,8 +628,14 @@ impl InternedString {
 
     #[inline]
     pub fn get<'a>(&'a self) -> &'a str {
-        self.string.as_slice()
+        self.string[]
     }
+}
+
+impl Deref for InternedString {
+    type Target = str;
+
+    fn deref(&self) -> &str { &*self.string }
 }
 
 impl BytesContainer for InternedString {
@@ -619,49 +652,59 @@ impl BytesContainer for InternedString {
 
 impl fmt::Show for InternedString {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.string.as_slice())
-    }
-}
-
-#[allow(deprecated)]
-impl<'a> Equiv<&'a str> for InternedString {
-    fn equiv(&self, other: & &'a str) -> bool {
-        (*other) == self.string.as_slice()
+        write!(f, "{}", self.string[])
     }
 }
 
 impl<'a> PartialEq<&'a str> for InternedString {
     #[inline(always)]
     fn eq(&self, other: & &'a str) -> bool {
-        PartialEq::eq(self.string.as_slice(), *other)
+        PartialEq::eq(self.string[], *other)
     }
     #[inline(always)]
     fn ne(&self, other: & &'a str) -> bool {
-        PartialEq::ne(self.string.as_slice(), *other)
+        PartialEq::ne(self.string[], *other)
     }
 }
 
 impl<'a> PartialEq<InternedString > for &'a str {
     #[inline(always)]
     fn eq(&self, other: &InternedString) -> bool {
-        PartialEq::eq(*self, other.string.as_slice())
+        PartialEq::eq(*self, other.string[])
     }
     #[inline(always)]
     fn ne(&self, other: &InternedString) -> bool {
-        PartialEq::ne(*self, other.string.as_slice())
+        PartialEq::ne(*self, other.string[])
     }
 }
 
+#[cfg(stage0)]
 impl<D:Decoder<E>, E> Decodable<D, E> for InternedString {
     fn decode(d: &mut D) -> Result<InternedString, E> {
         Ok(get_name(get_ident_interner().intern(
-                    try!(d.read_str()).as_slice())))
+                    try!(d.read_str())[])))
     }
 }
 
+#[cfg(not(stage0))]
+impl Decodable for InternedString {
+    fn decode<D: Decoder>(d: &mut D) -> Result<InternedString, D::Error> {
+        Ok(get_name(get_ident_interner().intern(
+                    try!(d.read_str())[])))
+    }
+}
+
+#[cfg(stage0)]
 impl<S:Encoder<E>, E> Encodable<S, E> for InternedString {
     fn encode(&self, s: &mut S) -> Result<(), E> {
-        s.emit_str(self.string.as_slice())
+        s.emit_str(self.string[])
+    }
+}
+
+#[cfg(not(stage0))]
+impl Encodable for InternedString {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        s.emit_str(self.string[])
     }
 }
 
@@ -719,7 +762,7 @@ pub fn fresh_name(src: &ast::Ident) -> ast::Name {
     // following: debug version. Could work in final except that it's incompatible with
     // good error messages and uses of struct names in ambiguous could-be-binding
     // locations. Also definitely destroys the guarantee given above about ptr_eq.
-    /*let num = rand::task_rng().gen_uint_range(0,0xffff);
+    /*let num = rand::thread_rng().gen_uint_range(0,0xffff);
     gensym(format!("{}_{}",ident_to_string(src),num))*/
 }
 

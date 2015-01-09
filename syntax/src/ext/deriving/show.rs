@@ -21,11 +21,13 @@ use ptr::P;
 
 use std::collections::HashMap;
 
-pub fn expand_deriving_show(cx: &mut ExtCtxt,
-                            span: Span,
-                            mitem: &MetaItem,
-                            item: &Item,
-                            push: |P<Item>|) {
+pub fn expand_deriving_show<F>(cx: &mut ExtCtxt,
+                               span: Span,
+                               mitem: &MetaItem,
+                               item: &Item,
+                               push: F) where
+    F: FnOnce(P<Item>),
+{
     // &mut ::std::fmt::Formatter
     let fmtr = Ptr(box Literal(Path::new(vec!("std", "fmt", "Formatter"))),
                    Borrowed(None, ast::MutMutable));
@@ -44,7 +46,7 @@ pub fn expand_deriving_show(cx: &mut ExtCtxt,
                 args: vec!(fmtr),
                 ret_ty: Literal(Path::new(vec!("std", "fmt", "Result"))),
                 attributes: Vec::new(),
-                combine_substructure: combine_substructure(|a, b, c| {
+                combine_substructure: combine_substructure(box |a, b, c| {
                     show_substructure(a, b, c)
                 })
             }
@@ -65,7 +67,7 @@ fn show_substructure(cx: &mut ExtCtxt, span: Span,
         Struct(_) => substr.type_ident,
         EnumMatching(_, v, _) => v.node.name,
         EnumNonMatchingCollapsed(..) | StaticStruct(..) | StaticEnum(..) => {
-            cx.span_bug(span, "nonsensical .fields in `#[deriving(Show)]`")
+            cx.span_bug(span, "nonsensical .fields in `#[derive(Show)]`")
         }
     };
 
@@ -125,12 +127,14 @@ fn show_substructure(cx: &mut ExtCtxt, span: Span,
     let formatter = substr.nonself_args[0].clone();
 
     let meth = cx.ident_of("write_fmt");
-    let s = token::intern_and_get_ident(format_string.as_slice());
+    let s = token::intern_and_get_ident(format_string[]);
     let format_string = cx.expr_str(span, s);
 
     // phew, not our responsibility any more!
-    format::expand_preparsed_format_args(cx, span,
-                                         format::MethodCall(formatter, meth),
-                                         format_string, exprs, Vec::new(),
-                                         HashMap::new())
+
+    let args = vec![
+        format::expand_preparsed_format_args(cx, span, format_string,
+                                             exprs, vec![], HashMap::new())
+    ];
+    cx.expr_method_call(span, formatter, meth, args)
 }

@@ -10,16 +10,18 @@
 
 //! The AST pointer
 //!
-//! Provides `P<T>`, a frozen owned smart pointer, as a replacement for `@T` in the AST.
+//! Provides `P<T>`, a frozen owned smart pointer, as a replacement for `@T` in
+//! the AST.
 //!
 //! # Motivations and benefits
 //!
-//! * **Identity**: sharing AST nodes is problematic for the various analysis passes
-//!   (e.g. one may be able to bypass the borrow checker with a shared `ExprAddrOf`
-//!   node taking a mutable borrow). The only reason `@T` in the AST hasn't caused
-//!   issues is because of inefficient folding passes which would always deduplicate
-//!   any such shared nodes. Even if the AST were to switch to an arena, this would
-//!   still hold, i.e. it couldn't use `&'a T`, but rather a wrapper like `P<'a, T>`.
+//! * **Identity**: sharing AST nodes is problematic for the various analysis
+//!   passes (e.g. one may be able to bypass the borrow checker with a shared
+//!   `ExprAddrOf` node taking a mutable borrow). The only reason `@T` in the
+//!   AST hasn't caused issues is because of inefficient folding passes which
+//!   would always deduplicate any such shared nodes. Even if the AST were to
+//!   switch to an arena, this would still hold, i.e. it couldn't use `&'a T`,
+//!   but rather a wrapper like `P<'a, T>`.
 //!
 //! * **Immutability**: `P<T>` disallows mutating its inner `T`, unlike `Box<T>`
 //!   (unless it contains an `Unsafe` interior, but that may be denied later).
@@ -34,9 +36,9 @@
 //!   implementation changes (using a special thread-local heap, for example).
 //!   Moreover, a switch to, e.g. `P<'a, T>` would be easy and mostly automated.
 
-use std::fmt;
-use std::fmt::Show;
+use std::fmt::{self, Show};
 use std::hash::Hash;
+use std::ops::Deref;
 use std::ptr;
 use serialize::{Encodable, Decodable, Encoder, Decoder};
 
@@ -56,12 +58,16 @@ pub fn P<T: 'static>(value: T) -> P<T> {
 impl<T: 'static> P<T> {
     /// Move out of the pointer.
     /// Intended for chaining transformations not covered by `map`.
-    pub fn and_then<U>(self, f: |T| -> U) -> U {
+    pub fn and_then<U, F>(self, f: F) -> U where
+        F: FnOnce(T) -> U,
+    {
         f(*self.ptr)
     }
 
     /// Transform the inner value, consuming `self` and producing a new `P<T>`.
-    pub fn map(mut self, f: |T| -> T) -> P<T> {
+    pub fn map<F>(mut self, f: F) -> P<T> where
+        F: FnOnce(T) -> T,
+    {
         unsafe {
             let p = &mut *self.ptr;
             // FIXME(#5016) this shouldn't need to zero to be safe.
@@ -71,7 +77,9 @@ impl<T: 'static> P<T> {
     }
 }
 
-impl<T> Deref<T> for P<T> {
+impl<T> Deref for P<T> {
+    type Target = T;
+
     fn deref<'a>(&'a self) -> &'a T {
         &*self.ptr
     }
@@ -103,14 +111,30 @@ impl<S, T: Hash<S>> Hash<S> for P<T> {
     }
 }
 
+#[cfg(stage0)]
 impl<E, D: Decoder<E>, T: 'static + Decodable<D, E>> Decodable<D, E> for P<T> {
     fn decode(d: &mut D) -> Result<P<T>, E> {
         Decodable::decode(d).map(P)
     }
 }
 
+#[cfg(not(stage0))]
+impl<T: 'static + Decodable> Decodable for P<T> {
+    fn decode<D: Decoder>(d: &mut D) -> Result<P<T>, D::Error> {
+        Decodable::decode(d).map(P)
+    }
+}
+
+#[cfg(stage0)]
 impl<E, S: Encoder<E>, T: Encodable<S, E>> Encodable<S, E> for P<T> {
     fn encode(&self, s: &mut S) -> Result<(), E> {
+        (**self).encode(s)
+    }
+}
+
+#[cfg(not(stage0))]
+impl<T: Encodable> Encodable for P<T> {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
         (**self).encode(s)
     }
 }

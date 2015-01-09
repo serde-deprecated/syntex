@@ -31,7 +31,6 @@ pub fn expand_str(crate_name: &str, body: &str) -> String {
 
     let cfg = syntax::ext::expand::ExpansionConfig {
         crate_name: crate_name.to_string(),
-        deriving_hash_type_parameter: true,
         enable_quotes: true,
         recursion_limit: 64,
     };

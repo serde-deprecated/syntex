@@ -18,21 +18,29 @@ use ext::build::AstBuilder;
 use parse::token;
 use ptr::P;
 
-thread_local!(static REGISTERED_DIAGNOSTICS: RefCell<HashMap<Name, Option<Name>>> = {
-    RefCell::new(HashMap::new())
-})
-thread_local!(static USED_DIAGNOSTICS: RefCell<HashMap<Name, Span>> = {
-    RefCell::new(HashMap::new())
-})
+thread_local! {
+    static REGISTERED_DIAGNOSTICS: RefCell<HashMap<Name, Option<Name>>> = {
+        RefCell::new(HashMap::new())
+    }
+}
+thread_local! {
+    static USED_DIAGNOSTICS: RefCell<HashMap<Name, Span>> = {
+        RefCell::new(HashMap::new())
+    }
+}
 
-fn with_registered_diagnostics<T>(f: |&mut HashMap<Name, Option<Name>>| -> T) -> T {
-    REGISTERED_DIAGNOSTICS.with(|slot| {
+fn with_registered_diagnostics<T, F>(f: F) -> T where
+    F: FnOnce(&mut HashMap<Name, Option<Name>>) -> T,
+{
+    REGISTERED_DIAGNOSTICS.with(move |slot| {
         f(&mut *slot.borrow_mut())
     })
 }
 
-fn with_used_diagnostics<T>(f: |&mut HashMap<Name, Span>| -> T) -> T {
-    USED_DIAGNOSTICS.with(|slot| {
+fn with_used_diagnostics<T, F>(f: F) -> T where
+    F: FnOnce(&mut HashMap<Name, Span>) -> T,
+{
+    USED_DIAGNOSTICS.with(move |slot| {
         f(&mut *slot.borrow_mut())
     })
 }
@@ -50,7 +58,7 @@ pub fn expand_diagnostic_used<'cx>(ecx: &'cx mut ExtCtxt,
             Some(previous_span) => {
                 ecx.span_warn(span, format!(
                     "diagnostic code {} already used", token::get_ident(code).get()
-                ).as_slice());
+                )[]);
                 ecx.span_note(previous_span, "previous invocation");
             },
             None => ()
@@ -79,12 +87,12 @@ pub fn expand_register_diagnostic<'cx>(ecx: &'cx mut ExtCtxt,
         if diagnostics.insert(code.name, description).is_some() {
             ecx.span_err(span, format!(
                 "diagnostic code {} already registered", token::get_ident(*code).get()
-            ).as_slice());
+            )[]);
         }
     });
     let sym = Ident::new(token::gensym((
         "__register_diagnostic_".to_string() + token::get_ident(*code).get()
-    ).as_slice()));
+    )[]));
     MacItems::new(vec![quote_item!(ecx, mod $sym {}).unwrap()].into_iter())
 }
 
@@ -111,6 +119,6 @@ pub fn expand_build_diagnostic_array<'cx>(ecx: &'cx mut ExtCtxt,
         });
 
     MacItems::new(vec![quote_item!(ecx,
-        pub static $name: [(&'static str, &'static str), ..$count] = $expr;
+        pub static $name: [(&'static str, &'static str); $count] = $expr;
     ).unwrap()].into_iter())
 }

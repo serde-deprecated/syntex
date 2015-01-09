@@ -98,12 +98,12 @@ use ptr::P;
 use std::mem;
 use std::rc::Rc;
 use std::collections::HashMap;
-use std::collections::hash_map::{Vacant, Occupied};
+use std::collections::hash_map::Entry::{Vacant, Occupied};
 
 // To avoid costly uniqueness checks, we require that `MatchSeq` always has
 // a nonempty body.
 
-#[deriving(Clone)]
+#[derive(Clone)]
 enum TokenTreeOrTokenTreeVec {
     Tt(ast::TokenTree),
     TtSeq(Rc<Vec<ast::TokenTree>>),
@@ -126,13 +126,13 @@ impl TokenTreeOrTokenTreeVec {
 }
 
 /// an unzipping of `TokenTree`s
-#[deriving(Clone)]
+#[derive(Clone)]
 struct MatcherTtFrame {
     elts: TokenTreeOrTokenTreeVec,
     idx: uint,
 }
 
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct MatcherPos {
     stack: Vec<MatcherTtFrame>,
     top_elts: TokenTreeOrTokenTreeVec,
@@ -153,7 +153,7 @@ pub fn count_names(ms: &[TokenTree]) -> uint {
                 seq.num_captures
             }
             &TtDelimited(_, ref delim) => {
-                count_names(delim.tts.as_slice())
+                count_names(delim.tts[])
             }
             &TtToken(_, MatchNt(..)) => {
                 1
@@ -165,8 +165,8 @@ pub fn count_names(ms: &[TokenTree]) -> uint {
 
 pub fn initial_matcher_pos(ms: Rc<Vec<TokenTree>>, sep: Option<Token>, lo: BytePos)
                            -> Box<MatcherPos> {
-    let match_idx_hi = count_names(ms.as_slice());
-    let matches = Vec::from_fn(match_idx_hi, |_i| Vec::new());
+    let match_idx_hi = count_names(ms[]);
+    let matches: Vec<_> = range(0, match_idx_hi).map(|_| Vec::new()).collect();
     box MatcherPos {
         stack: vec![],
         top_elts: TtSeq(ms),
@@ -219,9 +219,9 @@ pub fn nameize(p_s: &ParseSess, ms: &[TokenTree], res: &[Rc<NamedMatch>])
                 }
             }
             &TtToken(sp, MatchNt(bind_name, _, _, _)) => {
-                match ret_val.entry(bind_name) {
+                match ret_val.entry(&bind_name) {
                     Vacant(spot) => {
-                        spot.set(res[*idx].clone());
+                        spot.insert(res[*idx].clone());
                         *idx += 1;
                     }
                     Occupied(..) => {
@@ -229,7 +229,7 @@ pub fn nameize(p_s: &ParseSess, ms: &[TokenTree], res: &[Rc<NamedMatch>])
                         p_s.span_diagnostic
                            .span_fatal(sp,
                                        format!("duplicated bind name: {}",
-                                               string.get()).as_slice())
+                                               string.get())[])
                     }
                 }
             }
@@ -254,13 +254,13 @@ pub fn parse_or_else(sess: &ParseSess,
                      rdr: TtReader,
                      ms: Vec<TokenTree> )
                      -> HashMap<Ident, Rc<NamedMatch>> {
-    match parse(sess, cfg, rdr, ms.as_slice()) {
+    match parse(sess, cfg, rdr, ms[]) {
         Success(m) => m,
         Failure(sp, str) => {
-            sess.span_diagnostic.span_fatal(sp, str.as_slice())
+            sess.span_diagnostic.span_fatal(sp, str[])
         }
         Error(sp, str) => {
-            sess.span_diagnostic.span_fatal(sp, str.as_slice())
+            sess.span_diagnostic.span_fatal(sp, str[])
         }
     }
 }
@@ -392,7 +392,8 @@ pub fn parse(sess: &ParseSess,
                             cur_eis.push(new_ei);
                         }
 
-                        let matches = Vec::from_elem(ei.matches.len(), Vec::new());
+                        let matches: Vec<_> = range(0, ei.matches.len())
+                            .map(|_| Vec::new()).collect();
                         let ei_t = ei;
                         cur_eis.push(box MatcherPos {
                             stack: vec![],
@@ -416,7 +417,7 @@ pub fn parse(sess: &ParseSess,
                         }
                     }
                     TtToken(sp, SubstNt(..)) => {
-                        return Error(sp, "Cannot transcribe in macro LHS".into_string())
+                        return Error(sp, "Cannot transcribe in macro LHS".to_string())
                     }
                     seq @ TtDelimited(..) | seq @ TtToken(_, DocComment(..)) => {
                         let lower_elts = mem::replace(&mut ei.top_elts, Tt(seq));
@@ -446,7 +447,7 @@ pub fn parse(sess: &ParseSess,
                 for dv in eof_eis[0].matches.iter_mut() {
                     v.push(dv.pop().unwrap());
                 }
-                return Success(nameize(sess, ms, v.as_slice()));
+                return Success(nameize(sess, ms, v[]));
             } else if eof_eis.len() > 1u {
                 return Error(sp, "ambiguity: multiple successful parses".to_string());
             } else {
@@ -521,7 +522,7 @@ pub fn parse_nt(p: &mut Parser, name: &str) -> Nonterminal {
         _ => {
             let token_str = pprust::token_to_string(&p.token);
             p.fatal((format!("expected ident, found {}",
-                             token_str.as_slice())).as_slice())
+                             token_str[]))[])
         }
       },
       "path" => {
@@ -535,8 +536,7 @@ pub fn parse_nt(p: &mut Parser, name: &str) -> Nonterminal {
         res
       }
       _ => {
-          p.fatal(format!("unsupported builtin nonterminal parser: {}",
-                          name).as_slice())
+          p.fatal(format!("unsupported builtin nonterminal parser: {}", name)[])
       }
     }
 }

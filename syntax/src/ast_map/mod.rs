@@ -20,19 +20,19 @@ use fold::Folder;
 use parse::token;
 use print::pprust;
 use ptr::P;
-use visit::{mod, Visitor};
+use visit::{self, Visitor};
 
 use arena::TypedArena;
 use std::cell::RefCell;
 use std::fmt;
 use std::io::IoResult;
-use std::iter;
+use std::iter::{self, repeat};
 use std::mem;
 use std::slice;
 
 pub mod blocks;
 
-#[deriving(Clone, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum PathElem {
     PathMod(Name),
     PathName(Name)
@@ -53,7 +53,7 @@ impl fmt::Show for PathElem {
     }
 }
 
-#[deriving(Clone)]
+#[derive(Clone)]
 struct LinkedPathNode<'a> {
     node: PathElem,
     next: LinkedPath<'a>,
@@ -61,7 +61,9 @@ struct LinkedPathNode<'a> {
 
 type LinkedPath<'a> = Option<&'a LinkedPathNode<'a>>;
 
-impl<'a> Iterator<PathElem> for LinkedPath<'a> {
+impl<'a> Iterator for LinkedPath<'a> {
+    type Item = PathElem;
+
     fn next(&mut self) -> Option<PathElem> {
         match *self {
             Some(node) => {
@@ -73,11 +75,13 @@ impl<'a> Iterator<PathElem> for LinkedPath<'a> {
     }
 }
 
-// HACK(eddyb) move this into libstd (value wrapper for slice::Items).
-#[deriving(Clone)]
-pub struct Values<'a, T:'a>(pub slice::Items<'a, T>);
+// HACK(eddyb) move this into libstd (value wrapper for slice::Iter).
+#[derive(Clone)]
+pub struct Values<'a, T:'a>(pub slice::Iter<'a, T>);
 
-impl<'a, T: Copy> Iterator<T> for Values<'a, T> {
+impl<'a, T: Copy> Iterator for Values<'a, T> {
+    type Item = T;
+
     fn next(&mut self) -> Option<T> {
         let &Values(ref mut items) = self;
         items.next().map(|&x| x)
@@ -87,7 +91,7 @@ impl<'a, T: Copy> Iterator<T> for Values<'a, T> {
 /// The type of the iterator used by with_path.
 pub type PathElems<'a, 'b> = iter::Chain<Values<'a, PathElem>, LinkedPath<'b>>;
 
-pub fn path_to_string<PI: Iterator<PathElem>>(path: PI) -> String {
+pub fn path_to_string<PI: Iterator<Item=PathElem>>(path: PI) -> String {
     let itr = token::get_ident_interner();
 
     path.fold(String::new(), |mut s, e| {
@@ -95,12 +99,12 @@ pub fn path_to_string<PI: Iterator<PathElem>>(path: PI) -> String {
         if !s.is_empty() {
             s.push_str("::");
         }
-        s.push_str(e.as_slice());
+        s.push_str(e[]);
         s
     }).to_string()
 }
 
-#[deriving(Show)]
+#[derive(Copy, Show)]
 pub enum Node<'ast> {
     NodeItem(&'ast Item),
     NodeForeignItem(&'ast ForeignItem),
@@ -122,7 +126,7 @@ pub enum Node<'ast> {
 
 /// Represents an entry and its parent Node ID
 /// The odd layout is to bring down the total size.
-#[deriving(Show)]
+#[derive(Copy, Show)]
 enum MapEntry<'ast> {
     /// Placeholder for holes in the map.
     NotPresent,
@@ -153,7 +157,7 @@ impl<'ast> Clone for MapEntry<'ast> {
     }
 }
 
-#[deriving(Show)]
+#[derive(Show)]
 struct InlinedParent {
     path: Vec<PathElem>,
     ii: InlinedItem
@@ -260,7 +264,7 @@ impl<'ast> Map<'ast> {
     }
 
     fn find_entry(&self, id: NodeId) -> Option<MapEntry<'ast>> {
-        self.map.borrow().as_slice().get(id as uint).map(|e| *e)
+        self.map.borrow().get(id as uint).map(|e| *e)
     }
 
     pub fn krate(&self) -> &'ast Crate {
@@ -418,7 +422,9 @@ impl<'ast> Map<'ast> {
         }
     }
 
-    pub fn with_path<T>(&self, id: NodeId, f: |PathElems| -> T) -> T {
+    pub fn with_path<T, F>(&self, id: NodeId, f: F) -> T where
+        F: FnOnce(PathElems) -> T,
+    {
         self.with_path_next(id, None, f)
     }
 
@@ -432,7 +438,9 @@ impl<'ast> Map<'ast> {
         })
     }
 
-    fn with_path_next<T>(&self, id: NodeId, next: LinkedPath, f: |PathElems| -> T) -> T {
+    fn with_path_next<T, F>(&self, id: NodeId, next: LinkedPath, f: F) -> T where
+        F: FnOnce(PathElems) -> T,
+    {
         let parent = self.get_parent(id);
         let parent = match self.find_entry(id) {
             Some(EntryForeignItem(..)) | Some(EntryVariant(..)) => {
@@ -464,22 +472,24 @@ impl<'ast> Map<'ast> {
 
     /// Given a node ID and a closure, apply the closure to the array
     /// of attributes associated with the AST corresponding to the Node ID
-    pub fn with_attrs<T>(&self, id: NodeId, f: |Option<&[Attribute]>| -> T) -> T {
+    pub fn with_attrs<T, F>(&self, id: NodeId, f: F) -> T where
+        F: FnOnce(Option<&[Attribute]>) -> T,
+    {
         let attrs = match self.get(id) {
-            NodeItem(i) => Some(i.attrs.as_slice()),
-            NodeForeignItem(fi) => Some(fi.attrs.as_slice()),
+            NodeItem(i) => Some(i.attrs[]),
+            NodeForeignItem(fi) => Some(fi.attrs[]),
             NodeTraitItem(ref tm) => match **tm {
-                RequiredMethod(ref type_m) => Some(type_m.attrs.as_slice()),
-                ProvidedMethod(ref m) => Some(m.attrs.as_slice()),
-                TypeTraitItem(ref typ) => Some(typ.attrs.as_slice()),
+                RequiredMethod(ref type_m) => Some(type_m.attrs[]),
+                ProvidedMethod(ref m) => Some(m.attrs[]),
+                TypeTraitItem(ref typ) => Some(typ.attrs[]),
             },
             NodeImplItem(ref ii) => {
                 match **ii {
-                    MethodImplItem(ref m) => Some(m.attrs.as_slice()),
-                    TypeImplItem(ref t) => Some(t.attrs.as_slice()),
+                    MethodImplItem(ref m) => Some(m.attrs[]),
+                    TypeImplItem(ref t) => Some(t.attrs[]),
                 }
             }
-            NodeVariant(ref v) => Some(v.node.attrs.as_slice()),
+            NodeVariant(ref v) => Some(v.node.attrs[]),
             // unit/tuple structs take the attributes straight from
             // the struct definition.
             // FIXME(eddyb) make this work again (requires access to the map).
@@ -498,8 +508,8 @@ impl<'ast> Map<'ast> {
     /// the iterator will produce node id's for items with paths
     /// such as `foo::bar::quux`, `bar::quux`, `other::bar::quux`, and
     /// any other such items it can find in the map.
-    pub fn nodes_matching_suffix<'a, S:Str>(&'a self, parts: &'a [S])
-                                 -> NodesMatchingSuffix<'a, 'ast, S> {
+    pub fn nodes_matching_suffix<'a>(&'a self, parts: &'a [String])
+                                 -> NodesMatchingSuffix<'a, 'ast> {
         NodesMatchingSuffix {
             map: self,
             item_name: parts.last().unwrap(),
@@ -559,14 +569,14 @@ impl<'ast> Map<'ast> {
     }
 }
 
-pub struct NodesMatchingSuffix<'a, 'ast:'a, S:'a> {
+pub struct NodesMatchingSuffix<'a, 'ast:'a> {
     map: &'a Map<'ast>,
-    item_name: &'a S,
-    in_which: &'a [S],
+    item_name: &'a String,
+    in_which: &'a [String],
     idx: NodeId,
 }
 
-impl<'a, 'ast, S:Str> NodesMatchingSuffix<'a, 'ast, S> {
+impl<'a, 'ast> NodesMatchingSuffix<'a, 'ast> {
     /// Returns true only if some suffix of the module path for parent
     /// matches `self.in_which`.
     ///
@@ -580,7 +590,7 @@ impl<'a, 'ast, S:Str> NodesMatchingSuffix<'a, 'ast, S> {
                 None => return false,
                 Some((node_id, name)) => (node_id, name),
             };
-            if part.as_slice() != mod_name.as_str() {
+            if part[] != mod_name.as_str() {
                 return false;
             }
             cursor = self.map.get_parent(mod_id);
@@ -618,12 +628,14 @@ impl<'a, 'ast, S:Str> NodesMatchingSuffix<'a, 'ast, S> {
     // We are looking at some node `n` with a given name and parent
     // id; do their names match what I am seeking?
     fn matches_names(&self, parent_of_n: NodeId, name: Name) -> bool {
-        name.as_str() == self.item_name.as_slice() &&
+        name.as_str() == self.item_name[] &&
             self.suffix_matches(parent_of_n)
     }
 }
 
-impl<'a, 'ast, S:Str> Iterator<NodeId> for NodesMatchingSuffix<'a, 'ast, S> {
+impl<'a, 'ast> Iterator for NodesMatchingSuffix<'a, 'ast> {
+    type Item = NodeId;
+
     fn next(&mut self) -> Option<NodeId> {
         loop {
             let idx = self.idx;
@@ -720,7 +732,7 @@ impl<'ast> NodeCollector<'ast> {
         debug!("ast_map: {} => {}", id, entry);
         let len = self.map.len();
         if id as uint >= len {
-            self.map.grow(id as uint - len + 1, NotPresent);
+            self.map.extend(repeat(NotPresent).take(id as uint - len + 1));
         }
         self.map[id as uint] = entry;
     }
@@ -743,7 +755,7 @@ impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
         let parent = self.parent;
         self.parent = i.id;
         match i.node {
-            ItemImpl(_, _, _, ref impl_items) => {
+            ItemImpl(_, _, _, _, _, ref impl_items) => {
                 for impl_item in impl_items.iter() {
                     match *impl_item {
                         MethodImplItem(ref m) => {
@@ -776,7 +788,7 @@ impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
             }
             ItemTrait(_, _, ref bounds, ref trait_items) => {
                 for b in bounds.iter() {
-                    if let TraitTyParamBound(ref t) = *b {
+                    if let TraitTyParamBound(ref t, TraitBoundModifier::None) = *b {
                         self.insert(t.trait_ref.ref_id, NodeItem(i));
                     }
                 }
@@ -847,9 +859,6 @@ impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
 
     fn visit_ty(&mut self, ty: &'ast Ty) {
         match ty.node {
-            TyClosure(ref fd) | TyProc(ref fd) => {
-                self.visit_fn_decl(&*fd.decl);
-            }
             TyBareFn(ref fd) => {
                 self.visit_fn_decl(&*fd.decl);
             }
@@ -1031,7 +1040,7 @@ impl<'a> NodePrinter for pprust::State<'a> {
 
 fn node_id_to_string(map: &Map, id: NodeId, include_id: bool) -> String {
     let id_str = format!(" (id={})", id);
-    let id_str = if include_id { id_str.as_slice() } else { "" };
+    let id_str = if include_id { id_str[] } else { "" };
 
     match map.find(id) {
         Some(NodeItem(item)) => {

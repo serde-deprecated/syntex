@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! The compiler code necessary to implement the `#[deriving]` extensions.
+//! The compiler code necessary to implement the `#[derive]` extensions.
 //!
 //! FIXME (#2810): hygiene. Search for "__" strings (in other files too). We also assume "extra" is
 //! the standard library, and "std" is the core library.
@@ -25,7 +25,6 @@ pub mod decodable;
 pub mod hash;
 pub mod rand;
 pub mod show;
-pub mod zero;
 pub mod default;
 pub mod primitive;
 
@@ -45,16 +44,26 @@ pub fn expand_meta_deriving(cx: &mut ExtCtxt,
                             _span: Span,
                             mitem: &MetaItem,
                             item: &Item,
-                            push: |P<Item>|) {
+                            push: Box<FnMut(P<Item>)>) {
+    cx.span_warn(mitem.span, "`deriving` is deprecated; use `derive`");
+
+    expand_meta_derive(cx, _span, mitem, item, push)
+}
+
+pub fn expand_meta_derive(cx: &mut ExtCtxt,
+                          _span: Span,
+                          mitem: &MetaItem,
+                          item: &Item,
+                          mut push: Box<FnMut(P<Item>)>) {
     match mitem.node {
         MetaNameValue(_, ref l) => {
-            cx.span_err(l.span, "unexpected value in `deriving`");
+            cx.span_err(l.span, "unexpected value in `derive`");
         }
         MetaWord(_) => {
-            cx.span_warn(mitem.span, "empty trait list in `deriving`");
+            cx.span_warn(mitem.span, "empty trait list in `derive`");
         }
         MetaList(_, ref titems) if titems.len() == 0 => {
-            cx.span_warn(mitem.span, "empty trait list in `deriving`");
+            cx.span_warn(mitem.span, "empty trait list in `derive`");
         }
         MetaList(_, ref titems) => {
             for titem in titems.iter().rev() {
@@ -62,16 +71,36 @@ pub fn expand_meta_deriving(cx: &mut ExtCtxt,
                     MetaNameValue(ref tname, _) |
                     MetaList(ref tname, _) |
                     MetaWord(ref tname) => {
-                        macro_rules! expand(($func:path) => ($func(cx, titem.span,
-                                                                   &**titem, item,
-                                                                   |i| push(i))));
+                        macro_rules! expand {
+                            ($func:path) => ($func(cx, titem.span, &**titem, item,
+                                                   |i| push.call_mut((i,))))
+                        }
+
                         match tname.get() {
                             "Clone" => expand!(clone::expand_deriving_clone),
 
                             "Hash" => expand!(hash::expand_deriving_hash),
 
-                            "Encodable" => expand!(encodable::expand_deriving_encodable),
-                            "Decodable" => expand!(decodable::expand_deriving_decodable),
+                            "RustcEncodable" => {
+                                expand!(encodable::expand_deriving_rustc_encodable)
+                            }
+                            "RustcDecodable" => {
+                                expand!(decodable::expand_deriving_rustc_decodable)
+                            }
+                            "Encodable" => {
+                                cx.span_warn(titem.span,
+                                             "derive(Encodable) is deprecated \
+                                              in favor of derive(RustcEncodable)");
+
+                                expand!(encodable::expand_deriving_encodable)
+                            }
+                            "Decodable" => {
+                                cx.span_warn(titem.span,
+                                             "derive(Decodable) is deprecated \
+                                              in favor of derive(RustcDecodable)");
+
+                                expand!(decodable::expand_deriving_decodable)
+                            }
 
                             "PartialEq" => expand!(eq::expand_deriving_eq),
                             "Eq" => expand!(totaleq::expand_deriving_totaleq),
@@ -82,7 +111,6 @@ pub fn expand_meta_deriving(cx: &mut ExtCtxt,
 
                             "Show" => expand!(show::expand_deriving_show),
 
-                            "Zero" => expand!(zero::expand_deriving_zero),
                             "Default" => expand!(default::expand_deriving_default),
 
                             "FromPrimitive" => expand!(primitive::expand_deriving_from_primitive),
@@ -93,9 +121,9 @@ pub fn expand_meta_deriving(cx: &mut ExtCtxt,
 
                             ref tname => {
                                 cx.span_err(titem.span,
-                                            format!("unknown `deriving` \
+                                            format!("unknown `derive` \
                                                      trait: `{}`",
-                                                    *tname).as_slice());
+                                                    *tname)[]);
                             }
                         };
                     }

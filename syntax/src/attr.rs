@@ -29,7 +29,7 @@ use std::cell::{RefCell, Cell};
 use std::collections::BitvSet;
 use std::collections::HashSet;
 
-thread_local!(static USED_ATTRS: RefCell<BitvSet> = RefCell::new(BitvSet::new()))
+thread_local! { static USED_ATTRS: RefCell<BitvSet> = RefCell::new(BitvSet::new()) }
 
 pub fn mark_used(attr: &Attribute) {
     let AttrId(id) = attr.node.id;
@@ -97,7 +97,7 @@ impl AttrMetaMethods for MetaItem {
 
     fn meta_item_list<'a>(&'a self) -> Option<&'a [P<MetaItem>]> {
         match self.node {
-            MetaList(_, ref l) => Some(l.as_slice()),
+            MetaList(_, ref l) => Some(l[]),
             _ => None
         }
     }
@@ -115,7 +115,8 @@ impl AttrMetaMethods for P<MetaItem> {
 
 pub trait AttributeMethods {
     fn meta<'a>(&'a self) -> &'a MetaItem;
-    fn with_desugared_doc<T>(&self, f: |&Attribute| -> T) -> T;
+    fn with_desugared_doc<T, F>(&self, f: F) -> T where
+        F: FnOnce(&Attribute) -> T;
 }
 
 impl AttributeMethods for Attribute {
@@ -127,13 +128,15 @@ impl AttributeMethods for Attribute {
     /// Convert self to a normal #[doc="foo"] comment, if it is a
     /// comment like `///` or `/** */`. (Returns self unchanged for
     /// non-sugared doc attributes.)
-    fn with_desugared_doc<T>(&self, f: |&Attribute| -> T) -> T {
+    fn with_desugared_doc<T, F>(&self, f: F) -> T where
+        F: FnOnce(&Attribute) -> T,
+    {
         if self.node.is_sugared_doc {
             let comment = self.value_str().unwrap();
             let meta = mk_name_value_item_str(
                 InternedString::new("doc"),
                 token::intern_and_get_ident(strip_doc_comment_decoration(
-                        comment.get()).as_slice()));
+                        comment.get())[]));
             if self.node.style == ast::AttrOuter {
                 f(&mk_attr_outer(self.node.id, meta))
             } else {
@@ -166,7 +169,7 @@ pub fn mk_word_item(name: InternedString) -> P<MetaItem> {
     P(dummy_spanned(MetaWord(name)))
 }
 
-thread_local!(static NEXT_ATTR_ID: Cell<uint> = Cell::new(0))
+thread_local! { static NEXT_ATTR_ID: Cell<uint> = Cell::new(0) }
 
 pub fn mk_attr_id() -> AttrId {
     let id = NEXT_ATTR_ID.with(|slot| {
@@ -274,7 +277,7 @@ pub fn find_crate_name(attrs: &[Attribute]) -> Option<InternedString> {
     first_attr_value_str_by_name(attrs, "crate_name")
 }
 
-#[deriving(PartialEq)]
+#[derive(Copy, PartialEq)]
 pub enum InlineAttr {
     InlineNone,
     InlineHint,
@@ -293,9 +296,9 @@ pub fn find_inline_attr(attrs: &[Attribute]) -> InlineAttr {
             }
             MetaList(ref n, ref items) if *n == "inline" => {
                 mark_used(attr);
-                if contains_name(items.as_slice(), "always") {
+                if contains_name(items[], "always") {
                     InlineAlways
-                } else if contains_name(items.as_slice(), "never") {
+                } else if contains_name(items[], "never") {
                     InlineNever
                 } else {
                     InlineHint
@@ -329,7 +332,7 @@ pub fn cfg_matches(diagnostic: &SpanHandler, cfgs: &[P<MetaItem>], cfg: &ast::Me
             !cfg_matches(diagnostic, cfgs, &*mis[0])
         }
         ast::MetaList(ref pred, _) => {
-            diagnostic.span_err(cfg.span, format!("invalid predicate `{}`", pred).as_slice());
+            diagnostic.span_err(cfg.span, format!("invalid predicate `{}`", pred)[]);
             false
         },
         ast::MetaWord(_) | ast::MetaNameValue(..) => contains(cfgs, cfg),
@@ -337,14 +340,14 @@ pub fn cfg_matches(diagnostic: &SpanHandler, cfgs: &[P<MetaItem>], cfg: &ast::Me
 }
 
 /// Represents the #[deprecated="foo"] and friends attributes.
-#[deriving(Encodable,Decodable,Clone,Show)]
+#[derive(RustcEncodable,RustcDecodable,Clone,Show)]
 pub struct Stability {
     pub level: StabilityLevel,
     pub text: Option<InternedString>
 }
 
 /// The available stability levels.
-#[deriving(Encodable,Decodable,PartialEq,PartialOrd,Clone,Show)]
+#[derive(RustcEncodable,RustcDecodable,PartialEq,PartialOrd,Clone,Show,Copy)]
 pub enum StabilityLevel {
     Deprecated,
     Experimental,
@@ -356,7 +359,7 @@ pub enum StabilityLevel {
 
 pub fn find_stability_generic<'a,
                               AM: AttrMetaMethods,
-                              I: Iterator<&'a AM>>
+                              I: Iterator<Item=&'a AM>>
                              (mut attrs: I)
                              -> Option<(Stability, &'a AM)> {
     for attr in attrs {
@@ -393,8 +396,7 @@ pub fn require_unique_names(diagnostic: &SpanHandler, metas: &[P<MetaItem>]) {
 
         if !set.insert(name.clone()) {
             diagnostic.span_fatal(meta.span,
-                                  format!("duplicate meta item `{}`",
-                                          name).as_slice());
+                                  format!("duplicate meta item `{}`", name)[]);
         }
     }
 }
@@ -461,7 +463,7 @@ fn int_type_of_word(s: &str) -> Option<IntType> {
     }
 }
 
-#[deriving(PartialEq, Show, Encodable, Decodable)]
+#[derive(PartialEq, Show, RustcEncodable, RustcDecodable, Copy)]
 pub enum ReprAttr {
     ReprAny,
     ReprInt(Span, IntType),
@@ -480,7 +482,7 @@ impl ReprAttr {
     }
 }
 
-#[deriving(Eq, Hash, PartialEq, Show, Encodable, Decodable)]
+#[derive(Eq, Hash, PartialEq, Show, RustcEncodable, RustcDecodable, Copy)]
 pub enum IntType {
     SignedInt(ast::IntTy),
     UnsignedInt(ast::UintTy)

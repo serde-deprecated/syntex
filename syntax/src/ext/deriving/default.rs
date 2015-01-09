@@ -17,11 +17,13 @@ use ext::deriving::generic::ty::*;
 use parse::token::InternedString;
 use ptr::P;
 
-pub fn expand_deriving_default(cx: &mut ExtCtxt,
-                            span: Span,
-                            mitem: &MetaItem,
-                            item: &Item,
-                            push: |P<Item>|) {
+pub fn expand_deriving_default<F>(cx: &mut ExtCtxt,
+                                  span: Span,
+                                  mitem: &MetaItem,
+                                  item: &Item,
+                                  push: F) where
+    F: FnOnce(P<Item>),
+{
     let inline = cx.meta_word(span, InternedString::new("inline"));
     let attrs = vec!(cx.attribute(span, inline));
     let trait_def = TraitDef {
@@ -38,7 +40,7 @@ pub fn expand_deriving_default(cx: &mut ExtCtxt,
                 args: Vec::new(),
                 ret_ty: Self,
                 attributes: attrs,
-                combine_substructure: combine_substructure(|a, b, c| {
+                combine_substructure: combine_substructure(box |a, b, c| {
                     default_substructure(a, b, c)
                 })
             })
@@ -53,7 +55,7 @@ fn default_substructure(cx: &mut ExtCtxt, trait_span: Span, substr: &Substructur
         cx.ident_of("Default"),
         cx.ident_of("default")
     );
-    let default_call = |span| cx.expr_call_global(span, default_ident.clone(), Vec::new());
+    let default_call = |&: span| cx.expr_call_global(span, default_ident.clone(), Vec::new());
 
     return match *substr.fields {
         StaticStruct(_, ref summary) => {

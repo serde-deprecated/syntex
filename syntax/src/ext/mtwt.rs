@@ -21,7 +21,6 @@ use ast::{Ident, Mrk, Name, SyntaxContext};
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::collections::hash_map::{Occupied, Vacant};
 
 /// The SCTable contains a table of SyntaxContext_'s. It
 /// represents a flattened tree structure, to avoid having
@@ -39,7 +38,7 @@ pub struct SCTable {
     rename_memo: RefCell<HashMap<(SyntaxContext,Ident,Name),SyntaxContext>>,
 }
 
-#[deriving(PartialEq, Encodable, Decodable, Hash, Show)]
+#[derive(PartialEq, RustcEncodable, RustcDecodable, Hash, Show, Copy)]
 pub enum SyntaxContext_ {
     EmptyCtxt,
     Mark (Mrk,SyntaxContext),
@@ -67,10 +66,9 @@ pub fn apply_mark(m: Mrk, ctxt: SyntaxContext) -> SyntaxContext {
 /// Extend a syntax context with a given mark and sctable (explicit memoization)
 fn apply_mark_internal(m: Mrk, ctxt: SyntaxContext, table: &SCTable) -> SyntaxContext {
     let key = (ctxt, m);
-    * match table.mark_memo.borrow_mut().entry(key) {
-        Vacant(entry) => entry.set(idx_push(&mut *table.table.borrow_mut(), Mark(m, ctxt))),
-        Occupied(entry) => entry.into_mut(),
-    }
+    * table.mark_memo.borrow_mut().entry(&key).get().unwrap_or_else(
+          |vacant_entry|
+              vacant_entry.insert(idx_push(&mut *table.table.borrow_mut(), Mark(m, ctxt))))
 }
 
 /// Extend a syntax context with a given rename
@@ -86,10 +84,9 @@ fn apply_rename_internal(id: Ident,
                        table: &SCTable) -> SyntaxContext {
     let key = (ctxt, id, to);
 
-    * match table.rename_memo.borrow_mut().entry(key) {
-        Vacant(entry) => entry.set(idx_push(&mut *table.table.borrow_mut(), Rename(id, to, ctxt))),
-        Occupied(entry) => entry.into_mut(),
-    }
+    * table.rename_memo.borrow_mut().entry(&key).get().unwrap_or_else(
+          |vacant_entry|
+              vacant_entry.insert(idx_push(&mut *table.table.borrow_mut(), Rename(id, to, ctxt))))
 }
 
 /// Apply a list of renamings to a context
@@ -103,9 +100,11 @@ pub fn apply_renames(renames: &RenameList, ctxt: SyntaxContext) -> SyntaxContext
 }
 
 /// Fetch the SCTable from TLS, create one if it doesn't yet exist.
-pub fn with_sctable<T>(op: |&SCTable| -> T) -> T {
-    thread_local!(static SCTABLE_KEY: SCTable = new_sctable_internal())
-    SCTABLE_KEY.with(|slot| op(slot))
+pub fn with_sctable<T, F>(op: F) -> T where
+    F: FnOnce(&SCTable) -> T,
+{
+    thread_local!(static SCTABLE_KEY: SCTable = new_sctable_internal());
+    SCTABLE_KEY.with(move |slot| op(slot))
 }
 
 // Make a fresh syntax context table with EmptyCtxt in slot zero
@@ -165,12 +164,14 @@ type ResolveTable = HashMap<(Name,SyntaxContext),Name>;
 
 // okay, I admit, putting this in TLS is not so nice:
 // fetch the SCTable from TLS, create one if it doesn't yet exist.
-fn with_resolve_table_mut<T>(op: |&mut ResolveTable| -> T) -> T {
+fn with_resolve_table_mut<T, F>(op: F) -> T where
+    F: FnOnce(&mut ResolveTable) -> T,
+{
     thread_local!(static RESOLVE_TABLE_KEY: RefCell<ResolveTable> = {
         RefCell::new(HashMap::new())
-    })
+    });
 
-    RESOLVE_TABLE_KEY.with(|slot| op(&mut *slot.borrow_mut()))
+    RESOLVE_TABLE_KEY.with(move |slot| op(&mut *slot.borrow_mut()))
 }
 
 /// Resolve a syntax object to a name, per MTWT.
@@ -308,7 +309,7 @@ mod tests {
 
     // because of the SCTable, I now need a tidy way of
     // creating syntax objects. Sigh.
-    #[deriving(Clone, PartialEq, Show)]
+    #[derive(Clone, PartialEq, Show)]
     enum TestSC {
         M(Mrk),
         R(Ident,Name)

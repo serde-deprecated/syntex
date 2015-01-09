@@ -17,11 +17,13 @@ use ext::deriving::generic::ty::*;
 use parse::token::InternedString;
 use ptr::P;
 
-pub fn expand_deriving_totaleq(cx: &mut ExtCtxt,
-                               span: Span,
-                               mitem: &MetaItem,
-                               item: &Item,
-                               push: |P<Item>|) {
+pub fn expand_deriving_totaleq<F>(cx: &mut ExtCtxt,
+                                  span: Span,
+                                  mitem: &MetaItem,
+                                  item: &Item,
+                                  push: F) where
+    F: FnOnce(P<Item>),
+{
     fn cs_total_eq_assert(cx: &mut ExtCtxt, span: Span, substr: &Substructure) -> P<Expr> {
         cs_same_method(|cx, span, exprs| {
             // create `a.<method>(); b.<method>(); c.<method>(); ...`
@@ -30,7 +32,7 @@ pub fn expand_deriving_totaleq(cx: &mut ExtCtxt,
             let block = cx.block(span, stmts, None);
             cx.expr_block(block)
         },
-                       |cx, sp, _, _| cx.span_bug(sp, "non matching enums in deriving(Eq)?"),
+                       box |cx, sp, _, _| cx.span_bug(sp, "non matching enums in deriving(Eq)?"),
                        cx,
                        span,
                        substr)
@@ -55,7 +57,7 @@ pub fn expand_deriving_totaleq(cx: &mut ExtCtxt,
                 args: vec!(),
                 ret_ty: nil_ty(),
                 attributes: attrs,
-                combine_substructure: combine_substructure(|a, b, c| {
+                combine_substructure: combine_substructure(box |a, b, c| {
                     cs_total_eq_assert(a, b, c)
                 })
             }
