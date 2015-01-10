@@ -13,7 +13,7 @@ pub use self::RenderSpan::*;
 pub use self::ColorConfig::*;
 use self::Destination::*;
 
-use codemap::{Pos, Span};
+use codemap::{COMMAND_LINE_SP, COMMAND_LINE_EXPN, Pos, Span};
 use codemap;
 use diagnostics;
 
@@ -123,7 +123,7 @@ impl SpanHandler {
         panic!(ExplicitBug);
     }
     pub fn span_unimpl(&self, sp: Span, msg: &str) -> ! {
-        self.span_bug(sp, format!("unimplemented {}", msg)[]);
+        self.span_bug(sp, &format!("unimplemented {}", msg)[]);
     }
     pub fn handler<'a>(&'a self) -> &'a Handler {
         &self.handler
@@ -166,7 +166,7 @@ impl Handler {
                         self.err_count.get());
           }
         }
-        self.fatal(s[]);
+        self.fatal(&s[]);
     }
     pub fn warn(&self, msg: &str) {
         self.emit.borrow_mut().emit(None, msg, None, Warning);
@@ -182,7 +182,7 @@ impl Handler {
         panic!(ExplicitBug);
     }
     pub fn unimpl(&self, msg: &str) -> ! {
-        self.bug(format!("unimplemented {}", msg)[]);
+        self.bug(&format!("unimplemented {}", msg)[]);
     }
     pub fn emit(&self,
                 cmsp: Option<(&codemap::CodeMap, Span)>,
@@ -222,7 +222,7 @@ pub fn mk_handler(e: Box<Emitter + Send>) -> Handler {
     }
 }
 
-#[derive(Copy, PartialEq, Clone)]
+#[derive(Copy, PartialEq, Clone, Show)]
 pub enum Level {
     Bug,
     Fatal,
@@ -232,9 +232,9 @@ pub enum Level {
     Help,
 }
 
-impl fmt::Show for Level {
+impl fmt::String for Level {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use std::fmt::Show;
+        use std::fmt::String;
 
         match *self {
             Bug => "error: internal compiler error".fmt(f),
@@ -277,7 +277,7 @@ fn print_maybe_styled(w: &mut EmitterWriter,
             // to be miscolored. We assume this is rare enough that we don't
             // have to worry about it.
             if msg.ends_with("\n") {
-                try!(t.write_str(msg[0..msg.len()-1]));
+                try!(t.write_str(&msg[0..(msg.len()-1)]));
                 try!(t.reset());
                 try!(t.write_str("\n"));
             } else {
@@ -299,16 +299,16 @@ fn print_diagnostic(dst: &mut EmitterWriter, topic: &str, lvl: Level,
     }
 
     try!(print_maybe_styled(dst,
-                            format!("{}: ", lvl.to_string())[],
+                            &format!("{}: ", lvl.to_string())[],
                             term::attr::ForegroundColor(lvl.color())));
     try!(print_maybe_styled(dst,
-                            format!("{}", msg)[],
+                            &format!("{}", msg)[],
                             term::attr::Bold));
 
     match code {
         Some(code) => {
             let style = term::attr::ForegroundColor(term::color::BRIGHT_MAGENTA);
-            try!(print_maybe_styled(dst, format!(" [{}]", code.clone())[], style));
+            try!(print_maybe_styled(dst, &format!(" [{}]", code.clone())[], style));
         }
         None => ()
     }
@@ -368,13 +368,16 @@ impl Emitter for EmitterWriter {
             cmsp: Option<(&codemap::CodeMap, Span)>,
             msg: &str, code: Option<&str>, lvl: Level) {
         let error = match cmsp {
+            Some((cm, COMMAND_LINE_SP)) => emit(self, cm,
+                                                FileLine(COMMAND_LINE_SP),
+                                                msg, code, lvl, false),
             Some((cm, sp)) => emit(self, cm, FullSpan(sp), msg, code, lvl, false),
             None => print_diagnostic(self, "", lvl, msg, code),
         };
 
         match error {
             Ok(()) => {}
-            Err(e) => panic!("failed to print diagnostics: {}", e),
+            Err(e) => panic!("failed to print diagnostics: {:?}", e),
         }
     }
 
@@ -382,7 +385,7 @@ impl Emitter for EmitterWriter {
                    sp: RenderSpan, msg: &str, lvl: Level) {
         match emit(self, cm, sp, msg, None, lvl, true) {
             Ok(()) => {}
-            Err(e) => panic!("failed to print diagnostics: {}", e),
+            Err(e) => panic!("failed to print diagnostics: {:?}", e),
         }
     }
 }
@@ -390,31 +393,39 @@ impl Emitter for EmitterWriter {
 fn emit(dst: &mut EmitterWriter, cm: &codemap::CodeMap, rsp: RenderSpan,
         msg: &str, code: Option<&str>, lvl: Level, custom: bool) -> io::IoResult<()> {
     let sp = rsp.span();
-    let ss = cm.span_to_string(sp);
-    let lines = cm.span_to_lines(sp);
+
+    // We cannot check equality directly with COMMAND_LINE_SP
+    // since PartialEq is manually implemented to ignore the ExpnId
+    let ss = if sp.expn_id == COMMAND_LINE_EXPN {
+        "<command line option>".to_string()
+    } else {
+        cm.span_to_string(sp)
+    };
     if custom {
         // we want to tell compiletest/runtest to look at the last line of the
         // span (since `custom_highlight_lines` displays an arrow to the end of
         // the span)
         let span_end = Span { lo: sp.hi, hi: sp.hi, expn_id: sp.expn_id};
         let ses = cm.span_to_string(span_end);
-        try!(print_diagnostic(dst, ses[], lvl, msg, code));
+        try!(print_diagnostic(dst, &ses[], lvl, msg, code));
         if rsp.is_full_span() {
-            try!(custom_highlight_lines(dst, cm, sp, lvl, lines));
+            try!(custom_highlight_lines(dst, cm, sp, lvl, cm.span_to_lines(sp)));
         }
     } else {
-        try!(print_diagnostic(dst, ss[], lvl, msg, code));
+        try!(print_diagnostic(dst, &ss[], lvl, msg, code));
         if rsp.is_full_span() {
-            try!(highlight_lines(dst, cm, sp, lvl, lines));
+            try!(highlight_lines(dst, cm, sp, lvl, cm.span_to_lines(sp)));
         }
     }
-    try!(print_macro_backtrace(dst, cm, sp));
+    if sp != COMMAND_LINE_SP {
+        try!(print_macro_backtrace(dst, cm, sp));
+    }
     match code {
         Some(code) =>
             match dst.registry.as_ref().and_then(|registry| registry.find_description(code)) {
                 Some(_) => {
-                    try!(print_diagnostic(dst, ss[], Help,
-                                          format!("pass `--explain {}` to see a detailed \
+                    try!(print_diagnostic(dst, &ss[], Help,
+                                          &format!("pass `--explain {}` to see a detailed \
                                                    explanation", code)[], None));
                 }
                 None => ()
@@ -432,9 +443,9 @@ fn highlight_lines(err: &mut EmitterWriter,
     let fm = &*lines.file;
 
     let mut elided = false;
-    let mut display_lines = lines.lines[];
+    let mut display_lines = &lines.lines[];
     if display_lines.len() > MAX_LINES {
-        display_lines = display_lines[0u..MAX_LINES];
+        display_lines = &display_lines[0u..MAX_LINES];
         elided = true;
     }
     // Print the offending lines
@@ -494,7 +505,7 @@ fn highlight_lines(err: &mut EmitterWriter,
             }
         }
         try!(print_maybe_styled(err,
-                                format!("{}\n", s)[],
+                                &format!("{}\n", s)[],
                                 term::attr::ForegroundColor(lvl.color())));
     }
     Ok(())
@@ -514,7 +525,7 @@ fn custom_highlight_lines(w: &mut EmitterWriter,
                           -> io::IoResult<()> {
     let fm = &*lines.file;
 
-    let lines = lines.lines[];
+    let lines = &lines.lines[];
     if lines.len() > MAX_LINES {
         if let Some(line) = fm.get_line(lines[0]) {
             try!(write!(&mut w.dst, "{}:{} {}\n", fm.name,
@@ -545,7 +556,7 @@ fn custom_highlight_lines(w: &mut EmitterWriter,
     s.push('^');
     s.push('\n');
     print_maybe_styled(w,
-                       s[],
+                       &s[],
                        term::attr::ForegroundColor(lvl.color()))
 }
 
@@ -560,12 +571,12 @@ fn print_macro_backtrace(w: &mut EmitterWriter,
                 codemap::MacroAttribute => ("#[", "]"),
                 codemap::MacroBang => ("", "!")
             };
-            try!(print_diagnostic(w, ss[], Note,
-                                  format!("in expansion of {}{}{}", pre,
+            try!(print_diagnostic(w, &ss[], Note,
+                                  &format!("in expansion of {}{}{}", pre,
                                           ei.callee.name,
                                           post)[], None));
             let ss = cm.span_to_string(ei.call_site);
-            try!(print_diagnostic(w, ss[], Note, "expansion site", None));
+            try!(print_diagnostic(w, &ss[], Note, "expansion site", None));
             Ok(Some(ei.call_site))
         }
         None => Ok(None)
@@ -578,6 +589,6 @@ pub fn expect<T, M>(diag: &SpanHandler, opt: Option<T>, msg: M) -> T where
 {
     match opt {
         Some(t) => t,
-        None => diag.handler().bug(msg()[]),
+        None => diag.handler().bug(&msg()[]),
     }
 }

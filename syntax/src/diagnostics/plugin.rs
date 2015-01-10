@@ -56,7 +56,7 @@ pub fn expand_diagnostic_used<'cx>(ecx: &'cx mut ExtCtxt,
     with_used_diagnostics(|diagnostics| {
         match diagnostics.insert(code.name, span) {
             Some(previous_span) => {
-                ecx.span_warn(span, format!(
+                ecx.span_warn(span, &format!(
                     "diagnostic code {} already used", token::get_ident(code).get()
                 )[]);
                 ecx.span_note(previous_span, "previous invocation");
@@ -85,12 +85,12 @@ pub fn expand_register_diagnostic<'cx>(ecx: &'cx mut ExtCtxt,
     };
     with_registered_diagnostics(|diagnostics| {
         if diagnostics.insert(code.name, description).is_some() {
-            ecx.span_err(span, format!(
+            ecx.span_err(span, &format!(
                 "diagnostic code {} already registered", token::get_ident(*code).get()
             )[]);
         }
     });
-    let sym = Ident::new(token::gensym((
+    let sym = Ident::new(token::gensym(&(
         "__register_diagnostic_".to_string() + token::get_ident(*code).get()
     )[]));
     MacItems::new(vec![quote_item!(ecx, mod $sym {}).unwrap()].into_iter())

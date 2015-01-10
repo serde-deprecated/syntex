@@ -1,3 +1,3 @@
-pub fn hello_world() -> int {
+pub fn hello_world() -> u8 {
     my_syntax!()
 }

@@ -9,7 +9,7 @@ fn expand_my_syntax<'cx>(
 ) -> Box<syntax::ext::base::MacResult + 'cx> {
     use syntax::ext::build::AstBuilder;
 
-    let expr = cx.expr_int(sp, 5);
+    let expr = cx.expr_u8(sp, 5);
 
     syntax::ext::base::MacExpr::new(expr)
 }
@@ -39,7 +39,7 @@ pub fn expand_str(crate_name: &str, body: &str) -> String {
     let syntax_exts = vec![
         (
             syntax::parse::token::intern("my_syntax"),
-            syntax::ext::base::SyntaxExtension::NormalTT(box expand_my_syntax, None),
+            syntax::ext::base::SyntaxExtension::NormalTT(Box::new(expand_my_syntax), None),
         )
     ];
 

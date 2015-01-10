@@ -32,7 +32,7 @@ use std::slice;
 
 pub mod blocks;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Show)]
 pub enum PathElem {
     PathMod(Name),
     PathName(Name)
@@ -46,7 +46,7 @@ impl PathElem {
     }
 }
 
-impl fmt::Show for PathElem {
+impl fmt::String for PathElem {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let slot = token::get_name(self.name());
         write!(f, "{}", slot)
@@ -83,7 +83,7 @@ impl<'a, T: Copy> Iterator for Values<'a, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<T> {
-        let &Values(ref mut items) = self;
+        let &mut Values(ref mut items) = self;
         items.next().map(|&x| x)
     }
 }
@@ -99,7 +99,7 @@ pub fn path_to_string<PI: Iterator<Item=PathElem>>(path: PI) -> String {
         if !s.is_empty() {
             s.push_str("::");
         }
-        s.push_str(e[]);
+        s.push_str(&e[]);
         s
     }).to_string()
 }
@@ -396,7 +396,7 @@ impl<'ast> Map<'ast> {
                                 PathName(ident.name)
                             }
                             MethMac(_) => {
-                                panic!("no path elem for {}", node)
+                                panic!("no path elem for {:?}", node)
                             }
                         }
                     }
@@ -410,7 +410,7 @@ impl<'ast> Map<'ast> {
                         MethDecl(ident, _, _, _, _, _, _, _) => {
                             PathName(ident.name)
                         }
-                        MethMac(_) => panic!("no path elem for {}", node),
+                        MethMac(_) => panic!("no path elem for {:?}", node),
                     }
                 }
                 TypeTraitItem(ref m) => {
@@ -418,7 +418,7 @@ impl<'ast> Map<'ast> {
                 }
             },
             NodeVariant(v) => PathName(v.node.name.name),
-            _ => panic!("no path elem for {}", node)
+            _ => panic!("no path elem for {:?}", node)
         }
     }
 
@@ -476,20 +476,20 @@ impl<'ast> Map<'ast> {
         F: FnOnce(Option<&[Attribute]>) -> T,
     {
         let attrs = match self.get(id) {
-            NodeItem(i) => Some(i.attrs[]),
-            NodeForeignItem(fi) => Some(fi.attrs[]),
+            NodeItem(i) => Some(&i.attrs[]),
+            NodeForeignItem(fi) => Some(&fi.attrs[]),
             NodeTraitItem(ref tm) => match **tm {
-                RequiredMethod(ref type_m) => Some(type_m.attrs[]),
-                ProvidedMethod(ref m) => Some(m.attrs[]),
-                TypeTraitItem(ref typ) => Some(typ.attrs[]),
+                RequiredMethod(ref type_m) => Some(&type_m.attrs[]),
+                ProvidedMethod(ref m) => Some(&m.attrs[]),
+                TypeTraitItem(ref typ) => Some(&typ.attrs[]),
             },
             NodeImplItem(ref ii) => {
                 match **ii {
-                    MethodImplItem(ref m) => Some(m.attrs[]),
-                    TypeImplItem(ref t) => Some(t.attrs[]),
+                    MethodImplItem(ref m) => Some(&m.attrs[]),
+                    TypeImplItem(ref t) => Some(&t.attrs[]),
                 }
             }
-            NodeVariant(ref v) => Some(v.node.attrs[]),
+            NodeVariant(ref v) => Some(&v.node.attrs[]),
             // unit/tuple structs take the attributes straight from
             // the struct definition.
             // FIXME(eddyb) make this work again (requires access to the map).
@@ -513,7 +513,7 @@ impl<'ast> Map<'ast> {
         NodesMatchingSuffix {
             map: self,
             item_name: parts.last().unwrap(),
-            in_which: parts[..parts.len() - 1],
+            in_which: &parts[0..(parts.len() - 1)],
             idx: 0,
         }
     }
@@ -549,7 +549,7 @@ impl<'ast> Map<'ast> {
 
     pub fn span(&self, id: NodeId) -> Span {
         self.opt_span(id)
-            .unwrap_or_else(|| panic!("AstMap.span: could not find span for id {}", id))
+            .unwrap_or_else(|| panic!("AstMap.span: could not find span for id {:?}", id))
     }
 
     pub fn def_id_span(&self, def_id: DefId, fallback: Span) -> Span {
@@ -590,7 +590,7 @@ impl<'a, 'ast> NodesMatchingSuffix<'a, 'ast> {
                 None => return false,
                 Some((node_id, name)) => (node_id, name),
             };
-            if part[] != mod_name.as_str() {
+            if &part[] != mod_name.as_str() {
                 return false;
             }
             cursor = self.map.get_parent(mod_id);
@@ -628,7 +628,7 @@ impl<'a, 'ast> NodesMatchingSuffix<'a, 'ast> {
     // We are looking at some node `n` with a given name and parent
     // id; do their names match what I am seeking?
     fn matches_names(&self, parent_of_n: NodeId, name: Name) -> bool {
-        name.as_str() == self.item_name[] &&
+        name.as_str() == &self.item_name[] &&
             self.suffix_matches(parent_of_n)
     }
 }
@@ -729,7 +729,7 @@ struct NodeCollector<'ast> {
 
 impl<'ast> NodeCollector<'ast> {
     fn insert_entry(&mut self, id: NodeId, entry: MapEntry<'ast>) {
-        debug!("ast_map: {} => {}", id, entry);
+        debug!("ast_map: {:?} => {:?}", id, entry);
         let len = self.map.len();
         if id as uint >= len {
             self.map.extend(repeat(NotPresent).take(id as uint - len + 1));
@@ -1040,7 +1040,7 @@ impl<'a> NodePrinter for pprust::State<'a> {
 
 fn node_id_to_string(map: &Map, id: NodeId, include_id: bool) -> String {
     let id_str = format!(" (id={})", id);
-    let id_str = if include_id { id_str[] } else { "" };
+    let id_str = if include_id { &id_str[] } else { "" };
 
     match map.find(id) {
         Some(NodeItem(item)) => {

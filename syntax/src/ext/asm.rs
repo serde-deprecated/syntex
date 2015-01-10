@@ -99,7 +99,7 @@ pub fn expand_asm<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
                     let output = match constraint.get().slice_shift_char() {
                         Some(('=', _)) => None,
                         Some(('+', operand)) => {
-                            Some(token::intern_and_get_ident(format!(
+                            Some(token::intern_and_get_ident(&format!(
                                         "={}", operand)[]))
                         }
                         _ => {
