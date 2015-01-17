@@ -118,6 +118,9 @@ impl SpanHandler {
     pub fn fileline_note(&self, sp: Span, msg: &str) {
         self.handler.custom_emit(&self.cm, FileLine(sp), msg, Note);
     }
+    pub fn fileline_help(&self, sp: Span, msg: &str) {
+        self.handler.custom_emit(&self.cm, FileLine(sp), msg, Help);
+    }
     pub fn span_bug(&self, sp: Span, msg: &str) -> ! {
         self.handler.emit(Some((&self.cm, sp)), msg, Bug);
         panic!(ExplicitBug);
@@ -277,7 +280,7 @@ fn print_maybe_styled(w: &mut EmitterWriter,
             // to be miscolored. We assume this is rare enough that we don't
             // have to worry about it.
             if msg.ends_with("\n") {
-                try!(t.write_str(&msg[0..(msg.len()-1)]));
+                try!(t.write_str(&msg[..(msg.len()-1)]));
                 try!(t.reset());
                 try!(t.write_str("\n"));
             } else {
