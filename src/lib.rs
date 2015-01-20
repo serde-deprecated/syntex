@@ -1,25 +1,20 @@
-extern crate syntax;
+extern crate "syntex_syntax" as syntax;
 
-use syntax::ext::base::TTMacroExpander;
+use syntax::ast::Name;
+use syntax::ext::base::SyntaxExtension;
+use syntax::parse::token;
 
-fn expand_my_syntax<'cx>(
-    cx: &'cx mut syntax::ext::base::ExtCtxt,
-    sp: syntax::codemap::Span,
-    tts: &[syntax::ast::TokenTree]
-) -> Box<syntax::ext::base::MacResult + 'cx> {
-    use syntax::ext::build::AstBuilder;
+use std::io::{File, IoResult};
 
-    let expr = cx.expr_u8(sp, 5);
-
-    syntax::ext::base::MacExpr::new(expr)
-}
-
-pub fn expand_str(crate_name: &str, body: &str) -> String {
+pub fn expand_str(
+    crate_name: &str,
+    body: String,
+    syntax_exts: Vec<(&str, SyntaxExtension)>,
+) -> String {
     let sess = syntax::parse::new_parse_sess();
     let cfg = vec![];
 
     let crate_name = crate_name.to_string();
-    let body = body.to_string();
 
     let krate = syntax::parse::parse_crate_from_source_str(
         crate_name.clone(),
@@ -36,12 +31,9 @@ pub fn expand_str(crate_name: &str, body: &str) -> String {
     };
 
     let macros = vec![];
-    let syntax_exts = vec![
-        (
-            syntax::parse::token::intern("my_syntax"),
-            syntax::ext::base::SyntaxExtension::NormalTT(Box::new(expand_my_syntax), None),
-        )
-    ];
+    let syntax_exts: Vec<(Name, SyntaxExtension)> = syntax_exts.into_iter()
+        .map(|(name, ext)| (token::intern(name), ext))
+        .collect();
 
     let krate = syntax::ext::expand::expand_crate(&sess,
                                                   cfg,
@@ -54,4 +46,19 @@ pub fn expand_str(crate_name: &str, body: &str) -> String {
         try!(s.print_remaining_comments());
         syntax::print::pp::eof(&mut s.s)
     })
+}
+
+pub fn expand_file(
+    src: Path,
+    dst: Path,
+    crate_name: &str,
+    syntax_exts: Vec<(&str, SyntaxExtension)>,
+) -> IoResult<()> {
+    let mut src = try!(File::open(&src));
+    let src = String::from_utf8(try!(src.read_to_end())).unwrap();
+
+    let output = expand_str(crate_name, src, syntax_exts);
+
+    let mut dst = try!(File::create(&dst));
+    dst.write_str(&output[])
 }

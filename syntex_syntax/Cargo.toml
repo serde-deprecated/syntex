@@ -1,4 +1,7 @@
 [package]
-name = "syntax"
+name = "syntex_syntax"
 version = "0.1.0"
 authors = [ "erick.tryzelaar@gmail.com" ]
+
+[dependencies.syntex_bitflags]
+path = "../syntex_bitflags"

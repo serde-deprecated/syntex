@@ -6,3 +6,9 @@ build = "build.rs"
 
 [build-dependencies.syntex]
 path = ".."
+
+[build-dependencies.syntex_syntax]
+path = "../syntex_syntax"
+
+[build-dependencies.hello_world_macros]
+path = "hello_world_macros"
