@@ -2,3 +2,6 @@
 name = "syntex_bitflags"
 version = "0.1.0"
 authors = [ "erick.tryzelaar@gmail.com" ]
+license = "MIT/Apache-2.0"
+description = "Internal library to help compile syntex_syntax"
+repository = "https://github.com/erickt/rust-syntex"

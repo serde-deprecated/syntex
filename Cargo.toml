@@ -2,6 +2,9 @@
 name = "syntex"
 version = "0.1.0"
 authors = [ "erick.tryzelaar@gmail.com" ]
+license = "MIT/Apache-2.0"
+description = "High-level bindings to the zeromq library"
+repository = "https://github.com/erickt/rust-zmq"
 
-[dependencies.syntex_syntax]
-path = "syntex_syntax"
+[dependencies]
+syntex_syntax = "0.1.0"
