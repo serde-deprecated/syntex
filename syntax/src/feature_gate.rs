@@ -72,11 +72,14 @@ static KNOWN_FEATURES: &'static [(&'static str, Status)] = &[
     ("slicing_syntax", Active),
     ("box_syntax", Active),
     ("on_unimplemented", Active),
+    ("simd_ffi", Active),
 
     ("if_let", Accepted),
     ("while_let", Accepted),
 
     ("plugin", Active),
+    ("start", Active),
+    ("main", Active),
 
     // A temporary feature gate used to enable parser extensions needed
     // to bootstrap fix for #5723.
@@ -128,6 +131,7 @@ pub struct Features {
     pub visible_private_types: bool,
     pub quote: bool,
     pub old_orphan_check: bool,
+    pub simd_ffi: bool,
 }
 
 impl Features {
@@ -139,6 +143,7 @@ impl Features {
             visible_private_types: false,
             quote: false,
             old_orphan_check: false,
+            simd_ffi: false,
         }
     }
 }
@@ -275,6 +280,18 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
                 if attr::contains_name(&i.attrs[], "plugin_registrar") {
                     self.gate_feature("plugin_registrar", i.span,
                                       "compiler plugins are experimental and possibly buggy");
+                }
+                if attr::contains_name(&i.attrs[], "start") {
+                    self.gate_feature("start", i.span,
+                                      "a #[start] function is an experimental \
+                                       feature whose signature may change \
+                                       over time");
+                }
+                if attr::contains_name(&i.attrs[], "main") {
+                    self.gate_feature("main", i.span,
+                                      "declaration of a nonstandard #[main] \
+                                       function may change over time, for now \
+                                       a top-level `fn main()` is required");
                 }
             }
 
@@ -524,6 +541,7 @@ fn check_crate_inner<F>(cm: &CodeMap, span_handler: &SpanHandler, krate: &ast::C
         visible_private_types: cx.has_feature("visible_private_types"),
         quote: cx.has_feature("quote"),
         old_orphan_check: cx.has_feature("old_orphan_check"),
+        simd_ffi: cx.has_feature("simd_ffi"),
     },
     unknown_features)
 }

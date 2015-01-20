@@ -28,6 +28,7 @@
 #![feature(box_syntax)]
 #![feature(quote, unsafe_destructor)]
 #![allow(unknown_features)] #![feature(int_uint)]
+#![allow(unstable)]
 
 extern crate arena;
 extern crate fmt_macros;
@@ -35,6 +36,7 @@ extern crate serialize;
 extern crate term;
 extern crate libc;
 #[macro_use] extern crate log;
+#[macro_use] #[no_link] extern crate rustc_bitflags;
 
 extern crate "serialize" as rustc_serialize; // used by deriving
 
