@@ -8,6 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![crate_name = "rustc_bitflags"]
 #![unstable]
 #![staged_api]
 #![crate_type = "rlib"]
