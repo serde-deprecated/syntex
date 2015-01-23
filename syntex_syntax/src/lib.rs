@@ -14,6 +14,7 @@
 //!
 //! This API is completely unstable and subject to change.
 
+#![crate_name = "syntax"]
 #![unstable]
 #![staged_api]
 #![crate_type = "dylib"]
@@ -35,7 +36,7 @@ extern crate serialize;
 extern crate term;
 extern crate libc;
 #[macro_use] extern crate log;
-#[macro_use] #[no_link] extern crate "syntex_bitflags" as rustc_bitflags;
+#[macro_use] #[no_link] extern crate rustc_bitflags;
 
 extern crate "serialize" as rustc_serialize; // used by deriving
 
