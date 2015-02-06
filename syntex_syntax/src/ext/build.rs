@@ -106,7 +106,7 @@ pub trait AstBuilder {
     fn expr_ident(&self, span: Span, id: ast::Ident) -> P<ast::Expr>;
 
     fn expr_self(&self, span: Span) -> P<ast::Expr>;
-    fn expr_binary(&self, sp: Span, op: ast::BinOp,
+    fn expr_binary(&self, sp: Span, op: ast::BinOp_,
                    lhs: P<ast::Expr>, rhs: P<ast::Expr>) -> P<ast::Expr>;
     fn expr_deref(&self, sp: Span, e: P<ast::Expr>) -> P<ast::Expr>;
     fn expr_unary(&self, sp: Span, op: ast::UnOp, e: P<ast::Expr>) -> P<ast::Expr>;
@@ -561,9 +561,9 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
         self.expr_ident(span, special_idents::self_)
     }
 
-    fn expr_binary(&self, sp: Span, op: ast::BinOp,
+    fn expr_binary(&self, sp: Span, op: ast::BinOp_,
                    lhs: P<ast::Expr>, rhs: P<ast::Expr>) -> P<ast::Expr> {
-        self.expr(sp, ast::ExprBinary(op, lhs, rhs))
+        self.expr(sp, ast::ExprBinary(Spanned { node: op, span: sp }, lhs, rhs))
     }
 
     fn expr_deref(&self, sp: Span, e: P<ast::Expr>) -> P<ast::Expr> {
@@ -876,14 +876,14 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
 
     fn lambda_fn_decl(&self, span: Span,
                       fn_decl: P<ast::FnDecl>, blk: P<ast::Block>) -> P<ast::Expr> {
-        self.expr(span, ast::ExprClosure(ast::CaptureByRef, None, fn_decl, blk))
+        self.expr(span, ast::ExprClosure(ast::CaptureByRef, fn_decl, blk))
     }
     fn lambda(&self, span: Span, ids: Vec<ast::Ident>, blk: P<ast::Block>) -> P<ast::Expr> {
         let fn_decl = self.fn_decl(
             ids.iter().map(|id| self.arg(span, *id, self.ty_infer(span))).collect(),
             self.ty_infer(span));
 
-        self.expr(span, ast::ExprClosure(ast::CaptureByRef, None, fn_decl, blk))
+        self.expr(span, ast::ExprClosure(ast::CaptureByRef, fn_decl, blk))
     }
     fn lambda0(&self, span: Span, blk: P<ast::Block>) -> P<ast::Expr> {
         self.lambda(span, Vec::new(), blk)

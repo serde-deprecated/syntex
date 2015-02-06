@@ -259,7 +259,7 @@ pub fn compile<'cx>(cx: &'cx mut ExtCtxt,
         _ => cx.span_bug(def.span, "wrong-structured lhs")
     };
 
-    for lhs in lhses.iter() {
+    for lhs in &lhses {
         check_lhs_nt_follows(cx, &**lhs, def.span);
     }
 
@@ -319,11 +319,11 @@ fn check_matcher<'a, I>(cx: &mut ExtCtxt, matcher: I, follow: &Token)
                     Some(&&TtToken(_, ref tok)) => tok.clone(),
                     Some(&&TtSequence(sp, _)) => {
                         cx.span_err(sp,
-                                    format!("`${0}:{1}` is followed by a \
-                                             sequence repetition, which is not \
-                                             allowed for `{1}` fragments",
-                                            name.as_str(), frag_spec.as_str())
-                                        .as_slice());
+                                    &format!("`${0}:{1}` is followed by a \
+                                              sequence repetition, which is not \
+                                              allowed for `{1}` fragments",
+                                             name.as_str(), frag_spec.as_str())
+                                        );
                         Eof
                     },
                     // die next iteration
@@ -338,14 +338,14 @@ fn check_matcher<'a, I>(cx: &mut ExtCtxt, matcher: I, follow: &Token)
                     (&Eof, _) => return Some((sp, tok.clone())),
                     (_, Ok(true)) => continue,
                     (next, Ok(false)) => {
-                        cx.span_err(sp, format!("`${0}:{1}` is followed by `{2}`, which \
-                                                 is not allowed for `{1}` fragments",
+                        cx.span_err(sp, &format!("`${0}:{1}` is followed by `{2}`, which \
+                                                  is not allowed for `{1}` fragments",
                                                  name.as_str(), frag_spec.as_str(),
-                                                 token_to_string(next)).as_slice());
+                                                 token_to_string(next)));
                         continue
                     },
                     (_, Err(msg)) => {
-                        cx.span_err(sp, msg.as_slice());
+                        cx.span_err(sp, &msg);
                         continue
                     }
                 }
@@ -457,7 +457,7 @@ fn is_in_follow(_: &ExtCtxt, tok: &Token, frag: &str) -> Result<bool, String> {
                 // harmless
                 Ok(true)
             },
-            _ => Err(format!("unrecognized builtin nonterminal `{}`", frag))
+            _ => Err(format!("invalid fragment specifier `{}`", frag))
         }
     }
 }

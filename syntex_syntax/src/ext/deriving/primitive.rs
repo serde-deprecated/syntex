@@ -65,7 +65,9 @@ pub fn expand_deriving_from_primitive<F>(cx: &mut ExtCtxt,
                 combine_substructure: combine_substructure(box |c, s, sub| {
                     cs_from("u64", c, s, sub)
                 }),
-            })
+            }
+        ),
+        associated_types: Vec::new(),
     };
 
     trait_def.expand(cx, mitem, item, push)
@@ -91,7 +93,7 @@ fn cs_from(name: &str, cx: &mut ExtCtxt, trait_span: Span, substr: &Substructure
 
             let mut arms = Vec::new();
 
-            for variant in enum_def.variants.iter() {
+            for variant in &enum_def.variants {
                 match variant.node.kind {
                     ast::TupleVariantKind(ref args) => {
                         if !args.is_empty() {

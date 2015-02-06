@@ -46,7 +46,7 @@ pub fn stmt_id(s: &Stmt) -> NodeId {
     }
 }
 
-pub fn binop_to_string(op: BinOp) -> &'static str {
+pub fn binop_to_string(op: BinOp_) -> &'static str {
     match op {
         BiAdd => "+",
         BiSub => "-",
@@ -69,7 +69,7 @@ pub fn binop_to_string(op: BinOp) -> &'static str {
     }
 }
 
-pub fn lazy_binop(b: BinOp) -> bool {
+pub fn lazy_binop(b: BinOp_) -> bool {
     match b {
       BiAnd => true,
       BiOr => true,
@@ -77,7 +77,7 @@ pub fn lazy_binop(b: BinOp) -> bool {
     }
 }
 
-pub fn is_shift_binop(b: BinOp) -> bool {
+pub fn is_shift_binop(b: BinOp_) -> bool {
     match b {
       BiShl => true,
       BiShr => true,
@@ -85,7 +85,7 @@ pub fn is_shift_binop(b: BinOp) -> bool {
     }
 }
 
-pub fn is_comparison_binop(b: BinOp) -> bool {
+pub fn is_comparison_binop(b: BinOp_) -> bool {
     match b {
         BiEq | BiLt | BiLe | BiNe | BiGt | BiGe => true,
         _ => false
@@ -93,9 +93,23 @@ pub fn is_comparison_binop(b: BinOp) -> bool {
 }
 
 /// Returns `true` if the binary operator takes its arguments by value
-pub fn is_by_value_binop(b: BinOp) -> bool {
+pub fn is_by_value_binop(b: BinOp_) -> bool {
     match b {
         BiAdd | BiSub | BiMul | BiDiv | BiRem | BiBitXor | BiBitAnd | BiBitOr | BiShl | BiShr => {
+            true
+        }
+        _ => false
+    }
+}
+
+/// Returns `true` if the binary operator is symmetric in the sense that LHS
+/// and RHS must have the same type. So the type of LHS can serve as an hint
+/// for the type of RHS and vice versa.
+pub fn is_symmetric_binop(b: BinOp_) -> bool {
+    match b {
+        BiAdd | BiSub | BiMul | BiDiv | BiRem |
+        BiBitXor | BiBitAnd | BiBitOr |
+        BiEq | BiLt | BiLe | BiNe | BiGt | BiGe => {
             true
         }
         _ => false
@@ -302,7 +316,7 @@ pub fn split_trait_methods(trait_methods: &[TraitItem])
                            -> (Vec<TypeMethod>, Vec<P<Method>> ) {
     let mut reqd = Vec::new();
     let mut provd = Vec::new();
-    for trt_method in trait_methods.iter() {
+    for trt_method in trait_methods {
         match *trt_method {
             RequiredMethod(ref tm) => reqd.push((*tm).clone()),
             ProvidedMethod(ref m) => provd.push((*m).clone()),
@@ -319,24 +333,24 @@ pub fn struct_field_visibility(field: ast::StructField) -> Visibility {
 }
 
 /// Maps a binary operator to its precedence
-pub fn operator_prec(op: ast::BinOp) -> usize {
+pub fn operator_prec(op: ast::BinOp_) -> usize {
   match op {
       // 'as' sits here with 12
-      BiMul | BiDiv | BiRem     => 11us,
-      BiAdd | BiSub             => 10us,
-      BiShl | BiShr             =>  9us,
-      BiBitAnd                  =>  8us,
-      BiBitXor                  =>  7us,
-      BiBitOr                   =>  6us,
-      BiLt | BiLe | BiGe | BiGt | BiEq | BiNe => 3us,
-      BiAnd                     =>  2us,
-      BiOr                      =>  1us
+      BiMul | BiDiv | BiRem     => 11,
+      BiAdd | BiSub             => 10,
+      BiShl | BiShr             =>  9,
+      BiBitAnd                  =>  8,
+      BiBitXor                  =>  7,
+      BiBitOr                   =>  6,
+      BiLt | BiLe | BiGe | BiGt | BiEq | BiNe => 3,
+      BiAnd                     =>  2,
+      BiOr                      =>  1
   }
 }
 
 /// Precedence of the `as` operator, which is a binary operator
 /// not appearing in the prior table.
-pub const AS_PREC: usize = 12us;
+pub const AS_PREC: usize = 12;
 
 pub fn empty_generics() -> Generics {
     Generics {
@@ -352,7 +366,7 @@ pub fn empty_generics() -> Generics {
 // ______________________________________________________________________
 // Enumerating the IDs which appear in an AST
 
-#[derive(RustcEncodable, RustcDecodable, Show, Copy)]
+#[derive(RustcEncodable, RustcDecodable, Debug, Copy)]
 pub struct IdRange {
     pub min: NodeId,
     pub max: NodeId,
@@ -391,10 +405,10 @@ pub struct IdVisitor<'a, O:'a> {
 
 impl<'a, O: IdVisitingOperation> IdVisitor<'a, O> {
     fn visit_generics_helper(&mut self, generics: &Generics) {
-        for type_parameter in generics.ty_params.iter() {
+        for type_parameter in &*generics.ty_params {
             self.operation.visit_id(type_parameter.id)
         }
-        for lifetime in generics.lifetimes.iter() {
+        for lifetime in &generics.lifetimes {
             self.operation.visit_id(lifetime.lifetime.id)
         }
     }
@@ -430,14 +444,14 @@ impl<'a, 'v, O: IdVisitingOperation> Visitor<'v> for IdVisitor<'a, O> {
                     ViewPathSimple(_, _) |
                     ViewPathGlob(_) => {}
                     ViewPathList(_, ref paths) => {
-                        for path in paths.iter() {
+                        for path in paths {
                             self.operation.visit_id(path.node.id())
                         }
                     }
                 }
             }
             ItemEnum(ref enum_definition, _) => {
-                for variant in enum_definition.variants.iter() {
+                for variant in &enum_definition.variants {
                     self.operation.visit_id(variant.node.id)
                 }
             }
@@ -511,7 +525,7 @@ impl<'a, 'v, O: IdVisitingOperation> Visitor<'v> for IdVisitor<'a, O> {
             visit::FkFnBlock => {}
         }
 
-        for argument in function_declaration.inputs.iter() {
+        for argument in &function_declaration.inputs {
             self.operation.visit_id(argument.id)
         }
 
@@ -670,20 +684,13 @@ pub fn path_name_eq(a : &ast::Path, b : &ast::Path) -> bool {
 
 // are two arrays of segments equal when compared unhygienically?
 pub fn segments_name_eq(a : &[ast::PathSegment], b : &[ast::PathSegment]) -> bool {
-    if a.len() != b.len() {
-        false
-    } else {
-        for (idx,seg) in a.iter().enumerate() {
-            if seg.identifier.name != b[idx].identifier.name
-                // FIXME #7743: ident -> name problems in lifetime comparison?
-                // can types contain idents?
-                || seg.parameters != b[idx].parameters
-            {
-                return false;
-            }
-        }
-        true
-    }
+    a.len() == b.len() &&
+    a.iter().zip(b.iter()).all(|(s, t)| {
+        s.identifier.name == t.identifier.name &&
+        // FIXME #7743: ident -> name problems in lifetime comparison?
+        // can types contain idents?
+        s.parameters == t.parameters
+    })
 }
 
 /// Returns true if this literal is a string and false otherwise.

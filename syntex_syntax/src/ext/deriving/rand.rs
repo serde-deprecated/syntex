@@ -24,6 +24,10 @@ pub fn expand_deriving_rand<F>(cx: &mut ExtCtxt,
                                push: F) where
     F: FnOnce(P<Item>),
 {
+    cx.span_warn(span,
+                 "`#[derive(Rand)]` is deprecated in favour of `#[derive_Rand]` from \
+                  `rand_macros` on crates.io");
+
     let trait_def = TraitDef {
         span: span,
         attributes: Vec::new(),
@@ -49,7 +53,8 @@ pub fn expand_deriving_rand<F>(cx: &mut ExtCtxt,
                     rand_substructure(a, b, c)
                 })
             }
-        )
+        ),
+        associated_types: Vec::new(),
     };
     trait_def.expand(cx, mitem, item, push)
 }
@@ -65,7 +70,7 @@ fn rand_substructure(cx: &mut ExtCtxt, trait_span: Span, substr: &Substructure) 
         cx.ident_of("Rand"),
         cx.ident_of("rand")
     );
-    let mut rand_call = |&mut: cx: &mut ExtCtxt, span| {
+    let rand_call = |cx: &mut ExtCtxt, span| {
         cx.expr_call_global(span,
                             rand_ident.clone(),
                             vec!(rng.clone()))

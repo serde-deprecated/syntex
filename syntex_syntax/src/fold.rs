@@ -37,7 +37,7 @@ pub trait MoveMap<T> {
 
 impl<T> MoveMap<T> for Vec<T> {
     fn move_map<F>(mut self, mut f: F) -> Vec<T> where F: FnMut(T) -> T {
-        for p in self.iter_mut() {
+        for p in &mut self {
             unsafe {
                 // FIXME(#5016) this shouldn't need to zero to be safe.
                 ptr::write(p, f(ptr::read_and_zero(p)));
@@ -536,9 +536,10 @@ pub fn noop_fold_parenthesized_parameter_data<T: Folder>(data: ParenthesizedPara
                                                          fld: &mut T)
                                                          -> ParenthesizedParameterData
 {
-    let ParenthesizedParameterData { inputs, output } = data;
+    let ParenthesizedParameterData { inputs, output, span } = data;
     ParenthesizedParameterData { inputs: inputs.move_map(|ty| fld.fold_ty(ty)),
-                                 output: output.map(|ty| fld.fold_ty(ty)) }
+                                 output: output.map(|ty| fld.fold_ty(ty)),
+                                 span: fld.new_span(span) }
 }
 
 pub fn noop_fold_local<T: Folder>(l: P<Local>, fld: &mut T) -> P<Local> {
@@ -591,7 +592,7 @@ pub fn noop_fold_mac<T: Folder>(Spanned {node, span}: Mac, fld: &mut T) -> Mac {
     Spanned {
         node: match node {
             MacInvocTT(p, tts, ctxt) => {
-                MacInvocTT(fld.fold_path(p), fld.fold_tts(tts.as_slice()), ctxt)
+                MacInvocTT(fld.fold_path(p), fld.fold_tts(&tts), ctxt)
             }
         },
         span: fld.new_span(span)
@@ -628,7 +629,7 @@ pub fn noop_fold_tt<T: Folder>(tt: &TokenTree, fld: &mut T) -> TokenTree {
                             Delimited {
                                 delim: delimed.delim,
                                 open_span: delimed.open_span,
-                                tts: fld.fold_tts(delimed.tts.as_slice()),
+                                tts: fld.fold_tts(&delimed.tts),
                                 close_span: delimed.close_span,
                             }
                         ))
@@ -636,7 +637,7 @@ pub fn noop_fold_tt<T: Folder>(tt: &TokenTree, fld: &mut T) -> TokenTree {
         TtSequence(span, ref seq) =>
             TtSequence(span,
                        Rc::new(SequenceRepetition {
-                           tts: fld.fold_tts(seq.tts.as_slice()),
+                           tts: fld.fold_tts(&seq.tts),
                            separator: seq.separator.clone().map(|tok| fld.fold_token(tok)),
                            ..**seq
                        })),
@@ -1116,7 +1117,7 @@ pub fn noop_fold_crate<T: Folder>(Crate {module, attrs, config, mut exported_mac
         }, vec![], span)
     };
 
-    for def in exported_macros.iter_mut() {
+    for def in &mut exported_macros {
         def.id = folder.new_id(def.id);
     }
 
@@ -1324,9 +1325,8 @@ pub fn noop_fold_expr<T: Folder>(Expr {id, node, span}: Expr, folder: &mut T) ->
                         arms.move_map(|x| folder.fold_arm(x)),
                         source)
             }
-            ExprClosure(capture_clause, opt_kind, decl, body) => {
+            ExprClosure(capture_clause, decl, body) => {
                 ExprClosure(capture_clause,
-                            opt_kind,
                             folder.fold_fn_decl(decl),
                             folder.fold_block(body))
             }
@@ -1430,7 +1430,7 @@ pub fn noop_fold_stmt<T: Folder>(Spanned {node, span}: Stmt, folder: &mut T)
 
 #[cfg(test)]
 mod test {
-    use std::io;
+    use std::old_io;
     use ast;
     use util::parser_testing::{string_to_crate, matches_codepattern};
     use parse::token;
@@ -1440,8 +1440,8 @@ mod test {
 
     // this version doesn't care about getting comments or docstrings in.
     fn fake_print_crate(s: &mut pprust::State,
-                        krate: &ast::Crate) -> io::IoResult<()> {
-        s.print_mod(&krate.module, krate.attrs.as_slice())
+                        krate: &ast::Crate) -> old_io::IoResult<()> {
+        s.print_mod(&krate.module, &krate.attrs)
     }
 
     // change every identifier to "zz"
@@ -1463,7 +1463,7 @@ mod test {
                 let pred_val = $pred;
                 let a_val = $a;
                 let b_val = $b;
-                if !(pred_val(a_val.as_slice(),b_val.as_slice())) {
+                if !(pred_val(&a_val, &b_val)) {
                     panic!("expected args satisfying {}, got {} and {}",
                           $predname, a_val, b_val);
                 }

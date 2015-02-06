@@ -44,7 +44,8 @@ pub fn expand_deriving_clone<F>(cx: &mut ExtCtxt,
                     cs_clone("Clone", c, s, sub)
                 }),
             }
-        )
+        ),
+        associated_types: Vec::new(),
     };
 
     trait_def.expand(cx, mitem, item, push)
@@ -62,7 +63,7 @@ fn cs_clone(
         cx.ident_of("Clone"),
         cx.ident_of("clone"),
     ];
-    let subcall = |&: field: &FieldInfo| {
+    let subcall = |field: &FieldInfo| {
         let args = vec![cx.expr_addr_of(field.span, field.self_.clone())];
 
         cx.expr_call_global(field.span, fn_path.clone(), args)

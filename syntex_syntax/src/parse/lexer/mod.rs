@@ -52,7 +52,7 @@ pub trait Reader {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Show)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TokenAndSpan {
     pub tok: token::Token,
     pub sp: Span,
@@ -279,7 +279,7 @@ impl<'a> StringReader<'a> {
     /// Converts CRLF to LF in the given string, raising an error on bare CR.
     fn translate_crlf<'b>(&self, start: BytePos,
                           s: &'b str, errmsg: &'b str) -> CowString<'b> {
-        let mut i = 0us;
+        let mut i = 0;
         while i < s.len() {
             let str::CharRange { ch, next } = s.char_range_at(i);
             if ch == '\r' {
@@ -331,10 +331,10 @@ impl<'a> StringReader<'a> {
             let byte_offset_diff = next.next - current_byte_offset;
             self.pos = self.pos + Pos::from_usize(byte_offset_diff);
             self.curr = Some(next.ch);
-            self.col = self.col + CharPos(1us);
+            self.col = self.col + CharPos(1);
             if last_char == '\n' {
                 self.filemap.next_line(self.last_pos);
-                self.col = CharPos(0us);
+                self.col = CharPos(0);
             }
 
             if byte_offset_diff > 1 {
@@ -360,7 +360,7 @@ impl<'a> StringReader<'a> {
 
     pub fn nextnextch(&self) -> Option<char> {
         let offset = self.byte_offset(self.pos).to_usize();
-        let s = self.filemap.src.as_slice();
+        let s = &*self.filemap.src;
         if offset >= s.len() { return None }
         let str::CharRange { next, .. } = s.char_range_at(offset);
         if next < s.len() {
@@ -472,7 +472,7 @@ impl<'a> StringReader<'a> {
                 cmap.files.borrow_mut().push(self.filemap.clone());
                 let loc = cmap.lookup_char_pos_adj(self.last_pos);
                 debug!("Skipping a shebang");
-                if loc.line == 1us && loc.col == CharPos(0us) {
+                if loc.line == 1 && loc.col == CharPos(0) {
                     // FIXME: Add shebang "token", return it
                     let start = self.last_pos;
                     while !self.curr_is('\n') && !self.is_eof() { self.bump(); }
@@ -613,7 +613,7 @@ impl<'a> StringReader<'a> {
         // find the integer representing the name
         self.scan_digits(base);
         let encoded_name : u32 = self.with_str_from(start_bpos, |s| {
-            num::from_str_radix(s, 10).unwrap_or_else(|| {
+            num::from_str_radix(s, 10).ok().unwrap_or_else(|| {
                 panic!("expected digits representing a name, got {:?}, {}, range [{:?},{:?}]",
                       s, whence, start_bpos, self.last_pos);
             })
@@ -631,7 +631,7 @@ impl<'a> StringReader<'a> {
         let start_bpos = self.last_pos;
         self.scan_digits(base);
         let encoded_ctxt : ast::SyntaxContext = self.with_str_from(start_bpos, |s| {
-            num::from_str_radix(s, 10).unwrap_or_else(|| {
+            num::from_str_radix(s, 10).ok().unwrap_or_else(|| {
                 panic!("expected digits representing a ctxt, got {:?}, {}", s, whence);
             })
         });
@@ -646,7 +646,7 @@ impl<'a> StringReader<'a> {
     /// Scan through any digits (base `radix`) or underscores, and return how
     /// many digits there were.
     fn scan_digits(&mut self, radix: usize) -> usize {
-        let mut len = 0us;
+        let mut len = 0;
         loop {
             let c = self.curr;
             if c == Some('_') { debug!("skipping a _"); self.bump(); continue; }
@@ -732,7 +732,7 @@ impl<'a> StringReader<'a> {
         let start_bpos = self.last_pos;
         let mut accum_int = 0;
 
-        for _ in range(0, n_digits) {
+        for _ in 0..n_digits {
             if self.is_eof() {
                 let last_bpos = self.last_pos;
                 self.fatal_span_(start_bpos, last_bpos, "unterminated numeric character escape");
@@ -799,14 +799,14 @@ impl<'a> StringReader<'a> {
                                 if self.curr == Some('{') {
                                     self.scan_unicode_escape(delim)
                                 } else {
-                                    let res = self.scan_hex_digits(4us, delim, false);
+                                    let res = self.scan_hex_digits(4, delim, false);
                                     let sp = codemap::mk_sp(escaped_pos, self.last_pos);
                                     self.old_escape_warning(sp);
                                     res
                                 }
                             }
                             'U' if !ascii_only => {
-                                let res = self.scan_hex_digits(8us, delim, false);
+                                let res = self.scan_hex_digits(8, delim, false);
                                 let sp = codemap::mk_sp(escaped_pos, self.last_pos);
                                 self.old_escape_warning(sp);
                                 res
@@ -877,7 +877,7 @@ impl<'a> StringReader<'a> {
     fn scan_unicode_escape(&mut self, delim: char) -> bool {
         self.bump(); // past the {
         let start_bpos = self.last_pos;
-        let mut count = 0us;
+        let mut count = 0;
         let mut accum_int = 0;
 
         while !self.curr_is('}') && count <= 6 {
@@ -937,10 +937,10 @@ impl<'a> StringReader<'a> {
     /// error if it isn't.
     fn check_float_base(&mut self, start_bpos: BytePos, last_bpos: BytePos, base: usize) {
         match base {
-            16us => self.err_span_(start_bpos, last_bpos, "hexadecimal float literal is not \
+            16 => self.err_span_(start_bpos, last_bpos, "hexadecimal float literal is not \
                                    supported"),
-            8us => self.err_span_(start_bpos, last_bpos, "octal float literal is not supported"),
-            2us => self.err_span_(start_bpos, last_bpos, "binary float literal is not supported"),
+            8 => self.err_span_(start_bpos, last_bpos, "octal float literal is not supported"),
+            2 => self.err_span_(start_bpos, last_bpos, "binary float literal is not supported"),
             _   => ()
         }
     }
@@ -1189,7 +1189,7 @@ impl<'a> StringReader<'a> {
           'r' => {
             let start_bpos = self.last_pos;
             self.bump();
-            let mut hash_count = 0us;
+            let mut hash_count = 0;
             while self.curr_is('#') {
                 self.bump();
                 hash_count += 1;
@@ -1217,7 +1217,7 @@ impl<'a> StringReader<'a> {
                 }
                 //if self.curr_is('"') {
                     //content_end_bpos = self.last_pos;
-                    //for _ in range(0, hash_count) {
+                    //for _ in 0..hash_count {
                         //self.bump();
                         //if !self.curr_is('#') {
                             //continue 'outer;
@@ -1225,7 +1225,7 @@ impl<'a> StringReader<'a> {
                 match c {
                     '"' => {
                         content_end_bpos = self.last_pos;
-                        for _ in range(0, hash_count) {
+                        for _ in 0..hash_count {
                             self.bump();
                             if !self.curr_is('#') {
                                 continue 'outer;
@@ -1374,7 +1374,7 @@ impl<'a> StringReader<'a> {
     fn scan_raw_byte_string(&mut self) -> token::Lit {
         let start_bpos = self.last_pos;
         self.bump();
-        let mut hash_count = 0us;
+        let mut hash_count = 0;
         while self.curr_is('#') {
             self.bump();
             hash_count += 1;
@@ -1402,7 +1402,7 @@ impl<'a> StringReader<'a> {
                 },
                 Some('"') => {
                     content_end_bpos = self.last_pos;
-                    for _ in range(0, hash_count) {
+                    for _ in 0..hash_count {
                         self.bump();
                         if !self.curr_is('#') {
                             continue 'outer;
@@ -1482,11 +1482,11 @@ mod test {
     use diagnostic;
     use parse::token;
     use parse::token::{str_to_ident};
-    use std::io::util;
+    use std::old_io::util;
 
     fn mk_sh() -> diagnostic::SpanHandler {
         let emitter = diagnostic::EmitterWriter::new(box util::NullWriter, None);
-        let handler = diagnostic::mk_handler(box emitter);
+        let handler = diagnostic::mk_handler(true, box emitter);
         diagnostic::mk_span_handler(handler, CodeMap::new())
     }
 
@@ -1526,7 +1526,7 @@ mod test {
     // check that the given reader produces the desired stream
     // of tokens (stop checking after exhausting the expected vec)
     fn check_tokenization (mut string_reader: StringReader, expected: Vec<token::Token> ) {
-        for expected_tok in expected.iter() {
+        for expected_tok in &expected {
             assert_eq!(&string_reader.next_token().tok, expected_tok);
         }
     }
