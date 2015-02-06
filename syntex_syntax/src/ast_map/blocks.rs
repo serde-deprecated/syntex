@@ -179,13 +179,13 @@ impl<'a> FnLikeNode<'a> {
     }
 
     pub fn kind(self) -> visit::FnKind<'a> {
-        let item = |: p: ItemFnParts<'a>| -> visit::FnKind<'a> {
+        let item = |p: ItemFnParts<'a>| -> visit::FnKind<'a> {
             visit::FkItemFn(p.ident, p.generics, p.unsafety, p.abi)
         };
-        let closure = |: _: ClosureParts| {
+        let closure = |_: ClosureParts| {
             visit::FkFnBlock
         };
-        let method = |: m: &'a ast::Method| {
+        let method = |m: &'a ast::Method| {
             visit::FkMethod(m.pe_ident(), m.pe_generics(), m)
         };
         self.handle(item, method, closure)
@@ -218,7 +218,7 @@ impl<'a> FnLikeNode<'a> {
                 }
             }
             ast_map::NodeExpr(e) => match e.node {
-                ast::ExprClosure(_, _, ref decl, ref block) =>
+                ast::ExprClosure(_, ref decl, ref block) =>
                     closure(ClosureParts::new(&**decl, &**block, e.id, e.span)),
                 _ => panic!("expr FnLikeNode that is not fn-like"),
             },

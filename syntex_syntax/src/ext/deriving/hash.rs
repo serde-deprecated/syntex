@@ -54,7 +54,8 @@ pub fn expand_deriving_hash<F>(cx: &mut ExtCtxt,
                     hash_substructure(a, b, c)
                 })
             }
-        )
+        ),
+        associated_types: Vec::new(),
     };
 
     hash_trait_def.expand(cx, mitem, item, push);
@@ -65,7 +66,7 @@ fn hash_substructure(cx: &mut ExtCtxt, trait_span: Span, substr: &Substructure) 
         [ref state_expr] => state_expr,
         _ => cx.span_bug(trait_span, "incorrect number of arguments in `derive(Hash)`")
     };
-    let call_hash = |&: span, thing_expr| {
+    let call_hash = |span, thing_expr| {
         let hash_path = {
             let strs = vec![
                 cx.ident_of("std"),
@@ -99,7 +100,7 @@ fn hash_substructure(cx: &mut ExtCtxt, trait_span: Span, substr: &Substructure) 
         _ => cx.span_bug(trait_span, "impossible substructure in `derive(Hash)`")
     };
 
-    for &FieldInfo { ref self_, span, .. } in fields.iter() {
+    for &FieldInfo { ref self_, span, .. } in fields {
         stmts.push(call_hash(span, self_.clone()));
     }
 

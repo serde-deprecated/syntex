@@ -73,7 +73,7 @@ impl<F> ItemModifier for F
     }
 }
 
-#[derive(Show,Clone)]
+#[derive(Debug,Clone)]
 pub enum Annotatable {
     Item(P<ast::Item>),
     TraitItem(ast::TraitItem),
@@ -467,6 +467,8 @@ fn initial_syntax_expander_table(ecfg: &expand::ExpansionConfig) -> SyntaxEnv {
                                     ext::log_syntax::expand_syntax_ext));
     syntax_expanders.insert(intern("derive"),
                             Decorator(box ext::deriving::expand_meta_derive));
+    syntax_expanders.insert(intern("deriving"),
+                            Decorator(box ext::deriving::expand_deprecated_deriving));
 
     if ecfg.enable_quotes {
         // Quasi-quoting expanders
@@ -568,7 +570,9 @@ impl<'a> ExtCtxt<'a> {
         }
     }
 
-    #[deprecated = "Replaced with `expander().fold_expr()`"]
+    #[unstable(feature = "rustc_private")]
+    #[deprecated(since = "1.0.0",
+                 reason = "Replaced with `expander().fold_expr()`")]
     pub fn expand_expr(&mut self, e: P<ast::Expr>) -> P<ast::Expr> {
         self.expander().fold_expr(e)
     }

@@ -25,14 +25,14 @@ use visit::{self, Visitor};
 use arena::TypedArena;
 use std::cell::RefCell;
 use std::fmt;
-use std::io::IoResult;
+use std::old_io::IoResult;
 use std::iter::{self, repeat};
 use std::mem;
 use std::slice;
 
 pub mod blocks;
 
-#[derive(Clone, Copy, PartialEq, Show)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum PathElem {
     PathMod(Name),
     PathName(Name)
@@ -75,21 +75,8 @@ impl<'a> Iterator for LinkedPath<'a> {
     }
 }
 
-// HACK(eddyb) move this into libstd (value wrapper for slice::Iter).
-#[derive(Clone)]
-pub struct Values<'a, T:'a>(pub slice::Iter<'a, T>);
-
-impl<'a, T: Copy> Iterator for Values<'a, T> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<T> {
-        let &mut Values(ref mut items) = self;
-        items.next().map(|&x| x)
-    }
-}
-
 /// The type of the iterator used by with_path.
-pub type PathElems<'a, 'b> = iter::Chain<Values<'a, PathElem>, LinkedPath<'b>>;
+pub type PathElems<'a, 'b> = iter::Chain<iter::Cloned<slice::Iter<'a, PathElem>>, LinkedPath<'b>>;
 
 pub fn path_to_string<PI: Iterator<Item=PathElem>>(path: PI) -> String {
     let itr = token::get_ident_interner();
@@ -101,10 +88,10 @@ pub fn path_to_string<PI: Iterator<Item=PathElem>>(path: PI) -> String {
         }
         s.push_str(&e[]);
         s
-    }).to_string()
+    })
 }
 
-#[derive(Copy, Show)]
+#[derive(Copy, Debug)]
 pub enum Node<'ast> {
     NodeItem(&'ast Item),
     NodeForeignItem(&'ast ForeignItem),
@@ -126,7 +113,7 @@ pub enum Node<'ast> {
 
 /// Represents an entry and its parent Node ID
 /// The odd layout is to bring down the total size.
-#[derive(Copy, Show)]
+#[derive(Copy, Debug)]
 enum MapEntry<'ast> {
     /// Placeholder for holes in the map.
     NotPresent,
@@ -157,7 +144,7 @@ impl<'ast> Clone for MapEntry<'ast> {
     }
 }
 
-#[derive(Show)]
+#[derive(Debug)]
 struct InlinedParent {
     path: Vec<PathElem>,
     ii: InlinedItem
@@ -458,9 +445,9 @@ impl<'ast> Map<'ast> {
         if parent == id {
             match self.find_entry(id) {
                 Some(RootInlinedParent(data)) => {
-                    f(Values(data.path.iter()).chain(next))
+                    f(data.path.iter().cloned().chain(next))
                 }
-                _ => f(Values([].iter()).chain(next))
+                _ => f([].iter().cloned().chain(next))
             }
         } else {
             self.with_path_next(parent, Some(&LinkedPathNode {
@@ -743,7 +730,7 @@ impl<'ast> NodeCollector<'ast> {
     }
 
     fn visit_fn_decl(&mut self, decl: &'ast FnDecl) {
-        for a in decl.inputs.iter() {
+        for a in &decl.inputs {
             self.insert(a.id, NodeArg(&*a.pat));
         }
     }
@@ -756,7 +743,7 @@ impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
         self.parent = i.id;
         match i.node {
             ItemImpl(_, _, _, _, _, ref impl_items) => {
-                for impl_item in impl_items.iter() {
+                for impl_item in impl_items {
                     match *impl_item {
                         MethodImplItem(ref m) => {
                             self.insert(m.id, NodeImplItem(impl_item));
@@ -768,12 +755,12 @@ impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
                 }
             }
             ItemEnum(ref enum_definition, _) => {
-                for v in enum_definition.variants.iter() {
+                for v in &enum_definition.variants {
                     self.insert(v.node.id, NodeVariant(&**v));
                 }
             }
             ItemForeignMod(ref nm) => {
-                for nitem in nm.items.iter() {
+                for nitem in &nm.items {
                     self.insert(nitem.id, NodeForeignItem(&**nitem));
                 }
             }
@@ -787,13 +774,13 @@ impl<'ast> Visitor<'ast> for NodeCollector<'ast> {
                 }
             }
             ItemTrait(_, _, ref bounds, ref trait_items) => {
-                for b in bounds.iter() {
+                for b in &**bounds {
                     if let TraitTyParamBound(ref t, TraitBoundModifier::None) = *b {
                         self.insert(t.trait_ref.ref_id, NodeItem(i));
                     }
                 }
 
-                for tm in trait_items.iter() {
+                for tm in trait_items {
                     match *tm {
                         RequiredMethod(ref m) => {
                             self.insert(m.id, NodeTraitItem(tm));

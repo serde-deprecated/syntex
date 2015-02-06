@@ -9,10 +9,11 @@
 // except according to those terms.
 
 #![crate_name = "rustc_bitflags"]
-#![unstable]
+#![feature(staged_api)]
 #![staged_api]
 #![crate_type = "rlib"]
 #![no_std]
+#![unstable(feature = "rustc_private")]
 
 //! A typesafe bitmask flag generator.
 
@@ -71,7 +72,7 @@
 ///     }
 /// }
 ///
-/// impl fmt::Show for Flags {
+/// impl fmt::Debug for Flags {
 ///     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 ///         write!(f, "hi!")
 ///     }

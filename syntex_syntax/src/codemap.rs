@@ -36,13 +36,13 @@ pub trait Pos {
 
 /// A byte offset. Keep this small (currently 32-bits), as AST contains
 /// a lot of them.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Show)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Debug)]
 pub struct BytePos(pub u32);
 
 /// A character offset. Because of multibyte utf8 characters, a byte offset
 /// is not equivalent to a character offset. The CodeMap will convert BytePos
 /// values to CharPos values as necessary.
-#[derive(Copy, PartialEq, Hash, PartialOrd, Show)]
+#[derive(Copy, PartialEq, Hash, PartialOrd, Debug)]
 pub struct CharPos(pub usize);
 
 // FIXME: Lots of boilerplate in these impls, but so far my attempts to fix
@@ -94,7 +94,7 @@ impl Sub for CharPos {
 /// are *absolute* positions from the beginning of the codemap, not positions
 /// relative to FileMaps. Methods on the CodeMap can be used to relate spans back
 /// to the original source.
-#[derive(Clone, Copy, Show, Hash)]
+#[derive(Clone, Copy, Debug, Hash)]
 pub struct Span {
     pub lo: BytePos,
     pub hi: BytePos,
@@ -110,7 +110,7 @@ pub const COMMAND_LINE_SP: Span = Span { lo: BytePos(0),
                                          hi: BytePos(0),
                                          expn_id: COMMAND_LINE_EXPN };
 
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Show, Copy)]
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
 pub struct Spanned<T> {
     pub node: T,
     pub span: Span,
@@ -193,7 +193,7 @@ pub struct FileMapAndLine { pub fm: Rc<FileMap>, pub line: usize }
 pub struct FileMapAndBytePos { pub fm: Rc<FileMap>, pub pos: BytePos }
 
 /// The syntax with which a macro was invoked.
-#[derive(Clone, Copy, Hash, Show)]
+#[derive(Clone, Copy, Hash, Debug)]
 pub enum MacroFormat {
     /// e.g. #[derive(...)] <item>
     MacroAttribute,
@@ -201,7 +201,7 @@ pub enum MacroFormat {
     MacroBang
 }
 
-#[derive(Clone, Hash, Show)]
+#[derive(Clone, Hash, Debug)]
 pub struct NameAndSpan {
     /// The name of the macro that was invoked to create the thing
     /// with this Span.
@@ -215,7 +215,7 @@ pub struct NameAndSpan {
 }
 
 /// Extra information for tracking macro expansion of spans
-#[derive(Hash, Show)]
+#[derive(Hash, Debug)]
 pub struct ExpnInfo {
     /// The location of the actual macro invocation, e.g. `let x =
     /// foo!();`
@@ -236,7 +236,7 @@ pub struct ExpnInfo {
     pub callee: NameAndSpan
 }
 
-#[derive(PartialEq, Eq, Clone, Show, Hash, RustcEncodable, RustcDecodable, Copy)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash, RustcEncodable, RustcDecodable, Copy)]
 pub struct ExpnId(u32);
 
 pub const NO_EXPANSION: ExpnId = ExpnId(-1);
@@ -364,9 +364,10 @@ impl CodeMap {
         };
 
         // Append '\n' in case it's not already there.
-        // This is a workaround to prevent CodeMap.lookup_filemap_idx from accidentally
-        // overflowing into the next filemap in case the last byte of span is also the last
-        // byte of filemap, which leads to incorrect results from CodeMap.span_to_*.
+        // This is a workaround to prevent CodeMap.lookup_filemap_idx from
+        // accidentally overflowing into the next filemap in case the last byte
+        // of span is also the last byte of filemap, which leads to incorrect
+        // results from CodeMap.span_to_*.
         if src.len() > 0 && !src.ends_with("\n") {
             src.push('\n');
         }
@@ -430,7 +431,7 @@ impl CodeMap {
         let lo = self.lookup_char_pos(sp.lo);
         let hi = self.lookup_char_pos(sp.hi);
         let mut lines = Vec::new();
-        for i in range(lo.line - 1us, hi.line as usize) {
+        for i in lo.line - 1..hi.line as usize {
             lines.push(i);
         };
         FileLines {file: lo.file, lines: lines}
@@ -452,7 +453,7 @@ impl CodeMap {
     }
 
     pub fn get_filemap(&self, filename: &str) -> Rc<FileMap> {
-        for fm in self.files.borrow().iter() {
+        for fm in &*self.files.borrow() {
             if filename == fm.name {
                 return fm.clone();
             }
@@ -476,7 +477,7 @@ impl CodeMap {
         // The number of extra bytes due to multibyte chars in the FileMap
         let mut total_extra_bytes = 0;
 
-        for mbc in map.multibyte_chars.borrow().iter() {
+        for mbc in &*map.multibyte_chars.borrow() {
             debug!("{}-byte char at {:?}", mbc.bytes, mbc.pos);
             if mbc.pos < bpos {
                 // every character is at least one byte, so we only
@@ -498,10 +499,10 @@ impl CodeMap {
         let files = self.files.borrow();
         let files = &*files;
         let len = files.len();
-        let mut a = 0us;
+        let mut a = 0;
         let mut b = len;
-        while b - a > 1us {
-            let m = (a + b) / 2us;
+        while b - a > 1 {
+            let m = (a + b) / 2;
             if files[m].start_pos > pos {
                 b = m;
             } else {
@@ -537,12 +538,12 @@ impl CodeMap {
 
         let files = self.files.borrow();
         let f = (*files)[idx].clone();
-        let mut a = 0us;
+        let mut a = 0;
         {
             let lines = f.lines.borrow();
             let mut b = lines.len();
-            while b - a > 1us {
-                let m = (a + b) / 2us;
+            while b - a > 1 {
+                let m = (a + b) / 2;
                 if (*lines)[m] > pos { b = m; } else { a = m; }
             }
         }
@@ -551,7 +552,7 @@ impl CodeMap {
 
     fn lookup_pos(&self, pos: BytePos) -> Loc {
         let FileMapAndLine {fm: f, line: a} = self.lookup_line(pos);
-        let line = a + 1us; // Line numbers start at 1
+        let line = a + 1; // Line numbers start at 1
         let chpos = self.bytepos_to_file_charpos(pos);
         let linebpos = (*f.lines.borrow())[a];
         let linechpos = self.bytepos_to_file_charpos(linebpos);
@@ -762,7 +763,7 @@ mod test {
 
         assert_eq!(file_lines.file.name, "blork.rs");
         assert_eq!(file_lines.lines.len(), 1);
-        assert_eq!(file_lines.lines[0], 1us);
+        assert_eq!(file_lines.lines[0], 1);
     }
 
     #[test]
