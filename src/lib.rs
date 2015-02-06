@@ -1,10 +1,12 @@
+#![feature(io)]
+
 extern crate "syntex_syntax" as syntax;
 
 use syntax::ast::Name;
 use syntax::ext::base::SyntaxExtension;
 use syntax::parse::token;
 
-use std::io::{File, IoResult};
+use std::old_io::{File, IoResult};
 
 pub fn expand_str(
     crate_name: &str,
