@@ -61,19 +61,20 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
         // expr_mac should really be expr_ext or something; it's the
         // entry-point for all syntax extensions.
         ast::ExprMac(mac) => {
-            let expanded_expr = match expand_mac_invoc(mac, span,
+            let expanded_expr = match expand_mac_invoc(mac.clone(), span,
                                                        |r| r.make_expr(),
                                                        mark_expr, fld) {
                 Some(expr) => expr,
                 None => {
-                    return DummyResult::raw_expr(span);
+                    P(ast::Expr {
+                        id: id,
+                        node: ast::ExprMac(mac),
+                        span: span,
+                    })
                 }
             };
 
-            // Keep going, outside-in.
-            //
-            let fully_expanded = fld.fold_expr(expanded_expr);
-            fld.cx.bt_pop();
+            let fully_expanded = expanded_expr;
 
             fully_expanded.map(|e| ast::Expr {
                 id: ast::DUMMY_NODE_ID,
@@ -372,11 +373,6 @@ fn expand_mac_invoc<T, F, G>(mac: ast::Mac, span: codemap::Span,
             let extnamestr = token::get_ident(extname);
             match fld.cx.syntax_env.find(&extname.name) {
                 None => {
-                    fld.cx.span_err(
-                        pth.span,
-                        &format!("macro undefined: '{}!'",
-                                extnamestr.get())[]);
-
                     // let compilation continue
                     None
                 }
@@ -1398,6 +1394,7 @@ pub struct ExpansionConfig {
     pub crate_name: String,
     pub enable_quotes: bool,
     pub recursion_limit: usize,
+    pub ignore_unknown_macros: bool,
 }
 
 impl ExpansionConfig {
@@ -1406,6 +1403,7 @@ impl ExpansionConfig {
             crate_name: crate_name,
             enable_quotes: false,
             recursion_limit: 64,
+            ignore_unknown_macros: false,
         }
     }
 }
