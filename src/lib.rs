@@ -1,66 +1,72 @@
-#![feature(io)]
-
-extern crate "syntex_syntax" as syntax;
-
-use syntax::ast::Name;
-use syntax::ext::base::SyntaxExtension;
-use syntax::parse::token;
+extern crate syntex_syntax;
 
 use std::old_io::{File, IoResult};
 
-pub fn expand_str(
-    crate_name: &str,
-    body: String,
-    syntax_exts: Vec<(&str, SyntaxExtension)>,
-) -> String {
-    let sess = syntax::parse::new_parse_sess();
-    let cfg = vec![];
+use syntex_syntax::ast::{MacroDef, Name};
+use syntex_syntax::config;
+use syntex_syntax::ext::base::{SyntaxExtension, TTMacroExpander};
+use syntex_syntax::ext::expand;
+use syntex_syntax::parse::{self, token};
+use syntex_syntax::print::{pp, pprust};
 
-    let crate_name = crate_name.to_string();
-
-    let krate = syntax::parse::parse_crate_from_source_str(
-        crate_name.clone(),
-        body,
-        cfg,
-        &sess);
-
-    let krate = syntax::config::strip_unconfigured_items(&sess.span_diagnostic, krate);
-
-    let cfg = syntax::ext::expand::ExpansionConfig {
-        crate_name: crate_name.to_string(),
-        enable_quotes: true,
-        recursion_limit: 64,
-    };
-
-    let macros = vec![];
-    let syntax_exts: Vec<(Name, SyntaxExtension)> = syntax_exts.into_iter()
-        .map(|(name, ext)| (token::intern(name), ext))
-        .collect();
-
-    let krate = syntax::ext::expand::expand_crate(&sess,
-                                                  cfg,
-                                                  macros,
-                                                  syntax_exts,
-                                                  krate);
-
-    syntax::print::pprust::to_string(|s| {
-        try!(s.print_mod(&krate.module, krate.attrs.as_slice()));
-        try!(s.print_remaining_comments());
-        syntax::print::pp::eof(&mut s.s)
-    })
+pub struct Registry {
+    macros: Vec<MacroDef>,
+    syntax_exts: Vec<(Name, SyntaxExtension)>,
 }
 
-pub fn expand_file(
-    src: Path,
-    dst: Path,
-    crate_name: &str,
-    syntax_exts: Vec<(&str, SyntaxExtension)>,
-) -> IoResult<()> {
-    let mut src = try!(File::open(&src));
-    let src = String::from_utf8(try!(src.read_to_end())).unwrap();
+impl Registry {
+    pub fn new() -> Registry {
+        Registry {
+            macros: Vec::new(),
+            syntax_exts: Vec::new(),
+        }
+    }
 
-    let output = expand_str(crate_name, src, syntax_exts);
+    pub fn with_standard_macros() -> Registry {
+        let registry = Registry::new();
+        registry
+    }
 
-    let mut dst = try!(File::create(&dst));
-    dst.write_str(&output[])
+    pub fn register_fn<F>(&mut self, name: &str, extension: F)
+        where F: TTMacroExpander + 'static
+    {
+        let name = token::intern(name);
+        let syntax_extension = SyntaxExtension::NormalTT(Box::new(extension), None);
+        self.syntax_exts.push((name, syntax_extension));
+    }
+
+    pub fn expand(self, crate_name: &str, src: &Path, dst: &Path) -> IoResult<()> {
+        let sess = parse::new_parse_sess();
+        let cfg = vec![];
+
+        let krate = parse::parse_crate_from_file(
+            src,
+            cfg,
+            &sess);
+
+        let krate = config::strip_unconfigured_items(
+            &sess.span_diagnostic,
+            krate);
+
+        let cfg = expand::ExpansionConfig {
+            crate_name: crate_name.to_string(),
+            enable_quotes: true,
+            recursion_limit: 64,
+            ignore_unknown_macros: true,
+        };
+
+        let krate = expand::expand_crate(
+            &sess,
+            cfg,
+            self.macros,
+            self.syntax_exts,
+            krate);
+
+        let dst = try!(File::create(dst));
+
+        let mut printer = pprust::rust_printer(Box::new(dst));
+        try!(printer.print_mod(&krate.module, krate.attrs.as_slice()));
+        try!(printer.print_remaining_comments());
+        pp::eof(&mut printer.s)
+    }
 }

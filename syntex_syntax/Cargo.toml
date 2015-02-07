@@ -1,10 +1,13 @@
 [package]
 name = "syntex_syntax"
-version = "0.1.0"
+version = "0.2.0"
 authors = [ "erick.tryzelaar@gmail.com" ]
 license = "MIT/Apache-2.0"
 description = "Export of libsyntax for code generation"
 repository = "https://github.com/erickt/rust-syntex"
 
 [dependencies]
-syntex_bitflags="0.1.0"
+syntex_bitflags="*"
+
+#[dependencies.syntex_bitflags]
+#path = "../syntex_bitflags"

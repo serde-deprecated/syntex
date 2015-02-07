@@ -7,14 +7,11 @@ use syntax::ext::base::SyntaxExtension;
 use std::os;
 
 fn main() {
-    syntex::expand_file(
-        Path::new("src/hello_world.rs.syntex"),
-        Path::new(os::getenv("OUT_DIR").unwrap()).join("hello_world.rs"),
+    let mut registry = syntex::Registry::new();
+    hello_world_macros::register(&mut registry);
+
+    registry.expand(
         "hello_world",
-        vec![
-            (
-                "my_syntax",
-                SyntaxExtension::NormalTT(Box::new(hello_world_macros::expand_my_syntax), None),
-            )
-        ]).unwrap();
+        &Path::new("src/main.rss"),
+        &Path::new(os::getenv("OUT_DIR").unwrap()).join("main.rs"));
 }

@@ -1,15 +1,24 @@
-extern crate "syntex_syntax" as syntax;
+extern crate syntex;
+extern crate syntex_syntax;
 
-use syntax::ext::base::TTMacroExpander;
+use syntex::Registry;
 
-pub fn expand_my_syntax<'cx>(
-    cx: &'cx mut syntax::ext::base::ExtCtxt,
-    sp: syntax::codemap::Span,
-    tts: &[syntax::ast::TokenTree]
-) -> Box<syntax::ext::base::MacResult + 'cx> {
-    use syntax::ext::build::AstBuilder;
+use syntex_syntax::ast::TokenTree;
+use syntex_syntax::codemap::Span;
+use syntex_syntax::ext::base::{ExtCtxt, MacExpr, MacResult, TTMacroExpander};
+use syntex_syntax::ext::build::AstBuilder;
+use syntex_syntax::parse::token::InternedString;
 
-    let expr = cx.expr_u8(sp, 5);
+pub fn expand_hello_world<'cx>(
+    cx: &'cx mut ExtCtxt,
+    sp: Span,
+    tts: &[TokenTree]
+) -> Box<MacResult + 'cx> {
+    let expr = cx.expr_str(sp, InternedString::new("hello world"));
 
-    syntax::ext::base::MacExpr::new(expr)
+    MacExpr::new(expr)
+}
+
+pub fn register(registry: &mut Registry) {
+    registry.register_fn("hello_world", expand_hello_world);
 }

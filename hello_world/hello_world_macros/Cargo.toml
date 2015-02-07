@@ -1,7 +1,10 @@
 [package]
 name = "hello_world_macros"
-version = "0.1.0"
+version = "0.2.0"
 authors = [ "erick.tryzelaar@gmail.com" ]
+
+[dependencies.syntex]
+path = "../.."
 
 [dependencies.syntex_syntax]
 path = "../../syntex_syntax"
