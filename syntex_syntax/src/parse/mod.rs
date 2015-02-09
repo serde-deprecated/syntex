@@ -560,7 +560,7 @@ fn filtered_float_lit(data: token::InternedString, suffix: Option<&str>,
 }
 pub fn float_lit(s: &str, suffix: Option<&str>, sd: &SpanHandler, sp: Span) -> ast::Lit_ {
     debug!("float_lit: {:?}, {:?}", s, suffix);
-    // FIXME #2252: bounds checking float literals is defered until trans
+    // FIXME #2252: bounds checking float literals is deferred until trans
     let s = s.chars().filter(|&c| c != '_').collect::<String>();
     let data = token::intern_and_get_ident(&*s);
     filtered_float_lit(data, suffix, sd, sp)
@@ -1201,19 +1201,19 @@ mod test {
         let source = "/// doc comment\r\nfn foo() {}".to_string();
         let item = parse_item_from_source_str(name.clone(), source, Vec::new(), &sess).unwrap();
         let doc = first_attr_value_str_by_name(&item.attrs, "doc").unwrap();
-        assert_eq!(doc.get(), "/// doc comment");
+        assert_eq!(&doc[], "/// doc comment");
 
         let source = "/// doc comment\r\n/// line 2\r\nfn foo() {}".to_string();
         let item = parse_item_from_source_str(name.clone(), source, Vec::new(), &sess).unwrap();
-        let docs = item.attrs.iter().filter(|a| a.name().get() == "doc")
-                    .map(|a| a.value_str().unwrap().get().to_string()).collect::<Vec<_>>();
+        let docs = item.attrs.iter().filter(|a| &a.name()[] == "doc")
+                    .map(|a| a.value_str().unwrap().to_string()).collect::<Vec<_>>();
         let b: &[_] = &["/// doc comment".to_string(), "/// line 2".to_string()];
         assert_eq!(&docs[], b);
 
         let source = "/** doc comment\r\n *  with CRLF */\r\nfn foo() {}".to_string();
         let item = parse_item_from_source_str(name, source, Vec::new(), &sess).unwrap();
         let doc = first_attr_value_str_by_name(&item.attrs, "doc").unwrap();
-        assert_eq!(doc.get(), "/** doc comment\n *  with CRLF */");
+        assert_eq!(&doc[], "/** doc comment\n *  with CRLF */");
     }
 
     #[test]
@@ -1233,8 +1233,8 @@ mod test {
         let span = tts.iter().rev().next().unwrap().get_span();
 
         match sess.span_diagnostic.cm.span_to_snippet(span) {
-            Some(s) => assert_eq!(&s[], "{ body }"),
-            None => panic!("could not get snippet"),
+            Ok(s) => assert_eq!(&s[], "{ body }"),
+            Err(_) => panic!("could not get snippet"),
         }
     }
 }
