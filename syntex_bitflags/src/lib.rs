@@ -11,12 +11,9 @@
 #![feature(staged_api)]
 #![staged_api]
 #![crate_type = "rlib"]
-#![no_std]
 #![unstable(feature = "rustc_private")]
 
 //! A typesafe bitmask flag generator.
-
-#[cfg(test)] #[macro_use] extern crate std;
 
 /// The `bitflags!` macro generates a `struct` that holds a set of C-style
 /// bitmask flags. It is useful for creating typesafe wrappers for C APIs.
