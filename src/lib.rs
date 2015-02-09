@@ -1,3 +1,5 @@
+#![feature(io)]
+
 extern crate syntex_syntax;
 
 use std::old_io::{File, IoResult};
@@ -65,7 +67,7 @@ impl Registry {
         let dst = try!(File::create(dst));
 
         let mut printer = pprust::rust_printer(Box::new(dst));
-        try!(printer.print_mod(&krate.module, krate.attrs.as_slice()));
+        try!(printer.print_mod(&krate.module, &krate.attrs[]));
         try!(printer.print_remaining_comments());
         pp::eof(&mut printer.s)
     }
