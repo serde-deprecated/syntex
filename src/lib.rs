@@ -54,7 +54,6 @@ impl Registry {
             crate_name: crate_name.to_string(),
             enable_quotes: true,
             recursion_limit: 64,
-            ignore_unknown_macros: true,
         };
 
         let krate = expand::expand_crate(

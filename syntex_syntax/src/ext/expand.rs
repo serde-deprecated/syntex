@@ -67,15 +67,18 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
                                                        mark_expr, fld) {
                 Some(expr) => expr,
                 None => {
-                    P(ast::Expr {
+                    return P(ast::Expr {
                         id: id,
                         node: ast::ExprMac(mac),
                         span: span,
-                    })
+                    });
                 }
             };
 
-            let fully_expanded = expanded_expr;
+            // Keep going, outside-in.
+            //
+            let fully_expanded = fld.fold_expr(expanded_expr);
+            fld.cx.bt_pop();
 
             fully_expanded.map(|e| ast::Expr {
                 id: ast::DUMMY_NODE_ID,
@@ -720,12 +723,15 @@ fn expand_stmt(s: Stmt, fld: &mut MacroExpander) -> SmallVector<P<Stmt>> {
         StmtMac(mac, style) => (mac, style),
         _ => return expand_non_macro_stmt(s, fld)
     };
-    let expanded_stmt = match expand_mac_invoc(mac.and_then(|m| m), s.span,
+    let expanded_stmt = match expand_mac_invoc(mac.clone().and_then(|m| m), s.span,
                                                 |r| r.make_stmt(),
                                                 mark_stmt, fld) {
         Some(stmt) => stmt,
         None => {
-            return SmallVector::zero();
+            return SmallVector::one(P(Spanned {
+                node: StmtMac(mac, style),
+                span: s.span,
+            }));
         }
     };
 
@@ -1284,7 +1290,7 @@ fn expand_method(m: P<ast::Method>, fld: &mut MacroExpander) -> SmallVector<P<as
         },
         ast::MethMac(mac) => {
             let maybe_new_methods =
-                expand_mac_invoc(mac, m.span,
+                expand_mac_invoc(mac.clone(), m.span,
                                  |r| r.make_methods(),
                                  |meths, mark| meths.move_map(|m| mark_method(m, mark)),
                                  fld);
@@ -1298,7 +1304,14 @@ fn expand_method(m: P<ast::Method>, fld: &mut MacroExpander) -> SmallVector<P<as
                     fld.cx.bt_pop();
                     new_methods
                 }
-                None => SmallVector::zero()
+                None => {
+                    SmallVector::one(P(ast::Method {
+                        attrs: m.attrs,
+                        id: m.id,
+                        span: m.span,
+                        node: ast::MethMac(mac),
+                    }))
+                }
             }
         }
     })
@@ -1407,7 +1420,6 @@ pub struct ExpansionConfig {
     pub crate_name: String,
     pub enable_quotes: bool,
     pub recursion_limit: usize,
-    pub ignore_unknown_macros: bool,
 }
 
 impl ExpansionConfig {
@@ -1416,7 +1428,6 @@ impl ExpansionConfig {
             crate_name: crate_name,
             enable_quotes: false,
             recursion_limit: 64,
-            ignore_unknown_macros: false,
         }
     }
 }
