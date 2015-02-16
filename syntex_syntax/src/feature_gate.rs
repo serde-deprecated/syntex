@@ -126,6 +126,13 @@ static KNOWN_FEATURES: &'static [(&'static str, &'static str, Status)] = &[
 
     // Allows using #![no_std]
     ("no_std", "1.0.0", Active),
+
+    // Allows using `box` in patterns; RFC 469
+    ("box_patterns", "1.0.0", Active),
+
+    // Allows using the unsafe_no_drop_flag attribute (unlikely to
+    // switch to Accepted; see RFC 320)
+    ("unsafe_no_drop_flag", "1.0.0", Active),
 ];
 
 enum Status {
@@ -284,11 +291,7 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
         }
         match i.node {
             ast::ItemExternCrate(_) => {
-                if attr::contains_name(&i.attrs[], "plugin") {
-                    self.gate_feature("plugin", i.span,
-                                      "compiler plugins are experimental \
-                                       and possibly buggy");
-                } else if attr::contains_name(&i.attrs[], "macro_reexport") {
+                if attr::contains_name(&i.attrs[], "macro_reexport") {
                     self.gate_feature("macro_reexport", i.span,
                                       "macros reexports are experimental \
                                        and possibly buggy");
@@ -431,7 +434,7 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
             ast::ExprBox(..) | ast::ExprUnary(ast::UnOp::UnUniq, _) => {
                 self.gate_feature("box_syntax",
                                   e.span,
-                                  "box expression syntax is experimental in alpha release; \
+                                  "box expression syntax is experimental; \
                                    you can call `Box::new` instead.");
             }
             ast::ExprLit(ref lit) => {
@@ -462,6 +465,10 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
         if attr.check_name("staged_api") {
             self.gate_feature("staged_api", attr.span,
                               "staged_api is for use by rustc only");
+        } else if attr.check_name("plugin") {
+            self.gate_feature("plugin", attr.span,
+                              "compiler plugins are experimental \
+                               and possibly buggy");
         }
 
         if attr::contains_name(slice::ref_slice(attr), "lang") {
@@ -473,6 +480,12 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
         if attr.check_name("no_std") {
             self.gate_feature("no_std", attr.span,
                               "no_std is experimental");
+        }
+
+        if attr.check_name("unsafe_no_drop_flag") {
+            self.gate_feature("unsafe_no_drop_flag", attr.span,
+                              "unsafe_no_drop_flag has unstable semantics \
+                               and may be removed in the future");
         }
     }
 
@@ -486,9 +499,9 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
                                    `[0, ..xs, 0]` are experimental")
             }
             ast::PatBox(..) => {
-                self.gate_feature("box_syntax",
+                self.gate_feature("box_patterns",
                                   pattern.span,
-                                  "box pattern syntax is experimental in alpha release");
+                                  "box pattern syntax is experimental");
             }
             _ => {}
         }

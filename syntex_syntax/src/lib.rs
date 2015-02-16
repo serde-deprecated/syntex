@@ -23,6 +23,7 @@
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/nightly/")]
 
+#![feature(box_patterns)]
 #![feature(box_syntax)]
 #![feature(collections)]
 #![feature(core)]
@@ -96,7 +97,6 @@ pub mod ext {
     pub mod base;
     pub mod build;
     pub mod cfg;
-    pub mod cfg_attr;
     pub mod concat;
     pub mod concat_idents;
     pub mod deriving;
