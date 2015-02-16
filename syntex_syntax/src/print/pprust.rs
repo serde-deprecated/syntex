@@ -1029,11 +1029,11 @@ impl<'a> State<'a> {
         self.print_path(&t.path, false)
     }
 
-    fn print_poly_trait_ref(&mut self, t: &ast::PolyTraitRef) -> IoResult<()> {
-        if !t.bound_lifetimes.is_empty() {
+    fn print_formal_lifetime_list(&mut self, lifetimes: &[ast::LifetimeDef]) -> IoResult<()> {
+        if !lifetimes.is_empty() {
             try!(word(&mut self.s, "for<"));
             let mut comma = false;
-            for lifetime_def in &t.bound_lifetimes {
+            for lifetime_def in lifetimes {
                 if comma {
                     try!(self.word_space(","))
                 }
@@ -1042,7 +1042,11 @@ impl<'a> State<'a> {
             }
             try!(word(&mut self.s, ">"));
         }
+        Ok(())
+    }
 
+    fn print_poly_trait_ref(&mut self, t: &ast::PolyTraitRef) -> IoResult<()> {
+        try!(self.print_formal_lifetime_list(&t.bound_lifetimes));
         self.print_trait_ref(&t.trait_ref)
     }
 
@@ -2521,9 +2525,11 @@ impl<'a> State<'a> {
             }
 
             match predicate {
-                &ast::WherePredicate::BoundPredicate(ast::WhereBoundPredicate{ref bounded_ty,
+                &ast::WherePredicate::BoundPredicate(ast::WhereBoundPredicate{ref bound_lifetimes,
+                                                                              ref bounded_ty,
                                                                               ref bounds,
                                                                               ..}) => {
+                    try!(self.print_formal_lifetime_list(bound_lifetimes));
                     try!(self.print_type(&**bounded_ty));
                     try!(self.print_bounds(":", bounds));
                 }
