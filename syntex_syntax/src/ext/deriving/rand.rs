@@ -12,7 +12,7 @@ use ast;
 use ast::{MetaItem, Item, Expr};
 use codemap::Span;
 use ext::base::ExtCtxt;
-use ext::build::{AstBuilder};
+use ext::build::AstBuilder;
 use ext::deriving::generic::*;
 use ext::deriving::generic::ty::*;
 use ptr::P;
@@ -55,9 +55,9 @@ pub fn expand_deriving_rand<F>(cx: &mut ExtCtxt,
                 ),
                 ret_ty: Self_,
                 attributes: Vec::new(),
-                combine_substructure: combine_substructure(box |a, b, c| {
+                combine_substructure: combine_substructure(Box::new(|a, b, c| {
                     rand_substructure(a, b, c)
-                })
+                }))
             }
         ),
         associated_types: Vec::new(),

@@ -11,7 +11,7 @@
 use self::SmallVectorRepr::*;
 use self::IntoIterRepr::*;
 
-use std::iter::FromIterator;
+use std::iter::{IntoIterator, FromIterator};
 use std::mem;
 use std::slice;
 use std::vec;
@@ -30,7 +30,7 @@ enum SmallVectorRepr<T> {
 }
 
 impl<T> FromIterator<T> for SmallVector<T> {
-    fn from_iter<I: Iterator<Item=T>>(iter: I) -> SmallVector<T> {
+    fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> SmallVector<T> {
         let mut v = SmallVector::zero();
         v.extend(iter);
         v
@@ -38,7 +38,7 @@ impl<T> FromIterator<T> for SmallVector<T> {
 }
 
 impl<T> Extend<T> for SmallVector<T> {
-    fn extend<I: Iterator<Item=T>>(&mut self, iter: I) {
+    fn extend<I: IntoIterator<Item=T>>(&mut self, iter: I) {
         for val in iter {
             self.push(val);
         }
@@ -226,23 +226,23 @@ mod test {
     fn test_move_iter() {
         let v = SmallVector::zero();
         let v: Vec<isize> = v.into_iter().collect();
-        assert_eq!(Vec::new(), v);
+        assert_eq!(v, Vec::new());
 
         let v = SmallVector::one(1);
-        assert_eq!(vec![1], v.into_iter().collect::<Vec<_>>());
+        assert_eq!(v.into_iter().collect::<Vec<_>>(), [1]);
 
         let v = SmallVector::many(vec![1, 2, 3]);
-        assert_eq!(vec!(1, 2, 3), v.into_iter().collect::<Vec<_>>());
+        assert_eq!(v.into_iter().collect::<Vec<_>>(), [1, 2, 3]);
     }
 
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn test_expect_one_zero() {
         let _: isize = SmallVector::zero().expect_one("");
     }
 
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn test_expect_one_many() {
         SmallVector::many(vec!(1, 2)).expect_one("");
     }

@@ -38,24 +38,24 @@ pub fn maybe_inject_prelude(krate: ast::Crate) -> ast::Crate {
 }
 
 pub fn use_std(krate: &ast::Crate) -> bool {
-    !attr::contains_name(&krate.attrs[], "no_std")
+    !attr::contains_name(&krate.attrs, "no_std")
 }
 
 fn no_prelude(attrs: &[ast::Attribute]) -> bool {
     attr::contains_name(attrs, "no_implicit_prelude")
 }
 
-struct StandardLibraryInjector<'a> {
-    alt_std_name: Option<String>
+struct StandardLibraryInjector {
+    alt_std_name: Option<String>,
 }
 
-impl<'a> fold::Folder for StandardLibraryInjector<'a> {
+impl fold::Folder for StandardLibraryInjector {
     fn fold_crate(&mut self, mut krate: ast::Crate) -> ast::Crate {
 
-        // The name to use in `extern crate "name" as std;`
+        // The name to use in `extern crate name as std;`
         let actual_crate_name = match self.alt_std_name {
-            Some(ref s) => token::intern_and_get_ident(&s[]),
-            None => token::intern_and_get_ident("std"),
+            Some(ref s) => token::intern(&s),
+            None => token::intern("std"),
         };
 
         krate.module.items.insert(0, P(ast::Item {
@@ -64,7 +64,7 @@ impl<'a> fold::Folder for StandardLibraryInjector<'a> {
             attrs: vec!(
                 attr::mk_attr_outer(attr::mk_attr_id(), attr::mk_word_item(
                         InternedString::new("macro_use")))),
-            node: ast::ItemExternCrate(Some((actual_crate_name, ast::CookedStr))),
+            node: ast::ItemExternCrate(Some(actual_crate_name)),
             vis: ast::Inherited,
             span: DUMMY_SP
         }));
@@ -80,21 +80,22 @@ fn inject_crates_ref(krate: ast::Crate, alt_std_name: Option<String>) -> ast::Cr
     fold.fold_crate(krate)
 }
 
-struct PreludeInjector<'a>;
+struct PreludeInjector;
 
-impl<'a> fold::Folder for PreludeInjector<'a> {
+
+impl fold::Folder for PreludeInjector {
     fn fold_crate(&mut self, mut krate: ast::Crate) -> ast::Crate {
         // only add `use std::prelude::*;` if there wasn't a
         // `#![no_implicit_prelude]` at the crate level.
         // fold_mod() will insert glob path.
-        if !no_prelude(&krate.attrs[]) {
+        if !no_prelude(&krate.attrs) {
             krate.module = self.fold_mod(krate.module);
         }
         krate
     }
 
     fn fold_item(&mut self, item: P<ast::Item>) -> SmallVector<P<ast::Item>> {
-        if !no_prelude(&item.attrs[]) {
+        if !no_prelude(&item.attrs) {
             // only recur if there wasn't `#![no_implicit_prelude]`
             // on this item, i.e. this means that the prelude is not
             // implicitly imported though the whole subtree

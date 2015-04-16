@@ -82,9 +82,9 @@ fn expand_deriving_decodable_imp<F>(cx: &mut ExtCtxt,
                     true
                 )),
                 attributes: Vec::new(),
-                combine_substructure: combine_substructure(box |a, b, c| {
+                combine_substructure: combine_substructure(Box::new(|a, b, c| {
                     decodable_substructure(a, b, c, krate)
-                }),
+                })),
             }
         ),
         associated_types: Vec::new(),
@@ -204,7 +204,7 @@ fn decode_static_fields<F>(cx: &mut ExtCtxt,
             } else {
                 let fields = fields.iter().enumerate().map(|(i, &span)| {
                     getarg(cx, span,
-                           token::intern_and_get_ident(&format!("_field{}", i)[]),
+                           token::intern_and_get_ident(&format!("_field{}", i)),
                            i)
                 }).collect();
 

@@ -14,16 +14,13 @@ use codemap;
 use diagnostic::SpanHandler;
 use ext::tt::transcribe::tt_next_token;
 use parse::token;
-use parse::token::{str_to_ident};
+use parse::token::str_to_ident;
 
-use std::borrow::IntoCow;
+use std::borrow::{IntoCow, Cow};
 use std::char;
 use std::fmt;
 use std::mem::replace;
-use std::num;
 use std::rc::Rc;
-use std::str;
-use std::string::CowString;
 
 pub use ext::tt::transcribe::{TtReader, new_tt_reader, new_tt_reader_with_doc_flag};
 
@@ -77,6 +74,10 @@ pub struct StringReader<'a> {
     // are revised to go directly to token-trees.
     /// Is \x00<name>,<ctxt>\x00 is interpreted as encoded ast::Ident?
     read_embedded_ident: bool,
+
+    // cache a direct reference to the source text, so that we don't have to
+    // retrieve it via `self.filemap.src.as_ref().unwrap()` all the time.
+    source_text: Rc<String>
 }
 
 impl<'a> Reader for StringReader<'a> {
@@ -142,7 +143,14 @@ pub fn make_reader_with_embedded_idents<'b>(span_diagnostic: &'b SpanHandler,
 impl<'a> StringReader<'a> {
     /// For comments.rs, which hackily pokes into pos and curr
     pub fn new_raw<'b>(span_diagnostic: &'b SpanHandler,
-                   filemap: Rc<codemap::FileMap>) -> StringReader<'b> {
+                       filemap: Rc<codemap::FileMap>) -> StringReader<'b> {
+        if filemap.src.is_none() {
+            span_diagnostic.handler.bug(&format!("Cannot lex filemap without source: {}",
+                                                 filemap.name)[..]);
+        }
+
+        let source_text = (*filemap.src.as_ref().unwrap()).clone();
+
         let mut sr = StringReader {
             span_diagnostic: span_diagnostic,
             pos: filemap.start_pos,
@@ -154,6 +162,7 @@ impl<'a> StringReader<'a> {
             peek_tok: token::Eof,
             peek_span: codemap::DUMMY_SP,
             read_embedded_ident: false,
+            source_text: source_text
         };
         sr.bump();
         sr
@@ -196,7 +205,7 @@ impl<'a> StringReader<'a> {
         let mut m = m.to_string();
         m.push_str(": ");
         for c in c.escape_default() { m.push(c) }
-        self.fatal_span_(from_pos, to_pos, &m[]);
+        self.fatal_span_(from_pos, to_pos, &m[..]);
     }
 
     /// Report a lexical error spanning [`from_pos`, `to_pos`), appending an
@@ -205,7 +214,7 @@ impl<'a> StringReader<'a> {
         let mut m = m.to_string();
         m.push_str(": ");
         for c in c.escape_default() { m.push(c) }
-        self.err_span_(from_pos, to_pos, &m[]);
+        self.err_span_(from_pos, to_pos, &m[..]);
     }
 
     /// Report a lexical error spanning [`from_pos`, `to_pos`), appending the
@@ -214,8 +223,8 @@ impl<'a> StringReader<'a> {
         m.push_str(": ");
         let from = self.byte_offset(from_pos).to_usize();
         let to = self.byte_offset(to_pos).to_usize();
-        m.push_str(&self.filemap.src[from..to]);
-        self.fatal_span_(from_pos, to_pos, &m[]);
+        m.push_str(&self.source_text[from..to]);
+        self.fatal_span_(from_pos, to_pos, &m[..]);
     }
 
     /// Advance peek_tok and peek_span to refer to the next token, and
@@ -271,17 +280,17 @@ impl<'a> StringReader<'a> {
     fn with_str_from_to<T, F>(&self, start: BytePos, end: BytePos, f: F) -> T where
         F: FnOnce(&str) -> T,
     {
-        f(&self.filemap.src[
-                self.byte_offset(start).to_usize()..
-                self.byte_offset(end).to_usize()])
+        f(&self.source_text[self.byte_offset(start).to_usize()..
+                            self.byte_offset(end).to_usize()])
     }
 
     /// Converts CRLF to LF in the given string, raising an error on bare CR.
     fn translate_crlf<'b>(&self, start: BytePos,
-                          s: &'b str, errmsg: &'b str) -> CowString<'b> {
+                          s: &'b str, errmsg: &'b str) -> Cow<'b, str> {
         let mut i = 0;
         while i < s.len() {
-            let str::CharRange { ch, next } = s.char_range_at(i);
+            let ch = s.char_at(i);
+            let next = i + ch.len_utf8();
             if ch == '\r' {
                 if next < s.len() && s.char_at(next) == '\n' {
                     return translate_crlf_(self, start, s, errmsg, i).into_cow();
@@ -299,7 +308,8 @@ impl<'a> StringReader<'a> {
             let mut buf = String::with_capacity(s.len());
             let mut j = 0;
             while i < s.len() {
-                let str::CharRange { ch, next } = s.char_range_at(i);
+                let ch = s.char_at(i);
+                let next = i + ch.len_utf8();
                 if ch == '\r' {
                     if j < i { buf.push_str(&s[j..i]); }
                     j = next;
@@ -322,15 +332,14 @@ impl<'a> StringReader<'a> {
     pub fn bump(&mut self) {
         self.last_pos = self.pos;
         let current_byte_offset = self.byte_offset(self.pos).to_usize();
-        if current_byte_offset < self.filemap.src.len() {
+        if current_byte_offset < self.source_text.len() {
             assert!(self.curr.is_some());
             let last_char = self.curr.unwrap();
-            let next = self.filemap
-                          .src
-                          .char_range_at(current_byte_offset);
-            let byte_offset_diff = next.next - current_byte_offset;
+            let ch = self.source_text.char_at(current_byte_offset);
+            let next = current_byte_offset + ch.len_utf8();
+            let byte_offset_diff = next - current_byte_offset;
             self.pos = self.pos + Pos::from_usize(byte_offset_diff);
-            self.curr = Some(next.ch);
+            self.curr = Some(ch);
             self.col = self.col + CharPos(1);
             if last_char == '\n' {
                 self.filemap.next_line(self.last_pos);
@@ -347,8 +356,8 @@ impl<'a> StringReader<'a> {
 
     pub fn nextch(&self) -> Option<char> {
         let offset = self.byte_offset(self.pos).to_usize();
-        if offset < self.filemap.src.len() {
-            Some(self.filemap.src.char_at(offset))
+        if offset < self.source_text.len() {
+            Some(self.source_text.char_at(offset))
         } else {
             None
         }
@@ -360,9 +369,9 @@ impl<'a> StringReader<'a> {
 
     pub fn nextnextch(&self) -> Option<char> {
         let offset = self.byte_offset(self.pos).to_usize();
-        let s = &*self.filemap.src;
+        let s = &self.source_text[..];
         if offset >= s.len() { return None }
-        let str::CharRange { next, .. } = s.char_range_at(offset);
+        let next = offset + s.char_at(offset).len_utf8();
         if next < s.len() {
             Some(s.char_at(next))
         } else {
@@ -556,7 +565,7 @@ impl<'a> StringReader<'a> {
                     self.translate_crlf(start_bpos, string,
                                         "bare CR not allowed in block doc-comment")
                 } else { string.into_cow() };
-                token::DocComment(token::intern(&string[]))
+                token::DocComment(token::intern(&string[..]))
             } else {
                 token::Comment
             };
@@ -611,9 +620,9 @@ impl<'a> StringReader<'a> {
         let base = 10;
 
         // find the integer representing the name
-        self.scan_digits(base);
+        self.scan_digits(base, base);
         let encoded_name : u32 = self.with_str_from(start_bpos, |s| {
-            num::from_str_radix(s, 10).ok().unwrap_or_else(|| {
+            u32::from_str_radix(s, 10).unwrap_or_else(|_| {
                 panic!("expected digits representing a name, got {:?}, {}, range [{:?},{:?}]",
                       s, whence, start_bpos, self.last_pos);
             })
@@ -629,9 +638,9 @@ impl<'a> StringReader<'a> {
 
         // find the integer representing the ctxt
         let start_bpos = self.last_pos;
-        self.scan_digits(base);
+        self.scan_digits(base, base);
         let encoded_ctxt : ast::SyntaxContext = self.with_str_from(start_bpos, |s| {
-            num::from_str_radix(s, 10).ok().unwrap_or_else(|| {
+            u32::from_str_radix(s, 10).unwrap_or_else(|_| {
                 panic!("expected digits representing a ctxt, got {:?}, {}", s, whence);
             })
         });
@@ -643,16 +652,28 @@ impl<'a> StringReader<'a> {
                      ctxt: encoded_ctxt, }
     }
 
-    /// Scan through any digits (base `radix`) or underscores, and return how
-    /// many digits there were.
-    fn scan_digits(&mut self, radix: usize) -> usize {
+    /// Scan through any digits (base `scan_radix`) or underscores,
+    /// and return how many digits there were.
+    ///
+    /// `real_radix` represents the true radix of the number we're
+    /// interested in, and errors will be emitted for any digits
+    /// between `real_radix` and `scan_radix`.
+    fn scan_digits(&mut self, real_radix: u32, scan_radix: u32) -> usize {
+        assert!(real_radix <= scan_radix);
         let mut len = 0;
         loop {
             let c = self.curr;
             if c == Some('_') { debug!("skipping a _"); self.bump(); continue; }
-            match c.and_then(|cc| cc.to_digit(radix)) {
+            match c.and_then(|cc| cc.to_digit(scan_radix)) {
                 Some(_) => {
                     debug!("{:?} in scan_digits", c);
+                    // check that the hypothetical digit is actually
+                    // in range for the true radix
+                    if c.unwrap().to_digit(real_radix).is_none() {
+                        self.err_span_(self.last_pos, self.pos,
+                                       &format!("invalid digit for a base {} literal",
+                                                real_radix));
+                    }
                     len += 1;
                     self.bump();
                 }
@@ -671,11 +692,11 @@ impl<'a> StringReader<'a> {
 
         if c == '0' {
             match self.curr.unwrap_or('\0') {
-                'b' => { self.bump(); base = 2; num_digits = self.scan_digits(2); }
-                'o' => { self.bump(); base = 8; num_digits = self.scan_digits(8); }
-                'x' => { self.bump(); base = 16; num_digits = self.scan_digits(16); }
+                'b' => { self.bump(); base = 2; num_digits = self.scan_digits(2, 10); }
+                'o' => { self.bump(); base = 8; num_digits = self.scan_digits(8, 10); }
+                'x' => { self.bump(); base = 16; num_digits = self.scan_digits(16, 16); }
                 '0'...'9' | '_' | '.' => {
-                    num_digits = self.scan_digits(10) + 1;
+                    num_digits = self.scan_digits(10, 10) + 1;
                 }
                 _ => {
                     // just a 0
@@ -683,7 +704,7 @@ impl<'a> StringReader<'a> {
                 }
             }
         } else if c.is_digit(10) {
-            num_digits = self.scan_digits(10) + 1;
+            num_digits = self.scan_digits(10, 10) + 1;
         } else {
             num_digits = 0;
         }
@@ -702,7 +723,7 @@ impl<'a> StringReader<'a> {
             // with a number
             self.bump();
             if self.curr.unwrap_or('\0').is_digit(10) {
-                self.scan_digits(10);
+                self.scan_digits(10, 10);
                 self.scan_float_exponent();
             }
             let last_pos = self.last_pos;
@@ -732,6 +753,7 @@ impl<'a> StringReader<'a> {
         let start_bpos = self.last_pos;
         let mut accum_int = 0;
 
+        let mut valid = true;
         for _ in 0..n_digits {
             if self.is_eof() {
                 let last_bpos = self.last_pos;
@@ -740,6 +762,7 @@ impl<'a> StringReader<'a> {
             if self.curr_is(delim) {
                 let last_bpos = self.last_pos;
                 self.err_span_(start_bpos, last_bpos, "numeric character escape is too short");
+                valid = false;
                 break;
             }
             let c = self.curr.unwrap_or('\x00');
@@ -747,8 +770,10 @@ impl<'a> StringReader<'a> {
             accum_int += c.to_digit(16).unwrap_or_else(|| {
                 self.err_span_char(self.last_pos, self.pos,
                               "illegal character in numeric character escape", c);
+
+                valid = false;
                 0
-            }) as u32;
+            });
             self.bump();
         }
 
@@ -757,23 +782,17 @@ impl<'a> StringReader<'a> {
                            self.last_pos,
                            "this form of character escape may only be used \
                             with characters in the range [\\x00-\\x7f]");
+            valid = false;
         }
 
         match char::from_u32(accum_int) {
-            Some(_) => true,
+            Some(_) => valid,
             None => {
                 let last_bpos = self.last_pos;
                 self.err_span_(start_bpos, last_bpos, "illegal numeric character escape");
                 false
             }
         }
-    }
-
-    fn old_escape_warning(&mut self, sp: Span) {
-        self.span_diagnostic
-            .span_warn(sp, "\\U00ABCD12 and \\uABCD escapes are deprecated");
-        self.span_diagnostic
-            .span_help(sp, "use \\u{ABCD12} escapes instead");
     }
 
     /// Scan for a single (possibly escaped) byte or char
@@ -795,21 +814,19 @@ impl<'a> StringReader<'a> {
                         return match e {
                             'n' | 'r' | 't' | '\\' | '\'' | '"' | '0' => true,
                             'x' => self.scan_byte_escape(delim, !ascii_only),
-                            'u' if !ascii_only => {
-                                if self.curr == Some('{') {
-                                    self.scan_unicode_escape(delim)
-                                } else {
-                                    let res = self.scan_hex_digits(4, delim, false);
-                                    let sp = codemap::mk_sp(escaped_pos, self.last_pos);
-                                    self.old_escape_warning(sp);
-                                    res
-                                }
+                            'u' if self.curr_is('{') => {
+                            let valid = self.scan_unicode_escape(delim);
+                            if valid && ascii_only {
+                                self.err_span_(
+                                    escaped_pos,
+                                    self.last_pos,
+                                    "unicode escape sequences cannot be used as a byte or in \
+                                    a byte string"
+                                );
+                                false
+                            } else {
+                               valid
                             }
-                            'U' if !ascii_only => {
-                                let res = self.scan_hex_digits(8, delim, false);
-                                let sp = codemap::mk_sp(escaped_pos, self.last_pos);
-                                self.old_escape_warning(sp);
-                                res
                             }
                             '\n' if delim == '"' => {
                                 self.consume_whitespace();
@@ -879,6 +896,7 @@ impl<'a> StringReader<'a> {
         let start_bpos = self.last_pos;
         let mut count = 0;
         let mut accum_int = 0;
+        let mut valid = true;
 
         while !self.curr_is('}') && count <= 6 {
             let c = match self.curr {
@@ -894,29 +912,30 @@ impl<'a> StringReader<'a> {
                     self.fatal_span_(self.last_pos, self.pos,
                                      "unterminated unicode escape (needed a `}`)");
                 } else {
-                    self.fatal_span_char(self.last_pos, self.pos,
+                    self.err_span_char(self.last_pos, self.pos,
                                    "illegal character in unicode escape", c);
                 }
-            }) as u32;
+                valid = false;
+                0
+            });
             self.bump();
             count += 1;
         }
 
         if count > 6 {
-            self.fatal_span_(start_bpos, self.last_pos,
+            self.err_span_(start_bpos, self.last_pos,
                           "overlong unicode escape (can have at most 6 hex digits)");
+            valid = false;
         }
 
         self.bump(); // past the ending }
 
-        let mut valid = count >= 1 && count <= 6;
-        if char::from_u32(accum_int).is_none() {
-            valid = false;
+        if valid && (char::from_u32(accum_int).is_none() || count == 0) {
+            self.err_span_(start_bpos, self.last_pos, "illegal unicode character escape");
+            valid= false;
         }
 
-        if !valid {
-            self.fatal_span_(start_bpos, self.last_pos, "illegal unicode character escape");
-        }
+
         valid
     }
 
@@ -927,7 +946,7 @@ impl<'a> StringReader<'a> {
             if self.curr_is('-') || self.curr_is('+') {
                 self.bump();
             }
-            if self.scan_digits(10) == 0 {
+            if self.scan_digits(10, 10) == 0 {
                 self.err_span_(self.last_pos, self.pos, "expected at least one digit in exponent")
             }
         }
@@ -1110,7 +1129,7 @@ impl<'a> StringReader<'a> {
                 // expansion purposes. See #12512 for the gory details of why
                 // this is necessary.
                 let ident = self.with_str_from(start, |lifetime_name| {
-                    str_to_ident(&format!("'{}", lifetime_name)[])
+                    str_to_ident(&format!("'{}", lifetime_name))
                 });
 
                 // Conjure up a "keyword checking ident" to make sure that
@@ -1340,7 +1359,7 @@ impl<'a> StringReader<'a> {
                 "unterminated byte constant".to_string());
         }
 
-        let id = if valid { self.name_from(start) } else { token::intern("??") };
+        let id = if valid { self.name_from(start) } else { token::intern("?") };
         self.bump(); // advance curr past token
         return token::Byte(id);
     }
@@ -1482,11 +1501,12 @@ mod test {
     use diagnostic;
     use parse::token;
     use parse::token::{str_to_ident};
-    use std::old_io::util;
+    use std::io;
 
     fn mk_sh() -> diagnostic::SpanHandler {
-        let emitter = diagnostic::EmitterWriter::new(box util::NullWriter, None);
-        let handler = diagnostic::mk_handler(true, box emitter);
+        // FIXME (#22405): Replace `Box::new` with `box` here when/if possible.
+        let emitter = diagnostic::EmitterWriter::new(Box::new(io::sink()), None);
+        let handler = diagnostic::mk_handler(true, Box::new(emitter));
         diagnostic::mk_span_handler(handler, CodeMap::new())
     }
 

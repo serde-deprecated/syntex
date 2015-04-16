@@ -59,7 +59,7 @@
 //! line (which it can't) and so naturally place the content on its own line to
 //! avoid combining it with other lines and making matters even worse.
 
-use std::old_io;
+use std::io;
 use std::string;
 use std::iter::repeat;
 
@@ -139,7 +139,7 @@ pub fn buf_str(toks: &[Token],
         }
         s.push_str(&format!("{}={}",
                            szs[i],
-                           tok_str(&toks[i]))[]);
+                           tok_str(&toks[i])));
         i += 1;
         i %= n;
     }
@@ -147,28 +147,28 @@ pub fn buf_str(toks: &[Token],
     s
 }
 
-#[derive(Copy)]
+#[derive(Copy, Clone)]
 pub enum PrintStackBreak {
     Fits,
     Broken(Breaks),
 }
 
-#[derive(Copy)]
+#[derive(Copy, Clone)]
 pub struct PrintStackElem {
     offset: isize,
     pbreak: PrintStackBreak
 }
 
-static SIZE_INFINITY: isize = 0xffff;
+const SIZE_INFINITY: isize = 0xffff;
 
-pub fn mk_printer(out: Box<old_io::Writer+'static>, linewidth: usize) -> Printer {
+pub fn mk_printer<'a>(out: Box<io::Write+'a>, linewidth: usize) -> Printer<'a> {
     // Yes 3, it makes the ring buffers big enough to never
     // fall behind.
     let n: usize = 3 * linewidth;
     debug!("mk_printer {}", linewidth);
     let token: Vec<Token> = repeat(Token::Eof).take(n).collect();
     let size: Vec<isize> = repeat(0).take(n).collect();
-    let scan_stack: Vec<usize> = repeat(0us).take(n).collect();
+    let scan_stack: Vec<usize> = repeat(0).take(n).collect();
     Printer {
         out: out,
         buf_len: n,
@@ -265,8 +265,8 @@ pub fn mk_printer(out: Box<old_io::Writer+'static>, linewidth: usize) -> Printer
 /// In this implementation (following the paper, again) the SCAN process is
 /// the method called 'pretty_print', and the 'PRINT' process is the method
 /// called 'print'.
-pub struct Printer {
-    pub out: Box<old_io::Writer+'static>,
+pub struct Printer<'a> {
+    pub out: Box<io::Write+'a>,
     buf_len: usize,
     /// Width of lines we're constrained to
     margin: isize,
@@ -303,7 +303,7 @@ pub struct Printer {
     pending_indentation: isize,
 }
 
-impl Printer {
+impl<'a> Printer<'a> {
     pub fn last_token(&mut self) -> Token {
         self.token[self.right].clone()
     }
@@ -311,7 +311,7 @@ impl Printer {
     pub fn replace_last_token(&mut self, t: Token) {
         self.token[self.right] = t;
     }
-    pub fn pretty_print(&mut self, token: Token) -> old_io::IoResult<()> {
+    pub fn pretty_print(&mut self, token: Token) -> io::Result<()> {
         debug!("pp ~[{},{}]", self.left, self.right);
         match token {
           Token::Eof => {
@@ -385,7 +385,7 @@ impl Printer {
           }
         }
     }
-    pub fn check_stream(&mut self) -> old_io::IoResult<()> {
+    pub fn check_stream(&mut self) -> io::Result<()> {
         debug!("check_stream ~[{}, {}] with left_total={}, right_total={}",
                self.left, self.right, self.left_total, self.right_total);
         if self.right_total - self.left_total > self.space {
@@ -445,7 +445,7 @@ impl Printer {
         self.right %= self.buf_len;
         assert!((self.right != self.left));
     }
-    pub fn advance_left(&mut self) -> old_io::IoResult<()> {
+    pub fn advance_left(&mut self) -> io::Result<()> {
         debug!("advance_left ~[{},{}], sizeof({})={}", self.left, self.right,
                self.left, self.size[self.left]);
 
@@ -506,7 +506,7 @@ impl Printer {
             }
         }
     }
-    pub fn print_newline(&mut self, amount: isize) -> old_io::IoResult<()> {
+    pub fn print_newline(&mut self, amount: isize) -> io::Result<()> {
         debug!("NEWLINE {}", amount);
         let ret = write!(self.out, "\n");
         self.pending_indentation = 0;
@@ -529,18 +529,18 @@ impl Printer {
             }
         }
     }
-    pub fn print_str(&mut self, s: &str) -> old_io::IoResult<()> {
+    pub fn print_str(&mut self, s: &str) -> io::Result<()> {
         while self.pending_indentation > 0 {
             try!(write!(self.out, " "));
             self.pending_indentation -= 1;
         }
         write!(self.out, "{}", s)
     }
-    pub fn print(&mut self, token: Token, l: isize) -> old_io::IoResult<()> {
+    pub fn print(&mut self, token: Token, l: isize) -> io::Result<()> {
         debug!("print {} {} (remaining line space={})", tok_str(&token), l,
                self.space);
-        debug!("{}", buf_str(&self.token[],
-                             &self.size[],
+        debug!("{}", buf_str(&self.token,
+                             &self.size,
                              self.left,
                              self.right,
                              6));
@@ -607,7 +607,7 @@ impl Printer {
             assert_eq!(l, len);
             // assert!(l <= space);
             self.space -= len;
-            self.print_str(&s[])
+            self.print_str(&s[..])
           }
           Token::Eof => {
             // Eof should never get here.
@@ -620,61 +620,61 @@ impl Printer {
 // Convenience functions to talk to the printer.
 //
 // "raw box"
-pub fn rbox(p: &mut Printer, indent: usize, b: Breaks) -> old_io::IoResult<()> {
+pub fn rbox(p: &mut Printer, indent: usize, b: Breaks) -> io::Result<()> {
     p.pretty_print(Token::Begin(BeginToken {
         offset: indent as isize,
         breaks: b
     }))
 }
 
-pub fn ibox(p: &mut Printer, indent: usize) -> old_io::IoResult<()> {
+pub fn ibox(p: &mut Printer, indent: usize) -> io::Result<()> {
     rbox(p, indent, Breaks::Inconsistent)
 }
 
-pub fn cbox(p: &mut Printer, indent: usize) -> old_io::IoResult<()> {
+pub fn cbox(p: &mut Printer, indent: usize) -> io::Result<()> {
     rbox(p, indent, Breaks::Consistent)
 }
 
-pub fn break_offset(p: &mut Printer, n: usize, off: isize) -> old_io::IoResult<()> {
+pub fn break_offset(p: &mut Printer, n: usize, off: isize) -> io::Result<()> {
     p.pretty_print(Token::Break(BreakToken {
         offset: off,
         blank_space: n as isize
     }))
 }
 
-pub fn end(p: &mut Printer) -> old_io::IoResult<()> {
+pub fn end(p: &mut Printer) -> io::Result<()> {
     p.pretty_print(Token::End)
 }
 
-pub fn eof(p: &mut Printer) -> old_io::IoResult<()> {
+pub fn eof(p: &mut Printer) -> io::Result<()> {
     p.pretty_print(Token::Eof)
 }
 
-pub fn word(p: &mut Printer, wrd: &str) -> old_io::IoResult<()> {
+pub fn word(p: &mut Printer, wrd: &str) -> io::Result<()> {
     p.pretty_print(Token::String(/* bad */ wrd.to_string(), wrd.len() as isize))
 }
 
-pub fn huge_word(p: &mut Printer, wrd: &str) -> old_io::IoResult<()> {
+pub fn huge_word(p: &mut Printer, wrd: &str) -> io::Result<()> {
     p.pretty_print(Token::String(/* bad */ wrd.to_string(), SIZE_INFINITY))
 }
 
-pub fn zero_word(p: &mut Printer, wrd: &str) -> old_io::IoResult<()> {
+pub fn zero_word(p: &mut Printer, wrd: &str) -> io::Result<()> {
     p.pretty_print(Token::String(/* bad */ wrd.to_string(), 0))
 }
 
-pub fn spaces(p: &mut Printer, n: usize) -> old_io::IoResult<()> {
+pub fn spaces(p: &mut Printer, n: usize) -> io::Result<()> {
     break_offset(p, n, 0)
 }
 
-pub fn zerobreak(p: &mut Printer) -> old_io::IoResult<()> {
+pub fn zerobreak(p: &mut Printer) -> io::Result<()> {
     spaces(p, 0)
 }
 
-pub fn space(p: &mut Printer) -> old_io::IoResult<()> {
+pub fn space(p: &mut Printer) -> io::Result<()> {
     spaces(p, 1)
 }
 
-pub fn hardbreak(p: &mut Printer) -> old_io::IoResult<()> {
+pub fn hardbreak(p: &mut Printer) -> io::Result<()> {
     spaces(p, SIZE_INFINITY as usize)
 }
 

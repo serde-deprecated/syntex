@@ -19,9 +19,7 @@ use parse::lexer::is_block_doc_comment;
 use parse::lexer;
 use print::pprust;
 
-use std::old_io;
-use std::str;
-use std::string::String;
+use std::io::Read;
 use std::usize;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -61,7 +59,7 @@ pub fn doc_comment_style(comment: &str) -> ast::AttrStyle {
 
 pub fn strip_doc_comment_decoration(comment: &str) -> String {
     /// remove whitespace-only lines from the start/end of lines
-    fn vertical_trim(lines: Vec<String> ) -> Vec<String> {
+    fn vertical_trim(lines: Vec<String>) -> Vec<String> {
         let mut i = 0;
         let mut j = lines.len();
         // first line of all-stars should be omitted
@@ -82,7 +80,7 @@ pub fn strip_doc_comment_decoration(comment: &str) -> String {
         while j > i && lines[j - 1].trim().is_empty() {
             j -= 1;
         }
-        return lines[i..j].iter().map(|x| (*x).clone()).collect();
+        lines[i..j].iter().cloned().collect()
     }
 
     /// remove a "[ \t]*\*" block from each line, if possible
@@ -92,7 +90,7 @@ pub fn strip_doc_comment_decoration(comment: &str) -> String {
         let mut first = true;
         for line in &lines {
             for (j, c) in line.chars().enumerate() {
-                if j > i || !"* \t".contains_char(c) {
+                if j > i || !"* \t".contains(c) {
                     can_trim = false;
                     break;
                 }
@@ -124,8 +122,8 @@ pub fn strip_doc_comment_decoration(comment: &str) -> String {
     }
 
     // one-line comments lose their prefix
-    static ONLINERS: &'static [&'static str] = &["///!", "///", "//!", "//"];
-    for prefix in ONLINERS {
+    const ONELINERS: &'static [&'static str] = &["///!", "///", "//!", "//"];
+    for prefix in ONELINERS {
         if comment.starts_with(*prefix) {
             return (&comment[prefix.len()..]).to_string();
         }
@@ -187,7 +185,7 @@ fn read_line_comments(rdr: &mut StringReader, code_to_the_left: bool,
         let line = rdr.read_one_line_comment();
         debug!("{}", line);
         // Doc comments are not put in comments.
-        if is_doc_comment(&line[]) {
+        if is_doc_comment(&line[..]) {
             break;
         }
         lines.push(line);
@@ -211,11 +209,11 @@ fn all_whitespace(s: &str, col: CharPos) -> Option<usize> {
     let mut col = col.to_usize();
     let mut cursor: usize = 0;
     while col > 0 && cursor < len {
-        let r: str::CharRange = s.char_range_at(cursor);
-        if !r.ch.is_whitespace() {
+        let ch = s.char_at(cursor);
+        if !ch.is_whitespace() {
             return None;
         }
-        cursor = r.next;
+        cursor += ch.len_utf8();
         col -= 1;
     }
     return Some(cursor);
@@ -224,7 +222,7 @@ fn all_whitespace(s: &str, col: CharPos) -> Option<usize> {
 fn trim_whitespace_prefix_and_push_line(lines: &mut Vec<String> ,
                                         s: String, col: CharPos) {
     let len = s.len();
-    let s1 = match all_whitespace(&s[], col) {
+    let s1 = match all_whitespace(&s[..], col) {
         Some(col) => {
             if col < len {
                 (&s[col..len]).to_string()
@@ -261,10 +259,10 @@ fn read_block_comment(rdr: &mut StringReader,
             rdr.bump();
             rdr.bump();
         }
-        if is_block_doc_comment(&curr_line[]) {
+        if is_block_doc_comment(&curr_line[..]) {
             return
         }
-        assert!(!curr_line.contains_char('\n'));
+        assert!(!curr_line.contains('\n'));
         lines.push(curr_line);
     } else {
         let mut level: isize = 1;
@@ -337,9 +335,10 @@ pub struct Literal {
 // probably not a good thing.
 pub fn gather_comments_and_literals(span_diagnostic: &diagnostic::SpanHandler,
                                     path: String,
-                                    srdr: &mut old_io::Reader)
+                                    srdr: &mut Read)
                                  -> (Vec<Comment>, Vec<Literal>) {
-    let src = srdr.read_to_end().unwrap();
+    let mut src = Vec::new();
+    srdr.read_to_end(&mut src).unwrap();
     let src = String::from_utf8(src).unwrap();
     let cm = CodeMap::new();
     let filemap = cm.new_filemap(path, src);

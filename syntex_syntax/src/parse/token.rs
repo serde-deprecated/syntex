@@ -25,6 +25,7 @@ use serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::fmt;
 use std::mem;
 use std::ops::Deref;
+#[allow(deprecated)]
 use std::old_path::BytesContainer;
 use std::rc::Rc;
 
@@ -425,10 +426,10 @@ macro_rules! declare_special_idents_and_keywords {(
         $( ($rk_name:expr, $rk_variant:ident, $rk_str:expr); )*
     }
 ) => {
-    static STRICT_KEYWORD_START: ast::Name = first!($( ast::Name($sk_name), )*);
-    static STRICT_KEYWORD_FINAL: ast::Name = last!($( ast::Name($sk_name), )*);
-    static RESERVED_KEYWORD_START: ast::Name = first!($( ast::Name($rk_name), )*);
-    static RESERVED_KEYWORD_FINAL: ast::Name = last!($( ast::Name($rk_name), )*);
+    const STRICT_KEYWORD_START: ast::Name = first!($( ast::Name($sk_name), )*);
+    const STRICT_KEYWORD_FINAL: ast::Name = last!($( ast::Name($sk_name), )*);
+    const RESERVED_KEYWORD_START: ast::Name = first!($( ast::Name($rk_name), )*);
+    const RESERVED_KEYWORD_FINAL: ast::Name = last!($( ast::Name($rk_name), )*);
 
     pub mod special_idents {
         use ast;
@@ -482,7 +483,7 @@ macro_rules! declare_special_idents_and_keywords {(
         $(init_vec.push($si_str);)*
         $(init_vec.push($sk_str);)*
         $(init_vec.push($rk_str);)*
-        interner::StrInterner::prefill(&init_vec[])
+        interner::StrInterner::prefill(&init_vec[..])
     }
 }}
 
@@ -561,11 +562,11 @@ declare_special_idents_and_keywords! {
         (39,                         Virtual,    "virtual");
         (40,                         While,      "while");
         (41,                         Continue,   "continue");
-        (42,                         Proc,       "proc");
-        (43,                         Box,        "box");
-        (44,                         Const,      "const");
-        (45,                         Where,      "where");
+        (42,                         Box,        "box");
+        (43,                         Const,      "const");
+        (44,                         Where,      "where");
         'reserved:
+        (45,                         Proc,       "proc");
         (46,                         Alignof,    "alignof");
         (47,                         Become,     "become");
         (48,                         Offsetof,   "offsetof");
@@ -638,13 +639,14 @@ impl Deref for InternedString {
     fn deref(&self) -> &str { &*self.string }
 }
 
+#[allow(deprecated)]
 impl BytesContainer for InternedString {
     fn container_as_bytes<'a>(&'a self) -> &'a [u8] {
         // FIXME #12938: This is a workaround for the incorrect signature
         // of `BytesContainer`, which is itself a workaround for the lack of
         // DST.
         unsafe {
-            let this = &self[];
+            let this = &self[..];
             mem::transmute::<&[u8],&[u8]>(this.container_as_bytes())
         }
     }
@@ -652,47 +654,47 @@ impl BytesContainer for InternedString {
 
 impl fmt::Debug for InternedString {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(&self.string[], f)
+        fmt::Debug::fmt(&self.string, f)
     }
 }
 
 impl fmt::Display for InternedString {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(&self.string[], f)
+        fmt::Display::fmt(&self.string, f)
     }
 }
 
 impl<'a> PartialEq<&'a str> for InternedString {
     #[inline(always)]
     fn eq(&self, other: & &'a str) -> bool {
-        PartialEq::eq(&self.string[], *other)
+        PartialEq::eq(&self.string[..], *other)
     }
     #[inline(always)]
     fn ne(&self, other: & &'a str) -> bool {
-        PartialEq::ne(&self.string[], *other)
+        PartialEq::ne(&self.string[..], *other)
     }
 }
 
 impl<'a> PartialEq<InternedString > for &'a str {
     #[inline(always)]
     fn eq(&self, other: &InternedString) -> bool {
-        PartialEq::eq(*self, &other.string[])
+        PartialEq::eq(*self, &other.string[..])
     }
     #[inline(always)]
     fn ne(&self, other: &InternedString) -> bool {
-        PartialEq::ne(*self, &other.string[])
+        PartialEq::ne(*self, &other.string[..])
     }
 }
 
 impl Decodable for InternedString {
     fn decode<D: Decoder>(d: &mut D) -> Result<InternedString, D::Error> {
-        Ok(get_name(get_ident_interner().intern(&try!(d.read_str())[])))
+        Ok(get_name(get_ident_interner().intern(&try!(d.read_str())[..])))
     }
 }
 
 impl Encodable for InternedString {
     fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        s.emit_str(&self.string[])
+        s.emit_str(&self.string)
     }
 }
 
