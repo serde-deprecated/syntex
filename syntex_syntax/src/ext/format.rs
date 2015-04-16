@@ -113,12 +113,12 @@ fn parse_args(ecx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
                 _ => {
                     ecx.span_err(p.span,
                                  &format!("expected ident for named argument, found `{}`",
-                                         p.this_token_to_string())[]);
+                                         p.this_token_to_string()));
                     return None;
                 }
             };
             let interned_name = token::get_ident(ident);
-            let name = &interned_name[];
+            let name = &interned_name[..];
 
             p.expect(&token::Eq);
             let e = p.parse_expr();
@@ -127,7 +127,7 @@ fn parse_args(ecx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
                 Some(prev) => {
                     ecx.span_err(e.span,
                                  &format!("duplicate argument named `{}`",
-                                         name)[]);
+                                         name));
                     ecx.parse_sess.span_diagnostic.span_note(prev.span, "previously here");
                     continue
                 }
@@ -218,7 +218,7 @@ impl<'a, 'b> Context<'a, 'b> {
                     let msg = format!("invalid reference to argument `{}` ({})",
                                       arg, self.describe_num_args());
 
-                    self.ecx.span_err(self.fmtsp, &msg[]);
+                    self.ecx.span_err(self.fmtsp, &msg[..]);
                     return;
                 }
                 {
@@ -238,7 +238,7 @@ impl<'a, 'b> Context<'a, 'b> {
                     Some(e) => e.span,
                     None => {
                         let msg = format!("there is no argument named `{}`", name);
-                        self.ecx.span_err(self.fmtsp, &msg[]);
+                        self.ecx.span_err(self.fmtsp, &msg[..]);
                         return;
                     }
                 };
@@ -281,19 +281,19 @@ impl<'a, 'b> Context<'a, 'b> {
                                   &format!("argument redeclared with type `{}` when \
                                            it was previously `{}`",
                                           *ty,
-                                          *cur)[]);
+                                          *cur));
             }
             (&Known(ref cur), _) => {
                 self.ecx.span_err(sp,
                                   &format!("argument used to format with `{}` was \
                                            attempted to not be used for formatting",
-                                           *cur)[]);
+                                           *cur));
             }
             (_, &Known(ref ty)) => {
                 self.ecx.span_err(sp,
                                   &format!("argument previously used as a format \
                                            argument attempted to be used as `{}`",
-                                           *ty)[]);
+                                           *ty));
             }
             (_, _) => {
                 self.ecx.span_err(sp, "argument declared with multiple formats");
@@ -337,7 +337,7 @@ impl<'a, 'b> Context<'a, 'b> {
     /// Translate the accumulated string literals to a literal expression
     fn trans_literal_string(&mut self) -> P<ast::Expr> {
         let sp = self.fmtsp;
-        let s = token::intern_and_get_ident(&self.literal[]);
+        let s = token::intern_and_get_ident(&self.literal);
         self.literal.clear();
         self.ecx.expr_str(sp, s)
     }
@@ -417,7 +417,7 @@ impl<'a, 'b> Context<'a, 'b> {
                     parse::AlignUnknown => align("Unknown"),
                 };
                 let align = self.ecx.expr_path(align);
-                let flags = self.ecx.expr_usize(sp, arg.format.flags);
+                let flags = self.ecx.expr_u32(sp, arg.format.flags);
                 let prec = self.trans_count(arg.format.precision);
                 let width = self.trans_count(arg.format.width);
                 let path = self.ecx.path_global(sp, Context::rtpath(self.ecx, "FormatSpec"));
@@ -494,7 +494,7 @@ impl<'a, 'b> Context<'a, 'b> {
                 None => continue // error already generated
             };
 
-            let name = self.ecx.ident_of(&format!("__arg{}", i)[]);
+            let name = self.ecx.ident_of(&format!("__arg{}", i));
             pats.push(self.ecx.pat_ident(e.span, name));
             locals.push(Context::format_arg(self.ecx, e.span, arg_ty,
                                             self.ecx.expr_ident(e.span, name)));
@@ -511,9 +511,9 @@ impl<'a, 'b> Context<'a, 'b> {
             };
 
             let lname = self.ecx.ident_of(&format!("__arg{}",
-                                                  *name)[]);
+                                                  *name));
             pats.push(self.ecx.pat_ident(e.span, lname));
-            names[self.name_positions[*name]] =
+            names[*self.name_positions.get(name).unwrap()] =
                 Some(Context::format_arg(self.ecx, e.span, arg_ty,
                                          self.ecx.expr_ident(e.span, lname)));
             heads.push(self.ecx.expr_addr_of(e.span, e));
@@ -587,7 +587,7 @@ impl<'a, 'b> Context<'a, 'b> {
                   -> P<ast::Expr> {
         let trait_ = match *ty {
             Known(ref tyname) => {
-                match &tyname[] {
+                match &tyname[..] {
                     ""  => "Display",
                     "?" => "Debug",
                     "e" => "LowerExp",
@@ -600,7 +600,7 @@ impl<'a, 'b> Context<'a, 'b> {
                     _ => {
                         ecx.span_err(sp,
                                      &format!("unknown format trait `{}`",
-                                             *tyname)[]);
+                                             *tyname));
                         "Dummy"
                     }
                 }
@@ -610,7 +610,7 @@ impl<'a, 'b> Context<'a, 'b> {
                         ecx.ident_of_std("core"),
                         ecx.ident_of("fmt"),
                         ecx.ident_of("ArgumentV1"),
-                        ecx.ident_of("from_uint")], vec![arg])
+                        ecx.ident_of("from_usize")], vec![arg])
             }
         };
 
@@ -633,7 +633,7 @@ pub fn expand_format_args<'cx>(ecx: &'cx mut ExtCtxt, sp: Span,
 
     match parse_args(ecx, sp, tts) {
         Some((efmt, args, order, names)) => {
-            MacExpr::new(expand_preparsed_format_args(ecx, sp, efmt,
+            MacEager::expr(expand_preparsed_format_args(ecx, sp, efmt,
                                                       args, order, names))
         }
         None => DummyResult::expr(sp)
@@ -694,7 +694,7 @@ pub fn expand_preparsed_format_args(ecx: &mut ExtCtxt, sp: Span,
     }
     if !parser.errors.is_empty() {
         cx.ecx.span_err(cx.fmtsp, &format!("invalid format string: {}",
-                                          parser.errors.remove(0))[]);
+                                          parser.errors.remove(0)));
         return DummyResult::raw_expr(sp);
     }
     if !cx.literal.is_empty() {

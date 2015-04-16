@@ -41,16 +41,16 @@ pub trait AstBuilder {
         -> ast::Path;
 
     fn qpath(&self, self_type: P<ast::Ty>,
-             trait_ref: P<ast::TraitRef>,
-             ident: ast::Ident )
-        -> P<ast::QPath>;
+             trait_path: ast::Path,
+             ident: ast::Ident)
+             -> (ast::QSelf, ast::Path);
     fn qpath_all(&self, self_type: P<ast::Ty>,
-                trait_ref: P<ast::TraitRef>,
+                trait_path: ast::Path,
                 ident: ast::Ident,
                 lifetimes: Vec<ast::Lifetime>,
                 types: Vec<P<ast::Ty>>,
-                bindings: Vec<P<ast::TypeBinding>> )
-        -> P<ast::QPath>;
+                bindings: Vec<P<ast::TypeBinding>>)
+                -> (ast::QSelf, ast::Path);
 
     // types
     fn ty_mt(&self, ty: P<ast::Ty>, mutbl: ast::Mutability) -> ast::MutTy;
@@ -114,7 +114,7 @@ pub trait AstBuilder {
     // expressions
     fn expr(&self, span: Span, node: ast::Expr_) -> P<ast::Expr>;
     fn expr_path(&self, path: ast::Path) -> P<ast::Expr>;
-    fn expr_qpath(&self, span: Span, qpath: P<ast::QPath>) -> P<ast::Expr>;
+    fn expr_qpath(&self, span: Span, qself: ast::QSelf, path: ast::Path) -> P<ast::Expr>;
     fn expr_ident(&self, span: Span, id: ast::Ident) -> P<ast::Expr>;
 
     fn expr_self(&self, span: Span) -> P<ast::Expr>;
@@ -148,6 +148,7 @@ pub trait AstBuilder {
     fn expr_usize(&self, span: Span, i: usize) -> P<ast::Expr>;
     fn expr_int(&self, sp: Span, i: isize) -> P<ast::Expr>;
     fn expr_u8(&self, sp: Span, u: u8) -> P<ast::Expr>;
+    fn expr_u32(&self, sp: Span, u: u32) -> P<ast::Expr>;
     fn expr_bool(&self, sp: Span, value: bool) -> P<ast::Expr>;
 
     fn expr_vec(&self, sp: Span, exprs: Vec<P<ast::Expr>>) -> P<ast::Expr>;
@@ -345,40 +346,40 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
 
     /// Constructs a qualified path.
     ///
-    /// Constructs a path like `<self_type as trait_ref>::ident`.
+    /// Constructs a path like `<self_type as trait_path>::ident`.
     fn qpath(&self,
              self_type: P<ast::Ty>,
-             trait_ref: P<ast::TraitRef>,
+             trait_path: ast::Path,
              ident: ast::Ident)
-             -> P<ast::QPath> {
-        self.qpath_all(self_type, trait_ref, ident, Vec::new(), Vec::new(), Vec::new())
+             -> (ast::QSelf, ast::Path) {
+        self.qpath_all(self_type, trait_path, ident, vec![], vec![], vec![])
     }
 
     /// Constructs a qualified path.
     ///
-    /// Constructs a path like `<self_type as trait_ref>::ident<a, T, A=Bar>`.
+    /// Constructs a path like `<self_type as trait_path>::ident<'a, T, A=Bar>`.
     fn qpath_all(&self,
                  self_type: P<ast::Ty>,
-                 trait_ref: P<ast::TraitRef>,
+                 trait_path: ast::Path,
                  ident: ast::Ident,
                  lifetimes: Vec<ast::Lifetime>,
                  types: Vec<P<ast::Ty>>,
-                 bindings: Vec<P<ast::TypeBinding>> )
-                 -> P<ast::QPath> {
-        let segment = ast::PathSegment {
+                 bindings: Vec<P<ast::TypeBinding>>)
+                 -> (ast::QSelf, ast::Path) {
+        let mut path = trait_path;
+        path.segments.push(ast::PathSegment {
             identifier: ident,
             parameters: ast::AngleBracketedParameters(ast::AngleBracketedParameterData {
                 lifetimes: lifetimes,
                 types: OwnedSlice::from_vec(types),
                 bindings: OwnedSlice::from_vec(bindings),
             })
-        };
+        });
 
-        P(ast::QPath {
-            self_type: self_type,
-            trait_ref: trait_ref,
-            item_path: segment,
-        })
+        (ast::QSelf {
+            ty: self_type,
+            position: path.segments.len() - 1
+        }, path)
     }
 
     fn ty_mt(&self, ty: P<ast::Ty>, mutbl: ast::Mutability) -> ast::MutTy {
@@ -397,7 +398,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
     }
 
     fn ty_path(&self, path: ast::Path) -> P<ast::Ty> {
-        self.ty(path.span, ast::TyPath(path, ast::DUMMY_NODE_ID))
+        self.ty(path.span, ast::TyPath(None, path))
     }
 
     fn ty_sum(&self, path: ast::Path, bounds: OwnedSlice<ast::TyParamBound>) -> P<ast::Ty> {
@@ -602,12 +603,12 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
     }
 
     fn expr_path(&self, path: ast::Path) -> P<ast::Expr> {
-        self.expr(path.span, ast::ExprPath(path))
+        self.expr(path.span, ast::ExprPath(None, path))
     }
 
     /// Constructs a QPath expression.
-    fn expr_qpath(&self, span: Span, qpath: P<ast::QPath>) -> P<ast::Expr> {
-        self.expr(span, ast::ExprQPath(qpath))
+    fn expr_qpath(&self, span: Span, qself: ast::QSelf, path: ast::Path) -> P<ast::Expr> {
+        self.expr(span, ast::ExprPath(Some(qself), path))
     }
 
     fn expr_ident(&self, span: Span, id: ast::Ident) -> P<ast::Expr> {
@@ -695,11 +696,14 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
         self.expr(sp, ast::ExprLit(P(respan(sp, lit))))
     }
     fn expr_usize(&self, span: Span, i: usize) -> P<ast::Expr> {
-        self.expr_lit(span, ast::LitInt(i as u64, ast::UnsignedIntLit(ast::TyUs(false))))
+        self.expr_lit(span, ast::LitInt(i as u64, ast::UnsignedIntLit(ast::TyUs)))
     }
     fn expr_int(&self, sp: Span, i: isize) -> P<ast::Expr> {
-        self.expr_lit(sp, ast::LitInt(i as u64, ast::SignedIntLit(ast::TyIs(false),
+        self.expr_lit(sp, ast::LitInt(i as u64, ast::SignedIntLit(ast::TyIs,
                                                                   ast::Sign::new(i))))
+    }
+    fn expr_u32(&self, sp: Span, u: u32) -> P<ast::Expr> {
+        self.expr_lit(sp, ast::LitInt(u as u64, ast::UnsignedIntLit(ast::TyU32)))
     }
     fn expr_u8(&self, sp: Span, u: u8) -> P<ast::Expr> {
         self.expr_lit(sp, ast::LitInt(u as u64, ast::UnsignedIntLit(ast::TyU8)))
@@ -762,7 +766,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
     fn expr_fail(&self, span: Span, msg: InternedString) -> P<ast::Expr> {
         let loc = self.codemap().lookup_char_pos(span.lo);
         let expr_file = self.expr_str(span,
-                                      token::intern_and_get_ident(&loc.file.name[]));
+                                      token::intern_and_get_ident(&loc.file.name));
         let expr_line = self.expr_usize(span, loc.line);
         let expr_file_line_tuple = self.expr_tuple(span, vec!(expr_file, expr_line));
         let expr_file_line_ptr = self.expr_addr_of(span, expr_file_line_tuple);

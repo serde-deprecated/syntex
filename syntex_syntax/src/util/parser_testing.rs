@@ -9,9 +9,9 @@
 // except according to those terms.
 
 use ast;
-use parse::{new_parse_sess};
+use parse::new_parse_sess;
 use parse::{ParseSess,string_to_filemap,filemap_to_tts};
-use parse::{new_parser_from_source_str};
+use parse::new_parser_from_source_str;
 use parse::parser::Parser;
 use parse::token;
 use ptr::P;
@@ -58,14 +58,14 @@ pub fn string_to_expr (source_str : String) -> P<ast::Expr> {
 /// Parse a string, return an item
 pub fn string_to_item (source_str : String) -> Option<P<ast::Item>> {
     with_error_checking_parse(source_str, |p| {
-        p.parse_item(Vec::new())
+        p.parse_item()
     })
 }
 
 /// Parse a string, return a stmt
 pub fn string_to_stmt(source_str : String) -> P<ast::Stmt> {
     with_error_checking_parse(source_str, |p| {
-        p.parse_stmt(Vec::new())
+        p.parse_stmt().unwrap()
     })
 }
 

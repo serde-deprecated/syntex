@@ -64,7 +64,7 @@
 //!     fn encode(&self, s: &mut S) -> Result<(), E> {
 //!         s.emit_struct("Spanned", 2, |this| {
 //!             this.emit_struct_field("node", 0, |this| self.node.encode(this))
-//!                 .ok().unwrap();
+//!                 .unwrap();
 //!             this.emit_struct_field("span", 1, |this| self.span.encode(this))
 //!         })
 //!     }
@@ -79,9 +79,9 @@
 //!         d.read_struct("Spanned", 2, |this| {
 //!             Ok(Spanned {
 //!                 node: this.read_struct_field("node", 0, |this| Decodable::decode(this))
-//!                     .ok().unwrap(),
+//!                     .unwrap(),
 //!                 span: this.read_struct_field("span", 1, |this| Decodable::decode(this))
-//!                     .ok().unwrap(),
+//!                     .unwrap(),
 //!             })
 //!         })
 //!     }
@@ -158,9 +158,9 @@ fn expand_deriving_encodable_imp<F>(cx: &mut ExtCtxt,
                     true
                 )),
                 attributes: Vec::new(),
-                combine_substructure: combine_substructure(box |a, b, c| {
+                combine_substructure: combine_substructure(Box::new(|a, b, c| {
                     encodable_substructure(a, b, c)
-                }),
+                })),
             }
         ),
         associated_types: Vec::new(),
@@ -181,7 +181,6 @@ fn encodable_substructure(cx: &mut ExtCtxt, trait_span: Span,
         Struct(ref fields) => {
             let emit_struct_field = cx.ident_of("emit_struct_field");
             let mut stmts = Vec::new();
-            let last = fields.len() - 1;
             for (i, &FieldInfo {
                     name,
                     ref self_,
@@ -191,7 +190,7 @@ fn encodable_substructure(cx: &mut ExtCtxt, trait_span: Span,
                 let name = match name {
                     Some(id) => token::get_ident(id),
                     None => {
-                        token::intern_and_get_ident(&format!("_field{}", i)[])
+                        token::intern_and_get_ident(&format!("_field{}", i))
                     }
                 };
                 let enc = cx.expr_method_call(span, self_.clone(),
@@ -204,6 +203,7 @@ fn encodable_substructure(cx: &mut ExtCtxt, trait_span: Span,
                                                  lambda));
 
                 // last call doesn't need a try!
+                let last = fields.len() - 1;
                 let call = if i != last {
                     cx.expr_try(span, call)
                 } else {
@@ -240,25 +240,24 @@ fn encodable_substructure(cx: &mut ExtCtxt, trait_span: Span,
             let encoder = cx.expr_ident(trait_span, blkarg);
             let emit_variant_arg = cx.ident_of("emit_enum_variant_arg");
             let mut stmts = Vec::new();
-            let last = fields.len() - 1;
-            for (i, &FieldInfo { ref self_, span, .. }) in fields.iter().enumerate() {
-                let enc = cx.expr_method_call(span, self_.clone(),
-                                              encode, vec!(blkencoder.clone()));
-                let lambda = cx.lambda_expr_1(span, enc, blkarg);
-                let call = cx.expr_method_call(span, blkencoder.clone(),
-                                               emit_variant_arg,
-                                               vec!(cx.expr_usize(span, i),
-                                                 lambda));
-                let call = if i != last {
-                    cx.expr_try(span, call)
-                } else {
-                    cx.expr(span, ExprRet(Some(call)))
-                };
-                stmts.push(cx.stmt_expr(call));
-            }
-
-            // enums with no fields need to return Ok()
-            if stmts.len() == 0 {
+            if fields.len() > 0 {
+                let last = fields.len() - 1;
+                for (i, &FieldInfo { ref self_, span, .. }) in fields.iter().enumerate() {
+                    let enc = cx.expr_method_call(span, self_.clone(),
+                                                  encode, vec!(blkencoder.clone()));
+                    let lambda = cx.lambda_expr_1(span, enc, blkarg);
+                    let call = cx.expr_method_call(span, blkencoder.clone(),
+                                                   emit_variant_arg,
+                                                   vec!(cx.expr_usize(span, i),
+                                                        lambda));
+                    let call = if i != last {
+                        cx.expr_try(span, call)
+                    } else {
+                        cx.expr(span, ExprRet(Some(call)))
+                    };
+                    stmts.push(cx.stmt_expr(call));
+                }
+            } else {
                 let ret_ok = cx.expr(trait_span,
                                      ExprRet(Some(cx.expr_ok(trait_span,
                                                              cx.expr_tuple(trait_span, vec![])))));

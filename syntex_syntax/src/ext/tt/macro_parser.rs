@@ -153,7 +153,7 @@ pub fn count_names(ms: &[TokenTree]) -> usize {
                 seq.num_captures
             }
             &TtDelimited(_, ref delim) => {
-                count_names(&delim.tts[])
+                count_names(&delim.tts)
             }
             &TtToken(_, MatchNt(..)) => {
                 1
@@ -165,7 +165,7 @@ pub fn count_names(ms: &[TokenTree]) -> usize {
 
 pub fn initial_matcher_pos(ms: Rc<Vec<TokenTree>>, sep: Option<Token>, lo: BytePos)
                            -> Box<MatcherPos> {
-    let match_idx_hi = count_names(&ms[]);
+    let match_idx_hi = count_names(&ms[..]);
     let matches: Vec<_> = (0..match_idx_hi).map(|_| Vec::new()).collect();
     box MatcherPos {
         stack: vec![],
@@ -229,7 +229,7 @@ pub fn nameize(p_s: &ParseSess, ms: &[TokenTree], res: &[Rc<NamedMatch>])
                         p_s.span_diagnostic
                            .span_fatal(sp,
                                        &format!("duplicated bind name: {}",
-                                               &string)[])
+                                               &string))
                     }
                 }
             }
@@ -243,24 +243,27 @@ pub fn nameize(p_s: &ParseSess, ms: &[TokenTree], res: &[Rc<NamedMatch>])
     ret_val
 }
 
-pub enum ParseResult {
-    Success(HashMap<Ident, Rc<NamedMatch>>),
+pub enum ParseResult<T> {
+    Success(T),
     Failure(codemap::Span, String),
     Error(codemap::Span, String)
 }
+
+pub type NamedParseResult = ParseResult<HashMap<Ident, Rc<NamedMatch>>>;
+pub type PositionalParseResult = ParseResult<Vec<Rc<NamedMatch>>>;
 
 pub fn parse_or_else(sess: &ParseSess,
                      cfg: ast::CrateConfig,
                      rdr: TtReader,
                      ms: Vec<TokenTree> )
                      -> HashMap<Ident, Rc<NamedMatch>> {
-    match parse(sess, cfg, rdr, &ms[]) {
+    match parse(sess, cfg, rdr, &ms[..]) {
         Success(m) => m,
         Failure(sp, str) => {
-            sess.span_diagnostic.span_fatal(sp, &str[])
+            sess.span_diagnostic.span_fatal(sp, &str[..])
         }
         Error(sp, str) => {
-            sess.span_diagnostic.span_fatal(sp, &str[])
+            sess.span_diagnostic.span_fatal(sp, &str[..])
         }
     }
 }
@@ -280,10 +283,10 @@ pub fn parse(sess: &ParseSess,
              cfg: ast::CrateConfig,
              mut rdr: TtReader,
              ms: &[TokenTree])
-             -> ParseResult {
+             -> NamedParseResult {
     let mut cur_eis = Vec::new();
     cur_eis.push(initial_matcher_pos(Rc::new(ms.iter()
-                                                .map(|x| (*x).clone())
+                                                .cloned()
                                                 .collect()),
                                      None,
                                      rdr.peek().sp.lo));
@@ -447,7 +450,7 @@ pub fn parse(sess: &ParseSess,
                 for dv in &mut (&mut eof_eis[0]).matches {
                     v.push(dv.pop().unwrap());
                 }
-                return Success(nameize(sess, ms, &v[]));
+                return Success(nameize(sess, ms, &v[..]));
             } else if eof_eis.len() > 1 {
                 return Error(sp, "ambiguity: multiple successful parses".to_string());
             } else {
@@ -479,7 +482,7 @@ pub fn parse(sess: &ParseSess,
                 }
                 rdr.next_token();
             } else /* bb_eis.len() == 1 */ {
-                let mut rust_parser = Parser::new(sess, cfg.clone(), box rdr.clone());
+                let mut rust_parser = Parser::new(sess, cfg.clone(), Box::new(rdr.clone()));
 
                 let mut ei = bb_eis.pop().unwrap();
                 match ei.top_elts.get_tt(ei.idx) {
@@ -488,7 +491,7 @@ pub fn parse(sess: &ParseSess,
                     let match_cur = ei.match_cur;
                     (&mut ei.matches[match_cur]).push(Rc::new(MatchedNonterminal(
                         parse_nt(&mut rust_parser, span, &name_string))));
-                    ei.idx += 1us;
+                    ei.idx += 1;
                     ei.match_cur += 1;
                   }
                   _ => panic!()
@@ -518,12 +521,15 @@ pub fn parse_nt(p: &mut Parser, sp: Span, name: &str) -> Nonterminal {
     // check at the beginning and the parser checks after each bump
     p.check_unknown_macro_variable();
     match name {
-      "item" => match p.parse_item(Vec::new()) {
+      "item" => match p.parse_item() {
         Some(i) => token::NtItem(i),
         None => p.fatal("expected an item keyword")
       },
       "block" => token::NtBlock(p.parse_block()),
-      "stmt" => token::NtStmt(p.parse_stmt(Vec::new())),
+      "stmt" => match p.parse_stmt() {
+        Some(s) => token::NtStmt(s),
+        None => p.fatal("expected a statement")
+      },
       "pat" => token::NtPat(p.parse_pat()),
       "expr" => token::NtExpr(p.parse_expr()),
       "ty" => token::NtTy(p.parse_ty()),
@@ -533,7 +539,7 @@ pub fn parse_nt(p: &mut Parser, sp: Span, name: &str) -> Nonterminal {
         _ => {
             let token_str = pprust::token_to_string(&p.token);
             p.fatal(&format!("expected ident, found {}",
-                             &token_str[])[])
+                             &token_str[..]))
         }
       },
       "path" => {
@@ -542,7 +548,7 @@ pub fn parse_nt(p: &mut Parser, sp: Span, name: &str) -> Nonterminal {
       "meta" => token::NtMeta(p.parse_meta_item()),
       _ => {
           p.span_fatal_help(sp,
-                            &format!("invalid fragment specifier `{}`", name)[],
+                            &format!("invalid fragment specifier `{}`", name),
                             "valid fragment specifiers are `ident`, `block`, \
                              `stmt`, `expr`, `pat`, `ty`, `path`, `meta`, `tt` \
                              and `item`")

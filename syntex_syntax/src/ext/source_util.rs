@@ -20,7 +20,9 @@ use print::pprust;
 use ptr::P;
 use util::small_vector::SmallVector;
 
-use std::old_io::File;
+use std::fs::File;
+use std::io::prelude::*;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 // These macros all relate to the file system; they either return
@@ -35,7 +37,7 @@ pub fn expand_line(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
     let topmost = cx.original_span_in_file();
     let loc = cx.codemap().lookup_char_pos(topmost.lo);
 
-    base::MacExpr::new(cx.expr_usize(topmost, loc.line))
+    base::MacEager::expr(cx.expr_u32(topmost, loc.line as u32))
 }
 
 /* column!(): expands to the current column number */
@@ -45,7 +47,8 @@ pub fn expand_column(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
 
     let topmost = cx.original_span_in_file();
     let loc = cx.codemap().lookup_char_pos(topmost.lo);
-    base::MacExpr::new(cx.expr_usize(topmost, loc.col.to_usize()))
+
+    base::MacEager::expr(cx.expr_u32(topmost, loc.col.to_usize() as u32))
 }
 
 /// file!(): expands to the current filename */
@@ -57,15 +60,15 @@ pub fn expand_file(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
 
     let topmost = cx.original_span_in_file();
     let loc = cx.codemap().lookup_char_pos(topmost.lo);
-    let filename = token::intern_and_get_ident(&loc.file.name[]);
-    base::MacExpr::new(cx.expr_str(topmost, filename))
+    let filename = token::intern_and_get_ident(&loc.file.name);
+    base::MacEager::expr(cx.expr_str(topmost, filename))
 }
 
 pub fn expand_stringify(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
                         -> Box<base::MacResult+'static> {
     let s = pprust::tts_to_string(tts);
-    base::MacExpr::new(cx.expr_str(sp,
-                                   token::intern_and_get_ident(&s[])))
+    base::MacEager::expr(cx.expr_str(sp,
+                                   token::intern_and_get_ident(&s[..])))
 }
 
 pub fn expand_mod(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
@@ -76,9 +79,9 @@ pub fn expand_mod(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
                    .map(|x| token::get_ident(*x).to_string())
                    .collect::<Vec<String>>()
                    .connect("::");
-    base::MacExpr::new(cx.expr_str(
+    base::MacEager::expr(cx.expr_str(
             sp,
-            token::intern_and_get_ident(&string[])))
+            token::intern_and_get_ident(&string[..])))
 }
 
 /// include! : parse the given file as an expr
@@ -96,7 +99,7 @@ pub fn expand_include<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[ast::TokenTree
                                         cx.cfg(),
                                         &res_rel_file(cx,
                                                       sp,
-                                                      &Path::new(file)),
+                                                      Path::new(&file)),
                                         true,
                                         None,
                                         sp);
@@ -112,12 +115,12 @@ pub fn expand_include<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[ast::TokenTree
                       -> Option<SmallVector<P<ast::Item>>> {
             let mut ret = SmallVector::zero();
             while self.p.token != token::Eof {
-                match self.p.parse_item_with_outer_attributes() {
+                match self.p.parse_item() {
                     Some(item) => ret.push(item),
                     None => self.p.span_fatal(
                         self.p.span,
                         &format!("expected item, found `{}`",
-                                 self.p.this_token_to_string())[]
+                                 self.p.this_token_to_string())
                     )
                 }
             }
@@ -135,31 +138,32 @@ pub fn expand_include_str(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
         Some(f) => f,
         None => return DummyResult::expr(sp)
     };
-    let file = res_rel_file(cx, sp, &Path::new(file));
-    let bytes = match File::open(&file).read_to_end() {
+    let file = res_rel_file(cx, sp, Path::new(&file));
+    let mut bytes = Vec::new();
+    match File::open(&file).and_then(|mut f| f.read_to_end(&mut bytes)) {
+        Ok(..) => {}
         Err(e) => {
             cx.span_err(sp,
                         &format!("couldn't read {}: {}",
                                 file.display(),
-                                e)[]);
+                                e));
             return DummyResult::expr(sp);
         }
-        Ok(bytes) => bytes,
     };
     match String::from_utf8(bytes) {
         Ok(src) => {
             // Add this input file to the code map to make it available as
             // dependency information
             let filename = format!("{}", file.display());
-            let interned = token::intern_and_get_ident(&src[]);
+            let interned = token::intern_and_get_ident(&src[..]);
             cx.codemap().new_filemap(filename, src);
 
-            base::MacExpr::new(cx.expr_str(sp, interned))
+            base::MacEager::expr(cx.expr_str(sp, interned))
         }
         Err(_) => {
             cx.span_err(sp,
                         &format!("{} wasn't a utf-8 file",
-                                file.display())[]);
+                                file.display()));
             return DummyResult::expr(sp);
         }
     }
@@ -171,30 +175,30 @@ pub fn expand_include_bytes(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
         Some(f) => f,
         None => return DummyResult::expr(sp)
     };
-    let file = res_rel_file(cx, sp, &Path::new(file));
-    match File::open(&file).read_to_end() {
+    let file = res_rel_file(cx, sp, Path::new(&file));
+    let mut bytes = Vec::new();
+    match File::open(&file).and_then(|mut f| f.read_to_end(&mut bytes)) {
         Err(e) => {
             cx.span_err(sp,
-                        &format!("couldn't read {}: {}", file.display(), e)[]);
+                        &format!("couldn't read {}: {}", file.display(), e));
             return DummyResult::expr(sp);
         }
-        Ok(bytes) => {
-            let bytes = bytes.iter().map(|x| *x).collect();
-            base::MacExpr::new(cx.expr_lit(sp, ast::LitBinary(Rc::new(bytes))))
+        Ok(..) => {
+            base::MacEager::expr(cx.expr_lit(sp, ast::LitBinary(Rc::new(bytes))))
         }
     }
 }
 
 // resolve a file-system path to an absolute file-system path (if it
 // isn't already)
-fn res_rel_file(cx: &mut ExtCtxt, sp: codemap::Span, arg: &Path) -> Path {
+fn res_rel_file(cx: &mut ExtCtxt, sp: codemap::Span, arg: &Path) -> PathBuf {
     // NB: relative paths are resolved relative to the compilation unit
     if !arg.is_absolute() {
-        let mut cu = Path::new(cx.codemap().span_to_filename(sp));
+        let mut cu = PathBuf::from(&cx.codemap().span_to_filename(sp));
         cu.pop();
         cu.push(arg);
         cu
     } else {
-        arg.clone()
+        arg.to_path_buf()
     }
 }

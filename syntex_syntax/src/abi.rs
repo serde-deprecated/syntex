@@ -15,7 +15,7 @@ pub use self::AbiArchitecture::*;
 
 use std::fmt;
 
-#[derive(Copy, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Os {
     OsWindows,
     OsMacos,
@@ -24,6 +24,7 @@ pub enum Os {
     OsFreebsd,
     OsiOS,
     OsDragonfly,
+    OsBitrig,
     OsOpenbsd,
 }
 
@@ -48,7 +49,7 @@ pub enum Abi {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Copy, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum Architecture {
     X86,
     X86_64,
@@ -57,7 +58,7 @@ pub enum Architecture {
     Mipsel
 }
 
-#[derive(Copy)]
+#[derive(Copy, Clone)]
 pub struct AbiData {
     abi: Abi,
 
@@ -65,7 +66,7 @@ pub struct AbiData {
     name: &'static str,
 }
 
-#[derive(Copy)]
+#[derive(Copy, Clone)]
 pub enum AbiArchitecture {
     /// Not a real ABI (e.g., intrinsic)
     RustArch,
@@ -76,11 +77,11 @@ pub enum AbiArchitecture {
 }
 
 #[allow(non_upper_case_globals)]
-static AbiDatas: &'static [AbiData] = &[
+const AbiDatas: &'static [AbiData] = &[
     // Platform-specific ABIs
     AbiData {abi: Cdecl, name: "cdecl" },
     AbiData {abi: Stdcall, name: "stdcall" },
-    AbiData {abi: Fastcall, name:"fastcall" },
+    AbiData {abi: Fastcall, name: "fastcall" },
     AbiData {abi: Aapcs, name: "aapcs" },
     AbiData {abi: Win64, name: "win64" },
 
@@ -136,6 +137,7 @@ impl fmt::Display for Os {
             OsAndroid => "android".fmt(f),
             OsFreebsd => "freebsd".fmt(f),
             OsDragonfly => "dragonfly".fmt(f),
+            OsBitrig => "bitrig".fmt(f),
             OsOpenbsd => "openbsd".fmt(f),
         }
     }

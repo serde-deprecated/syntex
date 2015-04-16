@@ -10,7 +10,6 @@
 
 // Functions dealing with attributes and meta items
 
-pub use self::InlineAttr::*;
 pub use self::StabilityLevel::*;
 pub use self::ReprAttr::*;
 pub use self::IntType::*;
@@ -26,11 +25,11 @@ use parse::token;
 use ptr::P;
 
 use std::cell::{RefCell, Cell};
-use std::collections::BitvSet;
+use std::collections::BitSet;
 use std::collections::HashSet;
 use std::fmt;
 
-thread_local! { static USED_ATTRS: RefCell<BitvSet> = RefCell::new(BitvSet::new()) }
+thread_local! { static USED_ATTRS: RefCell<BitSet> = RefCell::new(BitSet::new()) }
 
 pub fn mark_used(attr: &Attribute) {
     let AttrId(id) = attr.node.id;
@@ -44,7 +43,7 @@ pub fn is_used(attr: &Attribute) -> bool {
 
 pub trait AttrMetaMethods {
     fn check_name(&self, name: &str) -> bool {
-        name == &self.name()[]
+        name == &self.name()[..]
     }
 
     /// Retrieve the name of the meta item, e.g. `foo` in `#[foo]`,
@@ -62,7 +61,7 @@ pub trait AttrMetaMethods {
 
 impl AttrMetaMethods for Attribute {
     fn check_name(&self, name: &str) -> bool {
-        let matches = name == &self.name()[];
+        let matches = name == &self.name()[..];
         if matches {
             mark_used(self);
         }
@@ -101,7 +100,7 @@ impl AttrMetaMethods for MetaItem {
 
     fn meta_item_list<'a>(&'a self) -> Option<&'a [P<MetaItem>]> {
         match self.node {
-            MetaList(_, ref l) => Some(&l[]),
+            MetaList(_, ref l) => Some(&l[..]),
             _ => None
         }
     }
@@ -142,7 +141,7 @@ impl AttributeMethods for Attribute {
             let meta = mk_name_value_item_str(
                 InternedString::new("doc"),
                 token::intern_and_get_ident(&strip_doc_comment_decoration(
-                        &comment)[]));
+                        &comment)));
             if self.node.style == ast::AttrOuter {
                 f(&mk_attr_outer(self.node.id, meta))
             } else {
@@ -283,31 +282,35 @@ pub fn find_crate_name(attrs: &[Attribute]) -> Option<InternedString> {
     first_attr_value_str_by_name(attrs, "crate_name")
 }
 
-#[derive(Copy, PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum InlineAttr {
-    InlineNone,
-    InlineHint,
-    InlineAlways,
-    InlineNever,
+    None,
+    Hint,
+    Always,
+    Never,
 }
 
 /// Determine what `#[inline]` attribute is present in `attrs`, if any.
-pub fn find_inline_attr(attrs: &[Attribute]) -> InlineAttr {
+pub fn find_inline_attr(diagnostic: Option<&SpanHandler>, attrs: &[Attribute]) -> InlineAttr {
     // FIXME (#2809)---validate the usage of #[inline] and #[inline]
-    attrs.iter().fold(InlineNone, |ia,attr| {
+    attrs.iter().fold(InlineAttr::None, |ia,attr| {
         match attr.node.value.node {
             MetaWord(ref n) if *n == "inline" => {
                 mark_used(attr);
-                InlineHint
+                InlineAttr::Hint
             }
             MetaList(ref n, ref items) if *n == "inline" => {
                 mark_used(attr);
-                if contains_name(&items[], "always") {
-                    InlineAlways
-                } else if contains_name(&items[], "never") {
-                    InlineNever
+                if items.len() != 1 {
+                    diagnostic.map(|d|{ d.span_err(attr.span, "expected one argument"); });
+                    InlineAttr::None
+                } else if contains_name(&items[..], "always") {
+                    InlineAttr::Always
+                } else if contains_name(&items[..], "never") {
+                    InlineAttr::Never
                 } else {
-                    InlineHint
+                    diagnostic.map(|d|{ d.span_err((*items[0]).span, "invalid argument"); });
+                    InlineAttr::None
                 }
             }
             _ => ia
@@ -317,20 +320,20 @@ pub fn find_inline_attr(attrs: &[Attribute]) -> InlineAttr {
 
 /// True if `#[inline]` or `#[inline(always)]` is present in `attrs`.
 pub fn requests_inline(attrs: &[Attribute]) -> bool {
-    match find_inline_attr(attrs) {
-        InlineHint | InlineAlways => true,
-        InlineNone | InlineNever => false,
+    match find_inline_attr(None, attrs) {
+        InlineAttr::Hint | InlineAttr::Always => true,
+        InlineAttr::None | InlineAttr::Never => false,
     }
 }
 
 /// Tests if a cfg-pattern matches the cfg set
 pub fn cfg_matches(diagnostic: &SpanHandler, cfgs: &[P<MetaItem>], cfg: &ast::MetaItem) -> bool {
     match cfg.node {
-        ast::MetaList(ref pred, ref mis) if &pred[] == "any" =>
+        ast::MetaList(ref pred, ref mis) if &pred[..] == "any" =>
             mis.iter().any(|mi| cfg_matches(diagnostic, cfgs, &**mi)),
-        ast::MetaList(ref pred, ref mis) if &pred[] == "all" =>
+        ast::MetaList(ref pred, ref mis) if &pred[..] == "all" =>
             mis.iter().all(|mi| cfg_matches(diagnostic, cfgs, &**mi)),
-        ast::MetaList(ref pred, ref mis) if &pred[] == "not" => {
+        ast::MetaList(ref pred, ref mis) if &pred[..] == "not" => {
             if mis.len() != 1 {
                 diagnostic.span_err(cfg.span, "expected 1 cfg-pattern");
                 return false;
@@ -382,7 +385,7 @@ fn find_stability_generic<'a,
 
     'outer: for attr in attrs {
         let tag = attr.name();
-        let tag = &tag[];
+        let tag = &tag[..];
         if tag != "deprecated" && tag != "unstable" && tag != "stable" {
             continue // not a stability level
         }
@@ -404,7 +407,7 @@ fn find_stability_generic<'a,
                             }
                         }
                     }
-                    if &meta.name()[] == "since" {
+                    if &meta.name()[..] == "since" {
                         match meta.value_str() {
                             Some(v) => since = Some(v),
                             None => {
@@ -413,7 +416,7 @@ fn find_stability_generic<'a,
                             }
                         }
                     }
-                    if &meta.name()[] == "reason" {
+                    if &meta.name()[..] == "reason" {
                         match meta.value_str() {
                             Some(v) => reason = Some(v),
                             None => {
@@ -501,7 +504,7 @@ pub fn require_unique_names(diagnostic: &SpanHandler, metas: &[P<MetaItem>]) {
 
         if !set.insert(name.clone()) {
             diagnostic.span_fatal(meta.span,
-                                  &format!("duplicate meta item `{}`", name)[]);
+                                  &format!("duplicate meta item `{}`", name));
         }
     }
 }
@@ -521,7 +524,7 @@ pub fn find_repr_attrs(diagnostic: &SpanHandler, attr: &Attribute) -> Vec<ReprAt
             for item in items {
                 match item.node {
                     ast::MetaWord(ref word) => {
-                        let hint = match &word[] {
+                        let hint = match &word[..] {
                             // Can't use "extern" because it's not a lexical identifier.
                             "C" => Some(ReprExtern),
                             "packed" => Some(ReprPacked),
@@ -562,15 +565,13 @@ fn int_type_of_word(s: &str) -> Option<IntType> {
         "u32" => Some(UnsignedInt(ast::TyU32)),
         "i64" => Some(SignedInt(ast::TyI64)),
         "u64" => Some(UnsignedInt(ast::TyU64)),
-        "int" => Some(SignedInt(ast::TyIs(true))),
-        "uint" => Some(UnsignedInt(ast::TyUs(true))),
-        "isize" => Some(SignedInt(ast::TyIs(false))),
-        "usize" => Some(UnsignedInt(ast::TyUs(false))),
+        "isize" => Some(SignedInt(ast::TyIs)),
+        "usize" => Some(UnsignedInt(ast::TyUs)),
         _ => None
     }
 }
 
-#[derive(PartialEq, Debug, RustcEncodable, RustcDecodable, Copy)]
+#[derive(PartialEq, Debug, RustcEncodable, RustcDecodable, Copy, Clone)]
 pub enum ReprAttr {
     ReprAny,
     ReprInt(Span, IntType),
@@ -589,7 +590,7 @@ impl ReprAttr {
     }
 }
 
-#[derive(Eq, Hash, PartialEq, Debug, RustcEncodable, RustcDecodable, Copy)]
+#[derive(Eq, Hash, PartialEq, Debug, RustcEncodable, RustcDecodable, Copy, Clone)]
 pub enum IntType {
     SignedInt(ast::IntTy),
     UnsignedInt(ast::UintTy)
@@ -609,7 +610,7 @@ impl IntType {
             SignedInt(ast::TyI16) | UnsignedInt(ast::TyU16) |
             SignedInt(ast::TyI32) | UnsignedInt(ast::TyU32) |
             SignedInt(ast::TyI64) | UnsignedInt(ast::TyU64) => true,
-            SignedInt(ast::TyIs(_)) | UnsignedInt(ast::TyUs(_)) => false
+            SignedInt(ast::TyIs) | UnsignedInt(ast::TyUs) => false
         }
     }
 }

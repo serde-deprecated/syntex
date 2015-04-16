@@ -12,12 +12,21 @@ use ast;
 use codemap::Span;
 use ext::base::*;
 use ext::base;
+use feature_gate;
 use parse::token;
-use parse::token::{str_to_ident};
+use parse::token::str_to_ident;
 use ptr::P;
 
 pub fn expand_syntax_ext<'cx>(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
                               -> Box<base::MacResult+'cx> {
+    if !cx.ecfg.enable_concat_idents() {
+        feature_gate::emit_feature_err(&cx.parse_sess.span_diagnostic,
+                                       "concat_idents",
+                                       sp,
+                                       feature_gate::EXPLAIN_CONCAT_IDENTS);
+        return base::DummyResult::expr(sp);
+    }
+
     let mut res_str = String::new();
     for (i, e) in tts.iter().enumerate() {
         if i & 1 == 1 {
@@ -40,11 +49,11 @@ pub fn expand_syntax_ext<'cx>(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree]
             }
         }
     }
-    let res = str_to_ident(&res_str[]);
+    let res = str_to_ident(&res_str[..]);
 
     let e = P(ast::Expr {
         id: ast::DUMMY_NODE_ID,
-        node: ast::ExprPath(
+        node: ast::ExprPath(None,
             ast::Path {
                  span: sp,
                  global: false,
@@ -58,5 +67,5 @@ pub fn expand_syntax_ext<'cx>(cx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree]
         ),
         span: sp,
     });
-    MacExpr::new(e)
+    MacEager::expr(e)
 }

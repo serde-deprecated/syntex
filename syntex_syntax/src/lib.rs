@@ -14,6 +14,8 @@
 //!
 //! This API is completely unstable and subject to change.
 
+// Do not remove on snapshot creation. Needed for bootstrap. (Issue #22364)
+#![cfg_attr(stage0, feature(custom_attribute))]
 #![crate_name = "syntax"]
 #![unstable(feature = "rustc_private")]
 #![staged_api]
@@ -27,18 +29,16 @@
 #![feature(box_syntax)]
 #![feature(collections)]
 #![feature(core)]
-#![feature(env)]
-#![feature(hash)]
-#![feature(int_uint)]
-#![feature(io)]
 #![feature(libc)]
-#![feature(path)]
+#![feature(old_path)]
 #![feature(quote, unsafe_destructor)]
 #![feature(rustc_private)]
-#![feature(slicing_syntax)]
 #![feature(staged_api)]
-#![feature(std_misc)]
 #![feature(unicode)]
+#![feature(path_ext)]
+#![feature(str_char)]
+#![feature(into_cow)]
+#![feature(slice_patterns)]
 
 extern crate arena;
 extern crate fmt_macros;
@@ -48,7 +48,7 @@ extern crate libc;
 #[macro_use] extern crate log;
 #[macro_use] #[no_link] extern crate rustc_bitflags;
 
-extern crate "serialize" as rustc_serialize; // used by deriving
+extern crate serialize as rustc_serialize; // used by deriving
 
 pub mod util {
     pub mod interner;

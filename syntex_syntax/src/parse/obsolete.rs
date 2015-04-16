@@ -20,14 +20,10 @@ use parse::token;
 use ptr::P;
 
 /// The specific types of unsupported syntax
-#[derive(Copy, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ObsoleteSyntax {
-    Sized,
-    ForSized,
-    ProcType,
-    ProcExpr,
-    ClosureType,
     ClosureKind,
+    ExternCrateString,
 }
 
 pub trait ParserObsoleteMethods {
@@ -40,7 +36,8 @@ pub trait ParserObsoleteMethods {
               sp: Span,
               kind: ObsoleteSyntax,
               kind_str: &str,
-              desc: &str);
+              desc: &str,
+              error: bool);
     fn is_obsolete_ident(&mut self, ident: &str) -> bool;
     fn eat_obsolete_ident(&mut self, ident: &str) -> bool;
 }
@@ -48,35 +45,20 @@ pub trait ParserObsoleteMethods {
 impl<'a> ParserObsoleteMethods for parser::Parser<'a> {
     /// Reports an obsolete syntax non-fatal error.
     fn obsolete(&mut self, sp: Span, kind: ObsoleteSyntax) {
-        let (kind_str, desc) = match kind {
-            ObsoleteSyntax::ForSized => (
-                "for Sized?",
-                "no longer required. Traits (and their `Self` type) do not have the `Sized` bound \
-                 by default",
-            ),
-            ObsoleteSyntax::ProcType => (
-                "the `proc` type",
-                "use unboxed closures instead",
-            ),
-            ObsoleteSyntax::ProcExpr => (
-                "`proc` expression",
-                "use a `move ||` expression instead",
-            ),
-            ObsoleteSyntax::ClosureType => (
-                "`|usize| -> bool` closure type",
-                "use unboxed closures instead, no type annotation needed"
-            ),
+        let (kind_str, desc, error) = match kind {
             ObsoleteSyntax::ClosureKind => (
                 "`:`, `&mut:`, or `&:`",
-                "rely on inference instead"
+                "rely on inference instead",
+                true,
             ),
-            ObsoleteSyntax::Sized => (
-                "`Sized? T` for removing the `Sized` bound",
-                "write `T: ?Sized` instead"
+            ObsoleteSyntax::ExternCrateString => (
+                "\"crate-name\"",
+                "use an identifier not in quotes instead",
+                false, // warning for now
             ),
         };
 
-        self.report(sp, kind, kind_str, desc);
+        self.report(sp, kind, kind_str, desc, error);
     }
 
     /// Reports an obsolete syntax non-fatal error, and returns
@@ -90,15 +72,19 @@ impl<'a> ParserObsoleteMethods for parser::Parser<'a> {
               sp: Span,
               kind: ObsoleteSyntax,
               kind_str: &str,
-              desc: &str) {
-        self.span_err(sp,
-                      &format!("obsolete syntax: {}", kind_str)[]);
+              desc: &str,
+              error: bool) {
+        if error {
+            self.span_err(sp, &format!("obsolete syntax: {}", kind_str));
+        } else {
+            self.span_warn(sp, &format!("obsolete syntax: {}", kind_str));
+        }
 
         if !self.obsolete_set.contains(&kind) {
             self.sess
                 .span_diagnostic
                 .handler()
-                .note(&format!("{}", desc)[]);
+                .note(&format!("{}", desc));
             self.obsolete_set.insert(kind);
         }
     }

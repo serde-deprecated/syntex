@@ -37,7 +37,7 @@ use {ast, ast_util};
 use ptr::P;
 use util::small_vector::SmallVector;
 
-enum ShouldFail {
+enum ShouldPanic {
     No,
     Yes(Option<InternedString>),
 }
@@ -47,7 +47,7 @@ struct Test {
     path: Vec<ast::Ident> ,
     bench: bool,
     ignore: bool,
-    should_fail: ShouldFail
+    should_panic: ShouldPanic
 }
 
 struct TestCtxt<'a> {
@@ -73,14 +73,14 @@ pub fn modify_for_testing(sess: &ParseSess,
     // We generate the test harness when building in the 'test'
     // configuration, either with the '--test' or '--cfg test'
     // command line options.
-    let should_test = attr::contains_name(&krate.config[], "test");
+    let should_test = attr::contains_name(&krate.config, "test");
 
     // Check for #[reexport_test_harness_main = "some_name"] which
     // creates a `use some_name = __test::main;`. This needs to be
     // unconditional, so that the attribute is still marked as used in
     // non-test builds.
     let reexport_test_harness_main =
-        attr::first_attr_value_str_by_name(&krate.attrs[],
+        attr::first_attr_value_str_by_name(&krate.attrs,
                                            "reexport_test_harness_main");
 
     if should_test {
@@ -119,15 +119,13 @@ impl<'a> fold::Folder for TestHarnessGenerator<'a> {
             self.cx.path.push(ident);
         }
         debug!("current path: {}",
-               ast_util::path_name_i(&self.cx.path[]));
+               ast_util::path_name_i(&self.cx.path));
 
-        if is_test_fn(&self.cx, &*i) || is_bench_fn(&self.cx, &*i) {
+        let i = if is_test_fn(&self.cx, &*i) || is_bench_fn(&self.cx, &*i) {
             match i.node {
                 ast::ItemFn(_, ast::Unsafety::Unsafe, _, _, _) => {
                     let diag = self.cx.span_diagnostic;
-                    diag.span_fatal(i.span,
-                                    "unsafe functions cannot be used for \
-                                     tests");
+                    diag.span_fatal(i.span, "unsafe functions cannot be used for tests");
                 }
                 _ => {
                     debug!("this is a test function");
@@ -136,15 +134,25 @@ impl<'a> fold::Folder for TestHarnessGenerator<'a> {
                         path: self.cx.path.clone(),
                         bench: is_bench_fn(&self.cx, &*i),
                         ignore: is_ignored(&*i),
-                        should_fail: should_fail(&*i)
+                        should_panic: should_panic(&*i)
                     };
                     self.cx.testfns.push(test);
                     self.tests.push(i.ident);
                     // debug!("have {} test/bench functions",
                     //        cx.testfns.len());
+
+                    // Make all tests public so we can call them from outside
+                    // the module (note that the tests are re-exported and must
+                    // be made public themselves to avoid privacy errors).
+                    i.map(|mut i| {
+                        i.vis = ast::Public;
+                        i
+                    })
                 }
             }
-        }
+        } else {
+            i
+        };
 
         // We don't want to recurse into anything other than mods, since
         // mods or tests inside of functions will break things
@@ -256,7 +264,8 @@ fn generate_test_harness(sess: &ParseSess,
         callee: NameAndSpan {
             name: "test".to_string(),
             format: MacroAttribute,
-            span: None
+            span: None,
+            allow_internal_unstable: false,
         }
     });
 
@@ -274,8 +283,8 @@ fn strip_test_functions(krate: ast::Crate) -> ast::Crate {
     // When not compiling with --test we should not compile the
     // #[test] functions
     config::strip_items(krate, |attrs| {
-        !attr::contains_name(&attrs[], "test") &&
-        !attr::contains_name(&attrs[], "bench")
+        !attr::contains_name(&attrs[..], "test") &&
+        !attr::contains_name(&attrs[..], "bench")
     })
 }
 
@@ -288,7 +297,8 @@ fn ignored_span(cx: &TestCtxt, sp: Span) -> Span {
         callee: NameAndSpan {
             name: "test".to_string(),
             format: MacroAttribute,
-            span: None
+            span: None,
+            allow_internal_unstable: true,
         }
     };
     let expn_id = cx.sess.span_diagnostic.cm.record_expansion(info);
@@ -306,7 +316,7 @@ enum HasTestSignature {
 
 
 fn is_test_fn(cx: &TestCtxt, i: &ast::Item) -> bool {
-    let has_test_attr = attr::contains_name(&i.attrs[], "test");
+    let has_test_attr = attr::contains_name(&i.attrs, "test");
 
     fn has_test_signature(i: &ast::Item) -> HasTestSignature {
         match &i.node {
@@ -342,7 +352,7 @@ fn is_test_fn(cx: &TestCtxt, i: &ast::Item) -> bool {
 }
 
 fn is_bench_fn(cx: &TestCtxt, i: &ast::Item) -> bool {
-    let has_bench_attr = attr::contains_name(&i.attrs[], "bench");
+    let has_bench_attr = attr::contains_name(&i.attrs, "bench");
 
     fn has_test_signature(i: &ast::Item) -> bool {
         match i.node {
@@ -376,15 +386,15 @@ fn is_ignored(i: &ast::Item) -> bool {
     i.attrs.iter().any(|attr| attr.check_name("ignore"))
 }
 
-fn should_fail(i: &ast::Item) -> ShouldFail {
-    match i.attrs.iter().find(|attr| attr.check_name("should_fail")) {
+fn should_panic(i: &ast::Item) -> ShouldPanic {
+    match i.attrs.iter().find(|attr| attr.check_name("should_panic")) {
         Some(attr) => {
             let msg = attr.meta_item_list()
                 .and_then(|list| list.iter().find(|mi| mi.check_name("expected")))
                 .and_then(|mi| mi.value_str());
-            ShouldFail::Yes(msg)
+            ShouldPanic::Yes(msg)
         }
-        None => ShouldFail::No,
+        None => ShouldPanic::No,
     }
 }
 
@@ -562,8 +572,8 @@ fn mk_tests(cx: &TestCtxt) -> P<ast::Item> {
 }
 
 fn is_test_crate(krate: &ast::Crate) -> bool {
-    match attr::find_crate_name(&krate.attrs[]) {
-        Some(ref s) if "test" == &s[] => true,
+    match attr::find_crate_name(&krate.attrs) {
+        Some(ref s) if "test" == &s[..] => true,
         _ => false
     }
 }
@@ -603,11 +613,11 @@ fn mk_test_desc_and_fn_rec(cx: &TestCtxt, test: &Test) -> P<ast::Expr> {
     // creates $name: $expr
     let field = |name, expr| ecx.field_imm(span, ecx.ident_of(name), expr);
 
-    debug!("encoding {}", ast_util::path_name_i(&path[]));
+    debug!("encoding {}", ast_util::path_name_i(&path[..]));
 
     // path to the #[test] function: "foo::bar::baz"
-    let path_string = ast_util::path_name_i(&path[]);
-    let name_expr = ecx.expr_str(span, token::intern_and_get_ident(&path_string[]));
+    let path_string = ast_util::path_name_i(&path[..]);
+    let name_expr = ecx.expr_str(span, token::intern_and_get_ident(&path_string[..]));
 
     // self::test::StaticTestName($name_expr)
     let name_expr = ecx.expr_call(span,
@@ -615,13 +625,13 @@ fn mk_test_desc_and_fn_rec(cx: &TestCtxt, test: &Test) -> P<ast::Expr> {
                                   vec![name_expr]);
 
     let ignore_expr = ecx.expr_bool(span, test.ignore);
-    let should_fail_path = |name| {
-        ecx.path(span, vec![self_id, test_id, ecx.ident_of("ShouldFail"), ecx.ident_of(name)])
+    let should_panic_path = |name| {
+        ecx.path(span, vec![self_id, test_id, ecx.ident_of("ShouldPanic"), ecx.ident_of(name)])
     };
-    let fail_expr = match test.should_fail {
-        ShouldFail::No => ecx.expr_path(should_fail_path("No")),
-        ShouldFail::Yes(ref msg) => {
-            let path = should_fail_path("Yes");
+    let fail_expr = match test.should_panic {
+        ShouldPanic::No => ecx.expr_path(should_panic_path("No")),
+        ShouldPanic::Yes(ref msg) => {
+            let path = should_panic_path("Yes");
             let arg = match *msg {
                 Some(ref msg) => ecx.expr_some(span, ecx.expr_str(span, msg.clone())),
                 None => ecx.expr_none(span),
@@ -636,7 +646,7 @@ fn mk_test_desc_and_fn_rec(cx: &TestCtxt, test: &Test) -> P<ast::Expr> {
         test_path("TestDesc"),
         vec![field("name", name_expr),
              field("ignore", ignore_expr),
-             field("should_fail", fail_expr)]);
+             field("should_panic", fail_expr)]);
 
 
     let mut visible_path = match cx.toplevel_reexport {
