@@ -1,8 +1,8 @@
-#![feature(io)]
-
 extern crate syntex_syntax;
 
-use std::old_io::{File, IoResult};
+use std::fs::File;
+use std::io;
+use std::path::Path;
 
 use syntex_syntax::ast::{MacroDef, Name};
 use syntex_syntax::config;
@@ -33,11 +33,11 @@ impl Registry {
         where F: TTMacroExpander + 'static
     {
         let name = token::intern(name);
-        let syntax_extension = SyntaxExtension::NormalTT(Box::new(extension), None);
+        let syntax_extension = SyntaxExtension::NormalTT(Box::new(extension), None, false);
         self.syntax_exts.push((name, syntax_extension));
     }
 
-    pub fn expand(self, crate_name: &str, src: &Path, dst: &Path) -> IoResult<()> {
+    pub fn expand(self, crate_name: &str, src: &Path, dst: &Path) -> io::Result<()> {
         let sess = parse::new_parse_sess();
         let cfg = vec![];
 
@@ -52,7 +52,7 @@ impl Registry {
 
         let cfg = expand::ExpansionConfig {
             crate_name: crate_name.to_string(),
-            enable_quotes: true,
+            features: None,
             recursion_limit: 64,
         };
 
@@ -66,7 +66,7 @@ impl Registry {
         let dst = try!(File::create(dst));
 
         let mut printer = pprust::rust_printer(Box::new(dst));
-        try!(printer.print_mod(&krate.module, &krate.attrs[]));
+        try!(printer.print_mod(&krate.module, &krate.attrs[..]));
         try!(printer.print_remaining_comments());
         pp::eof(&mut printer.s)
     }
