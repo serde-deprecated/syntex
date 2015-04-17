@@ -116,7 +116,7 @@ impl<'a> Reader for TtReader<'a> {
         r
     }
     fn fatal(&self, m: &str) -> ! {
-        self.sp_diag.span_fatal(self.cur_span, m);
+        panic!(self.sp_diag.span_fatal(self.cur_span, m));
     }
     fn err(&self, m: &str) {
         self.sp_diag.span_err(self.cur_span, m);
@@ -181,7 +181,7 @@ impl<'a> StringReader<'a> {
 
     /// Report a fatal lexical error with a given span.
     pub fn fatal_span(&self, sp: Span, m: &str) -> ! {
-        self.span_diagnostic.span_fatal(sp, m)
+        panic!(self.span_diagnostic.span_fatal(sp, m))
     }
 
     /// Report a lexical error with a given span.
@@ -843,12 +843,18 @@ impl<'a> StringReader<'a> {
                                     if ascii_only { "unknown byte escape" }
                                     else { "unknown character escape" },
                                     c);
+                                let sp = codemap::mk_sp(escaped_pos, last_pos);
                                 if e == '\r' {
-                                    let sp = codemap::mk_sp(escaped_pos, last_pos);
                                     self.span_diagnostic.span_help(
                                         sp,
                                         "this is an isolated carriage return; consider checking \
                                          your editor and version control settings")
+                                }
+                                if (e == '{' || e == '}') && !ascii_only {
+                                    self.span_diagnostic.span_help(
+                                        sp,
+                                        "if used in a formatting string, \
+                                        curly braces are escaped with `{{` and `}}`")
                                 }
                                 false
                             }

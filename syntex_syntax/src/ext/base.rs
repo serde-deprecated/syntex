@@ -208,10 +208,11 @@ impl<F> IdentMacroExpander for F
 }
 
 // Use a macro because forwarding to a simple function has type system issues
-macro_rules! make_stmt_default {
+macro_rules! make_stmts_default {
     ($me:expr) => {
         $me.make_expr().map(|e| {
-            P(codemap::respan(e.span, ast::StmtExpr(e, ast::DUMMY_NODE_ID)))
+            SmallVector::one(P(codemap::respan(
+                e.span, ast::StmtExpr(e, ast::DUMMY_NODE_ID))))
         })
     }
 }
@@ -238,12 +239,12 @@ pub trait MacResult {
         None
     }
 
-    /// Create a statement.
+    /// Create zero or more statements.
     ///
     /// By default this attempts to create an expression statement,
     /// returning None if that fails.
-    fn make_stmt(self: Box<Self>) -> Option<P<ast::Stmt>> {
-        make_stmt_default!(self)
+    fn make_stmts(self: Box<Self>) -> Option<SmallVector<P<ast::Stmt>>> {
+        make_stmts_default!(self)
     }
 }
 
@@ -276,7 +277,7 @@ make_MacEager! {
     pat: P<ast::Pat>,
     items: SmallVector<P<ast::Item>>,
     impl_items: SmallVector<P<ast::ImplItem>>,
-    stmt: P<ast::Stmt>,
+    stmts: SmallVector<P<ast::Stmt>>,
 }
 
 impl MacResult for MacEager {
@@ -292,10 +293,10 @@ impl MacResult for MacEager {
         self.impl_items
     }
 
-    fn make_stmt(self: Box<Self>) -> Option<P<ast::Stmt>> {
-        match self.stmt {
-            None => make_stmt_default!(self),
-            s => s,
+    fn make_stmts(self: Box<Self>) -> Option<SmallVector<P<ast::Stmt>>> {
+        match self.stmts.as_ref().map_or(0, |s| s.len()) {
+            0 => make_stmts_default!(self),
+            _ => self.stmts,
         }
     }
 
@@ -384,10 +385,11 @@ impl MacResult for DummyResult {
             Some(SmallVector::zero())
         }
     }
-    fn make_stmt(self: Box<DummyResult>) -> Option<P<ast::Stmt>> {
-        Some(P(codemap::respan(self.span,
-                               ast::StmtExpr(DummyResult::raw_expr(self.span),
-                                             ast::DUMMY_NODE_ID))))
+    fn make_stmts(self: Box<DummyResult>) -> Option<SmallVector<P<ast::Stmt>>> {
+        Some(SmallVector::one(P(
+            codemap::respan(self.span,
+                            ast::StmtExpr(DummyResult::raw_expr(self.span),
+                                          ast::DUMMY_NODE_ID)))))
     }
 }
 
@@ -603,7 +605,6 @@ impl<'a> ExtCtxt<'a> {
             None => self.bug("missing top span")
         })
     }
-    pub fn print_backtrace(&self) { }
     pub fn backtrace(&self) -> ExpnId { self.backtrace }
     pub fn original_span(&self) -> Span {
         let mut expn_id = self.backtrace;
@@ -652,9 +653,9 @@ impl<'a> ExtCtxt<'a> {
     pub fn bt_push(&mut self, ei: ExpnInfo) {
         self.recursion_count += 1;
         if self.recursion_count > self.ecfg.recursion_limit {
-            self.span_fatal(ei.call_site,
+            panic!(self.span_fatal(ei.call_site,
                             &format!("recursion limit reached while expanding the macro `{}`",
-                                    ei.callee.name));
+                                    ei.callee.name)));
         }
 
         let mut call_site = ei.call_site;
@@ -698,8 +699,7 @@ impl<'a> ExtCtxt<'a> {
     ///   substitute; we never hit resolve/type-checking so the dummy
     ///   value doesn't have to match anything)
     pub fn span_fatal(&self, sp: Span, msg: &str) -> ! {
-        self.print_backtrace();
-        self.parse_sess.span_diagnostic.span_fatal(sp, msg);
+        panic!(self.parse_sess.span_diagnostic.span_fatal(sp, msg));
     }
 
     /// Emit `msg` attached to `sp`, without immediately stopping
@@ -708,35 +708,27 @@ impl<'a> ExtCtxt<'a> {
     /// Compilation will be stopped in the near future (at the end of
     /// the macro expansion phase).
     pub fn span_err(&self, sp: Span, msg: &str) {
-        self.print_backtrace();
         self.parse_sess.span_diagnostic.span_err(sp, msg);
     }
     pub fn span_warn(&self, sp: Span, msg: &str) {
-        self.print_backtrace();
         self.parse_sess.span_diagnostic.span_warn(sp, msg);
     }
     pub fn span_unimpl(&self, sp: Span, msg: &str) -> ! {
-        self.print_backtrace();
         self.parse_sess.span_diagnostic.span_unimpl(sp, msg);
     }
     pub fn span_bug(&self, sp: Span, msg: &str) -> ! {
-        self.print_backtrace();
         self.parse_sess.span_diagnostic.span_bug(sp, msg);
     }
     pub fn span_note(&self, sp: Span, msg: &str) {
-        self.print_backtrace();
         self.parse_sess.span_diagnostic.span_note(sp, msg);
     }
     pub fn span_help(&self, sp: Span, msg: &str) {
-        self.print_backtrace();
         self.parse_sess.span_diagnostic.span_help(sp, msg);
     }
     pub fn fileline_help(&self, sp: Span, msg: &str) {
-        self.print_backtrace();
         self.parse_sess.span_diagnostic.fileline_help(sp, msg);
     }
     pub fn bug(&self, msg: &str) -> ! {
-        self.print_backtrace();
         self.parse_sess.span_diagnostic.handler().bug(msg);
     }
     pub fn trace_macros(&self) -> bool {
@@ -782,7 +774,7 @@ pub fn check_zero_tts(cx: &ExtCtxt,
                       sp: Span,
                       tts: &[ast::TokenTree],
                       name: &str) {
-    if tts.len() != 0 {
+    if !tts.is_empty() {
         cx.span_err(sp, &format!("{} takes no arguments", name));
     }
 }
@@ -817,7 +809,7 @@ pub fn get_exprs_from_tts(cx: &mut ExtCtxt,
     let mut es = Vec::new();
     while p.token != token::Eof {
         es.push(cx.expander().fold_expr(p.parse_expr()));
-        if p.eat(&token::Comma) {
+        if panictry!(p.eat(&token::Comma)){
             continue;
         }
         if p.token != token::Eof {

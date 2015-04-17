@@ -226,10 +226,10 @@ pub fn nameize(p_s: &ParseSess, ms: &[TokenTree], res: &[Rc<NamedMatch>])
                     }
                     Occupied(..) => {
                         let string = token::get_ident(bind_name);
-                        p_s.span_diagnostic
+                        panic!(p_s.span_diagnostic
                            .span_fatal(sp,
                                        &format!("duplicated bind name: {}",
-                                               &string))
+                                               &string)))
                     }
                 }
             }
@@ -260,10 +260,10 @@ pub fn parse_or_else(sess: &ParseSess,
     match parse(sess, cfg, rdr, &ms[..]) {
         Success(m) => m,
         Failure(sp, str) => {
-            sess.span_diagnostic.span_fatal(sp, &str[..])
+            panic!(sess.span_diagnostic.span_fatal(sp, &str[..]))
         }
         Error(sp, str) => {
-            sess.span_diagnostic.span_fatal(sp, &str[..])
+            panic!(sess.span_diagnostic.span_fatal(sp, &str[..]))
         }
     }
 }
@@ -457,7 +457,7 @@ pub fn parse(sess: &ParseSess,
                 return Failure(sp, "unexpected end of macro invocation".to_string());
             }
         } else {
-            if (bb_eis.len() > 0 && next_eis.len() > 0)
+            if (!bb_eis.is_empty() && !next_eis.is_empty())
                 || bb_eis.len() > 1 {
                 let nts = bb_eis.iter().map(|ei| {
                     match ei.top_elts.get_tt(ei.idx) {
@@ -472,12 +472,12 @@ pub fn parse(sess: &ParseSess,
                     "local ambiguity: multiple parsing options: \
                      built-in NTs {} or {} other options.",
                     nts, next_eis.len()).to_string());
-            } else if bb_eis.len() == 0 && next_eis.len() == 0 {
+            } else if bb_eis.is_empty() && next_eis.is_empty() {
                 return Failure(sp, format!("no rules expected the token `{}`",
                             pprust::token_to_string(&tok)).to_string());
-            } else if next_eis.len() > 0 {
+            } else if !next_eis.is_empty() {
                 /* Now process the next token */
-                while next_eis.len() > 0 {
+                while !next_eis.is_empty() {
                     cur_eis.push(next_eis.pop().unwrap());
                 }
                 rdr.next_token();
@@ -504,7 +504,7 @@ pub fn parse(sess: &ParseSess,
             }
         }
 
-        assert!(cur_eis.len() > 0);
+        assert!(!cur_eis.is_empty());
     }
 }
 
@@ -512,46 +512,46 @@ pub fn parse_nt(p: &mut Parser, sp: Span, name: &str) -> Nonterminal {
     match name {
         "tt" => {
             p.quote_depth += 1; //but in theory, non-quoted tts might be useful
-            let res = token::NtTT(P(p.parse_token_tree()));
+            let res = token::NtTT(P(panictry!(p.parse_token_tree())));
             p.quote_depth -= 1;
             return res;
         }
         _ => {}
     }
     // check at the beginning and the parser checks after each bump
-    p.check_unknown_macro_variable();
+    panictry!(p.check_unknown_macro_variable());
     match name {
       "item" => match p.parse_item() {
         Some(i) => token::NtItem(i),
-        None => p.fatal("expected an item keyword")
+        None => panic!(p.fatal("expected an item keyword"))
       },
-      "block" => token::NtBlock(p.parse_block()),
+      "block" => token::NtBlock(panictry!(p.parse_block())),
       "stmt" => match p.parse_stmt() {
         Some(s) => token::NtStmt(s),
-        None => p.fatal("expected a statement")
+        None => panic!(p.fatal("expected a statement"))
       },
       "pat" => token::NtPat(p.parse_pat()),
       "expr" => token::NtExpr(p.parse_expr()),
       "ty" => token::NtTy(p.parse_ty()),
       // this could be handled like a token, since it is one
       "ident" => match p.token {
-        token::Ident(sn,b) => { p.bump(); token::NtIdent(box sn,b) }
+        token::Ident(sn,b) => { panictry!(p.bump()); token::NtIdent(box sn,b) }
         _ => {
             let token_str = pprust::token_to_string(&p.token);
-            p.fatal(&format!("expected ident, found {}",
-                             &token_str[..]))
+            panic!(p.fatal(&format!("expected ident, found {}",
+                             &token_str[..])))
         }
       },
       "path" => {
-        token::NtPath(box p.parse_path(LifetimeAndTypesWithoutColons))
+        token::NtPath(box panictry!(p.parse_path(LifetimeAndTypesWithoutColons)))
       }
       "meta" => token::NtMeta(p.parse_meta_item()),
       _ => {
-          p.span_fatal_help(sp,
+          panic!(p.span_fatal_help(sp,
                             &format!("invalid fragment specifier `{}`", name),
                             "valid fragment specifiers are `ident`, `block`, \
                              `stmt`, `expr`, `pat`, `ty`, `path`, `meta`, `tt` \
-                             and `item`")
+                             and `item`"))
       }
     }
 }
