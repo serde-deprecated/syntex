@@ -399,7 +399,7 @@ impl<'a> Context<'a> {
         } else {
             self.gate_feature("custom_attribute", attr.span,
                        &format!("The attribute `{}` is currently \
-                                unknown to the the compiler and \
+                                unknown to the compiler and \
                                 may have meaning \
                                 added to it in the future",
                                 name));
@@ -409,6 +409,9 @@ impl<'a> Context<'a> {
 
 pub fn emit_feature_err(diag: &SpanHandler, feature: &str, span: Span, explain: &str) {
     diag.span_err(span, explain);
+
+    // #23973: do not suggest `#![feature(...)]` if we are in beta/stable
+    if option_env!("CFG_DISABLE_UNSTABLE_FEATURES").is_some() { return; }
     diag.fileline_help(span, &format!("add #![feature({})] to the \
                                    crate attributes to enable",
                                   feature));
@@ -416,6 +419,9 @@ pub fn emit_feature_err(diag: &SpanHandler, feature: &str, span: Span, explain: 
 
 pub fn emit_feature_warn(diag: &SpanHandler, feature: &str, span: Span, explain: &str) {
     diag.span_warn(span, explain);
+
+    // #23973: do not suggest `#![feature(...)]` if we are in beta/stable
+    if option_env!("CFG_DISABLE_UNSTABLE_FEATURES").is_some() { return; }
     if diag.handler.can_emit_warnings {
         diag.fileline_help(span, &format!("add #![feature({})] to the \
                                        crate attributes to silence this warning",
@@ -638,13 +644,13 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
                 span: Span,
                 _node_id: NodeId) {
         match fn_kind {
-            visit::FkItemFn(_, _, _, abi) if abi == Abi::RustIntrinsic => {
+            visit::FkItemFn(_, _, _, abi, _) if abi == Abi::RustIntrinsic => {
                 self.gate_feature("intrinsics",
                                   span,
                                   "intrinsics are subject to change")
             }
-            visit::FkItemFn(_, _, _, abi) |
-            visit::FkMethod(_, &ast::MethodSig { abi, .. }) if abi == Abi::RustCall => {
+            visit::FkItemFn(_, _, _, abi, _) |
+            visit::FkMethod(_, &ast::MethodSig { abi, .. }, _) if abi == Abi::RustCall => {
                 self.gate_feature("unboxed_closures",
                                   span,
                                   "rust-call ABI is subject to change")
