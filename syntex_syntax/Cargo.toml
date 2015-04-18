@@ -7,4 +7,4 @@ description = "Export of libsyntax for code generation"
 repository = "https://github.com/erickt/rust-syntex"
 
 [dependencies]
-syntex_bitflags="*"
+bitflags="*"
