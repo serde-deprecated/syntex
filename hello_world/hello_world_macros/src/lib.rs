@@ -1,3 +1,5 @@
+#![feature(rustc_private)]
+
 extern crate syntex;
 extern crate syntex_syntax;
 

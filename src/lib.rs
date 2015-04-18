@@ -1,3 +1,5 @@
+#![feature(rustc_private)]
+
 extern crate syntex_syntax;
 
 use std::fs::File;
@@ -50,11 +52,7 @@ impl Registry {
             &sess.span_diagnostic,
             krate);
 
-        let cfg = expand::ExpansionConfig {
-            crate_name: crate_name.to_string(),
-            features: None,
-            recursion_limit: 64,
-        };
+        let cfg = expand::ExpansionConfig::default(crate_name.to_string());
 
         let krate = expand::expand_crate(
             &sess,
