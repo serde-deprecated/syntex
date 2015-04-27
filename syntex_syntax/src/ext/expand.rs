@@ -1183,7 +1183,7 @@ fn expand_annotatable(a: Annotatable,
         }
     };
 
-    new_items.push_all(decorator_items.into_iter().map(|i| Annotatable::Item(i)).collect());
+    new_items.extend(decorator_items.into_iter().map(|i| Annotatable::Item(i)));
     new_items
 }
 
