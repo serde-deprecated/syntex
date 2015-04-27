@@ -111,7 +111,6 @@ impl<T: Display> Display for P<T> {
     }
 }
 
-#[stable(feature = "rust1", since = "1.0.0")]
 impl<T> fmt::Pointer for P<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Pointer::fmt(&self.ptr, f)

@@ -1,5 +1,3 @@
-#![feature(rustc_private)]
-
 extern crate syntex_syntax;
 
 use std::fs::File;
