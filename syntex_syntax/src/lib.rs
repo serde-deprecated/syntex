@@ -28,7 +28,6 @@
 #![feature(libc)]
 #![feature(rustc_private)]
 #![feature(staged_api)]
-#![feature(unicode)]
 #![feature(str_char)]
 
 extern crate arena;
@@ -40,6 +39,7 @@ extern crate libc;
 #[macro_use] #[no_link] extern crate bitflags as rustc_bitflags;
 
 extern crate serialize as rustc_serialize; // used by deriving
+extern crate unicode_xid;
 
 // A variant of 'try!' that panics on Err(FatalError). This is used as a
 // crutch on the way towards a non-panic!-prone parser. It should be used
