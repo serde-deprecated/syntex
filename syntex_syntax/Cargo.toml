@@ -9,4 +9,7 @@ repository = "https://github.com/erickt/rust-syntex"
 [dependencies]
 bitflags = "*"
 libc = "*"
+log = "*"
+rustc-serialize = "*"
+term = "*"
 unicode-xid = "*"
