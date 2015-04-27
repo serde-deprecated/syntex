@@ -1552,7 +1552,7 @@ impl<'a, 'v> Visitor<'v> for MacroExterminator<'a> {
 
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::{pattern_bindings, expand_crate};
     use super::{PatIdentFinder, IdentRenamer, PatIdentRenamer, ExpansionConfig};
     use ast;
@@ -1961,8 +1961,8 @@ foo_module!();
                 "xx" == string
             }).collect();
         let cxbinds: &[&ast::Ident] = &cxbinds[..];
-        let cxbind = match cxbinds {
-            [b] => b,
+        let cxbind = match (cxbinds.len(), cxbinds.get(0)) {
+            (1, Some(b)) => *b,
             _ => panic!("expected just one binding for ext_cx")
         };
         let resolved_binding = mtwt::resolve(*cxbind);

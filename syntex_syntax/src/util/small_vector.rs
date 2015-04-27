@@ -64,7 +64,10 @@ impl<T> SmallVector<T> {
                 let result: &[T] = &[];
                 result
             }
-            One(ref v) => slice::ref_slice(v),
+            One(ref v) => {
+                // FIXME: Could be replaced with `slice::ref_slice(v)` when it is stable.
+                unsafe { slice::from_raw_parts(v, 1) }
+            }
             Many(ref vs) => vs
         }
     }
@@ -201,7 +204,7 @@ impl<T> MoveMap<T> for SmallVector<T> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     #[test]

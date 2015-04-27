@@ -21,33 +21,30 @@ use parse::token::InternedString;
 use parse::token;
 use ptr::P;
 
-pub fn expand_deriving_rustc_decodable<F>(cx: &mut ExtCtxt,
-                                          span: Span,
-                                          mitem: &MetaItem,
-                                          item: &Item,
-                                          push: F) where
-    F: FnOnce(P<Item>),
+pub fn expand_deriving_rustc_decodable(cx: &mut ExtCtxt,
+                                       span: Span,
+                                       mitem: &MetaItem,
+                                       item: &Item,
+                                       push: &mut FnMut(P<Item>))
 {
     expand_deriving_decodable_imp(cx, span, mitem, item, push, "rustc_serialize")
 }
 
-pub fn expand_deriving_decodable<F>(cx: &mut ExtCtxt,
-                                    span: Span,
-                                    mitem: &MetaItem,
-                                    item: &Item,
-                                    push: F) where
-    F: FnOnce(P<Item>),
+pub fn expand_deriving_decodable(cx: &mut ExtCtxt,
+                                 span: Span,
+                                 mitem: &MetaItem,
+                                 item: &Item,
+                                 push: &mut FnMut(P<Item>))
 {
     expand_deriving_decodable_imp(cx, span, mitem, item, push, "serialize")
 }
 
-fn expand_deriving_decodable_imp<F>(cx: &mut ExtCtxt,
-                                    span: Span,
-                                    mitem: &MetaItem,
-                                    item: &Item,
-                                    push: F,
-                                    krate: &'static str) where
-    F: FnOnce(P<Item>),
+fn expand_deriving_decodable_imp(cx: &mut ExtCtxt,
+                                 span: Span,
+                                 mitem: &MetaItem,
+                                 item: &Item,
+                                 push: &mut FnMut(P<Item>),
+                                 krate: &'static str)
 {
     if !cx.use_std {
         // FIXME(#21880): lift this requirement.
@@ -71,14 +68,14 @@ fn expand_deriving_decodable_imp<F>(cx: &mut ExtCtxt,
                                     vec!(), true))))
                 },
                 explicit_self: None,
-                args: vec!(Ptr(box Literal(Path::new_local("__D")),
+                args: vec!(Ptr(Box::new(Literal(Path::new_local("__D"))),
                             Borrowed(None, MutMutable))),
                 ret_ty: Literal(Path::new_(
                     pathvec_std!(cx, core::result::Result),
                     None,
-                    vec!(box Self_, box Literal(Path::new_(
+                    vec!(Box::new(Self_), Box::new(Literal(Path::new_(
                         vec!["__D", "Error"], None, vec![], false
-                    ))),
+                    )))),
                     true
                 )),
                 attributes: Vec::new(),
