@@ -22,7 +22,6 @@
 
 #![feature(core)]
 #![feature(rustc_private)]
-#![feature(str_char)]
 
 extern crate arena;
 extern crate fmt_macros;
