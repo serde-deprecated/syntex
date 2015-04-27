@@ -24,7 +24,6 @@
        html_root_url = "http://doc.rust-lang.org/nightly/")]
 
 #![feature(core)]
-#![feature(libc)]
 #![feature(rustc_private)]
 #![feature(staged_api)]
 #![feature(str_char)]

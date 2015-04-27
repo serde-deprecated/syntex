@@ -8,4 +8,5 @@ repository = "https://github.com/erickt/rust-syntex"
 
 [dependencies]
 bitflags = "*"
+libc = "*"
 unicode-xid = "*"
