@@ -375,12 +375,11 @@ fn find_type_parameters(ty: &ast::Ty, ty_param_names: &[ast::Name]) -> Vec<P<ast
 }
 
 impl<'a> TraitDef<'a> {
-    pub fn expand<F>(&self,
-                     cx: &mut ExtCtxt,
-                     mitem: &ast::MetaItem,
-                     item: &ast::Item,
-                     push: F) where
-        F: FnOnce(P<ast::Item>),
+    pub fn expand(&self,
+                  cx: &mut ExtCtxt,
+                  mitem: &ast::MetaItem,
+                  item: &ast::Item,
+                  push: &mut FnMut(P<ast::Item>))
     {
         let newitem = match item.node {
             ast::ItemStruct(ref struct_def, ref generics) => {
@@ -808,7 +807,7 @@ impl<'a> MethodDef<'a> {
                 Self_ if nonstatic  => {
                     self_args.push(arg_expr);
                 }
-                Ptr(box Self_, _) if nonstatic => {
+                Ptr(ref ty, _) if **ty == Self_ && nonstatic => {
                     self_args.push(cx.expr_deref(trait_.span, arg_expr))
                 }
                 _ => {
@@ -1104,7 +1103,7 @@ impl<'a> MethodDef<'a> {
                     subpats.push(p);
                     idents
                 };
-                for self_arg_name in self_arg_names.tail() {
+                for self_arg_name in &self_arg_names[1..] {
                     let (p, idents) = mk_self_pat(cx, &self_arg_name[..]);
                     subpats.push(p);
                     self_pats_idents.push(idents);

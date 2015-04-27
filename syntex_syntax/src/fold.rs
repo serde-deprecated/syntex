@@ -677,11 +677,18 @@ pub fn noop_fold_interpolated<T: Folder>(nt: token::Nonterminal, fld: &mut T)
         token::NtPat(pat) => token::NtPat(fld.fold_pat(pat)),
         token::NtExpr(expr) => token::NtExpr(fld.fold_expr(expr)),
         token::NtTy(ty) => token::NtTy(fld.fold_ty(ty)),
-        token::NtIdent(box id, is_mod_name) =>
-            token::NtIdent(box fld.fold_ident(id), is_mod_name),
+        token::NtIdent(id, is_mod_name) =>
+            token::NtIdent(Box::new(fld.fold_ident(*id)), is_mod_name),
         token::NtMeta(meta_item) => token::NtMeta(fld.fold_meta_item(meta_item)),
-        token::NtPath(box path) => token::NtPath(box fld.fold_path(path)),
+        token::NtPath(path) => token::NtPath(Box::new(fld.fold_path(*path))),
         token::NtTT(tt) => token::NtTT(P(fld.fold_tt(&*tt))),
+        token::NtArm(arm) => token::NtArm(fld.fold_arm(arm)),
+        token::NtImplItem(arm) =>
+            token::NtImplItem(fld.fold_impl_item(arm)
+                              .expect_one("expected fold to produce exactly one item")),
+        token::NtTraitItem(arm) =>
+            token::NtTraitItem(fld.fold_trait_item(arm)
+                               .expect_one("expected fold to produce exactly one item")),
     }
 }
 
@@ -1343,7 +1350,7 @@ pub fn noop_fold_stmt<T: Folder>(Spanned {node, span}: Stmt, folder: &mut T)
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::io;
     use ast;
     use util::parser_testing::{string_to_crate, matches_codepattern};

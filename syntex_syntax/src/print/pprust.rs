@@ -28,7 +28,7 @@ use print::pp::Breaks::{Consistent, Inconsistent};
 use ptr::P;
 use std_inject;
 
-use std::{ascii, mem};
+use std::ascii;
 use std::io::{self, Write, Read};
 use std::iter;
 
@@ -66,7 +66,6 @@ pub struct State<'a> {
     cur_cmnt_and_lit: CurrentCommentAndLiteral,
     boxes: Vec<pp::Breaks>,
     ann: &'a (PpAnn+'a),
-    encode_idents_with_hygiene: bool,
 }
 
 pub fn rust_printer<'a>(writer: Box<Write+'a>) -> State<'a> {
@@ -87,7 +86,6 @@ pub fn rust_printer_annotated<'a>(writer: Box<Write+'a>,
         },
         boxes: Vec::new(),
         ann: ann,
-        encode_idents_with_hygiene: false,
     }
 }
 
@@ -179,7 +177,6 @@ impl<'a> State<'a> {
             },
             boxes: Vec::new(),
             ann: ann,
-            encode_idents_with_hygiene: false,
         }
     }
 }
@@ -187,18 +184,13 @@ impl<'a> State<'a> {
 pub fn to_string<F>(f: F) -> String where
     F: FnOnce(&mut State) -> io::Result<()>,
 {
-    use std::raw::TraitObject;
-    let mut s = rust_printer(box Vec::new());
-    f(&mut s).unwrap();
-    eof(&mut s.s).unwrap();
-    let wr = unsafe {
-        // FIXME(pcwalton): A nasty function to extract the string from an `Write`
-        // that we "know" to be a `Vec<u8>` that works around the lack of checked
-        // downcasts.
-        let obj: &TraitObject = mem::transmute(&s.s.out);
-        mem::transmute::<*mut (), &Vec<u8>>(obj.data)
-    };
-    String::from_utf8(wr.clone()).unwrap()
+    let mut wr = Vec::new();
+    {
+        let mut printer = rust_printer(Box::new(&mut wr));
+        f(&mut printer).unwrap();
+        eof(&mut printer.s).unwrap();
+    }
+    String::from_utf8(wr).unwrap()
 }
 
 pub fn binop_to_string(op: BinOpToken) -> &'static str {
@@ -295,103 +287,99 @@ pub fn token_to_string(tok: &Token) -> String {
         token::SpecialVarNt(var)    => format!("${}", var.as_str()),
 
         token::Interpolated(ref nt) => match *nt {
-            token::NtExpr(ref e)  => expr_to_string(&**e),
-            token::NtMeta(ref e)  => meta_item_to_string(&**e),
-            token::NtTy(ref e)    => ty_to_string(&**e),
-            token::NtPath(ref e)  => path_to_string(&**e),
-            token::NtItem(..)     => "an interpolated item".to_string(),
-            token::NtBlock(..)    => "an interpolated block".to_string(),
-            token::NtStmt(..)     => "an interpolated statement".to_string(),
-            token::NtPat(..)      => "an interpolated pattern".to_string(),
-            token::NtIdent(..)    => "an interpolated identifier".to_string(),
-            token::NtTT(..)       => "an interpolated tt".to_string(),
+            token::NtExpr(ref e)   => expr_to_string(&**e),
+            token::NtMeta(ref e)   => meta_item_to_string(&**e),
+            token::NtTy(ref e)     => ty_to_string(&**e),
+            token::NtPath(ref e)   => path_to_string(&**e),
+            token::NtItem(..)      => "an interpolated item".to_string(),
+            token::NtBlock(..)     => "an interpolated block".to_string(),
+            token::NtStmt(..)      => "an interpolated statement".to_string(),
+            token::NtPat(..)       => "an interpolated pattern".to_string(),
+            token::NtIdent(..)     => "an interpolated identifier".to_string(),
+            token::NtTT(..)        => "an interpolated tt".to_string(),
+            token::NtArm(..)       => "an interpolated arm".to_string(),
+            token::NtImplItem(..)  => "an interpolated impl item".to_string(),
+            token::NtTraitItem(..) => "an interpolated trait item".to_string(),
         }
     }
 }
 
-// FIXME (Issue #16472): the thing_to_string_impls macro should go away
-// after we revise the syntax::ext::quote::ToToken impls to go directly
-// to token-trees instead of thing -> string -> token-trees.
-
-macro_rules! thing_to_string_impls {
-    ($to_string:ident) => {
-
 pub fn ty_to_string(ty: &ast::Ty) -> String {
-    $to_string(|s| s.print_type(ty))
+    to_string(|s| s.print_type(ty))
 }
 
 pub fn bounds_to_string(bounds: &[ast::TyParamBound]) -> String {
-    $to_string(|s| s.print_bounds("", bounds))
+    to_string(|s| s.print_bounds("", bounds))
 }
 
 pub fn pat_to_string(pat: &ast::Pat) -> String {
-    $to_string(|s| s.print_pat(pat))
+    to_string(|s| s.print_pat(pat))
 }
 
 pub fn arm_to_string(arm: &ast::Arm) -> String {
-    $to_string(|s| s.print_arm(arm))
+    to_string(|s| s.print_arm(arm))
 }
 
 pub fn expr_to_string(e: &ast::Expr) -> String {
-    $to_string(|s| s.print_expr(e))
+    to_string(|s| s.print_expr(e))
 }
 
 pub fn lifetime_to_string(e: &ast::Lifetime) -> String {
-    $to_string(|s| s.print_lifetime(e))
+    to_string(|s| s.print_lifetime(e))
 }
 
 pub fn tt_to_string(tt: &ast::TokenTree) -> String {
-    $to_string(|s| s.print_tt(tt))
+    to_string(|s| s.print_tt(tt))
 }
 
 pub fn tts_to_string(tts: &[ast::TokenTree]) -> String {
-    $to_string(|s| s.print_tts(tts))
+    to_string(|s| s.print_tts(tts))
 }
 
 pub fn stmt_to_string(stmt: &ast::Stmt) -> String {
-    $to_string(|s| s.print_stmt(stmt))
+    to_string(|s| s.print_stmt(stmt))
 }
 
 pub fn attr_to_string(attr: &ast::Attribute) -> String {
-    $to_string(|s| s.print_attribute(attr))
+    to_string(|s| s.print_attribute(attr))
 }
 
 pub fn item_to_string(i: &ast::Item) -> String {
-    $to_string(|s| s.print_item(i))
+    to_string(|s| s.print_item(i))
 }
 
 pub fn impl_item_to_string(i: &ast::ImplItem) -> String {
-    $to_string(|s| s.print_impl_item(i))
+    to_string(|s| s.print_impl_item(i))
 }
 
 pub fn trait_item_to_string(i: &ast::TraitItem) -> String {
-    $to_string(|s| s.print_trait_item(i))
+    to_string(|s| s.print_trait_item(i))
 }
 
 pub fn generics_to_string(generics: &ast::Generics) -> String {
-    $to_string(|s| s.print_generics(generics))
+    to_string(|s| s.print_generics(generics))
 }
 
 pub fn where_clause_to_string(i: &ast::WhereClause) -> String {
-    $to_string(|s| s.print_where_clause(i))
+    to_string(|s| s.print_where_clause(i))
 }
 
 pub fn fn_block_to_string(p: &ast::FnDecl) -> String {
-    $to_string(|s| s.print_fn_block_args(p))
+    to_string(|s| s.print_fn_block_args(p))
 }
 
 pub fn path_to_string(p: &ast::Path) -> String {
-    $to_string(|s| s.print_path(p, false, 0))
+    to_string(|s| s.print_path(p, false, 0))
 }
 
 pub fn ident_to_string(id: &ast::Ident) -> String {
-    $to_string(|s| s.print_ident(*id))
+    to_string(|s| s.print_ident(*id))
 }
 
 pub fn fun_to_string(decl: &ast::FnDecl, unsafety: ast::Unsafety, name: ast::Ident,
                   opt_explicit_self: Option<&ast::ExplicitSelf_>,
                   generics: &ast::Generics) -> String {
-    $to_string(|s| {
+    to_string(|s| {
         try!(s.head(""));
         try!(s.print_fn(decl, unsafety, abi::Rust, Some(name),
                         generics, opt_explicit_self, ast::Inherited));
@@ -401,7 +389,7 @@ pub fn fun_to_string(decl: &ast::FnDecl, unsafety: ast::Unsafety, name: ast::Ide
 }
 
 pub fn block_to_string(blk: &ast::Block) -> String {
-    $to_string(|s| {
+    to_string(|s| {
         // containing cbox, will be closed by print-block at }
         try!(s.cbox(indent_unit));
         // head-ibox, will be closed by print-block after {
@@ -411,59 +399,31 @@ pub fn block_to_string(blk: &ast::Block) -> String {
 }
 
 pub fn meta_item_to_string(mi: &ast::MetaItem) -> String {
-    $to_string(|s| s.print_meta_item(mi))
+    to_string(|s| s.print_meta_item(mi))
 }
 
 pub fn attribute_to_string(attr: &ast::Attribute) -> String {
-    $to_string(|s| s.print_attribute(attr))
+    to_string(|s| s.print_attribute(attr))
 }
 
 pub fn lit_to_string(l: &ast::Lit) -> String {
-    $to_string(|s| s.print_literal(l))
+    to_string(|s| s.print_literal(l))
 }
 
 pub fn explicit_self_to_string(explicit_self: &ast::ExplicitSelf_) -> String {
-    $to_string(|s| s.print_explicit_self(explicit_self, ast::MutImmutable).map(|_| {}))
+    to_string(|s| s.print_explicit_self(explicit_self, ast::MutImmutable).map(|_| {}))
 }
 
 pub fn variant_to_string(var: &ast::Variant) -> String {
-    $to_string(|s| s.print_variant(var))
+    to_string(|s| s.print_variant(var))
 }
 
 pub fn arg_to_string(arg: &ast::Arg) -> String {
-    $to_string(|s| s.print_arg(arg))
+    to_string(|s| s.print_arg(arg))
 }
 
 pub fn mac_to_string(arg: &ast::Mac) -> String {
-    $to_string(|s| s.print_mac(arg, ::parse::token::Paren))
-}
-
-} }
-
-thing_to_string_impls! { to_string }
-
-// FIXME (Issue #16472): the whole `with_hygiene` mod should go away
-// after we revise the syntax::ext::quote::ToToken impls to go directly
-// to token-trees instea of thing -> string -> token-trees.
-
-pub mod with_hygiene {
-    use abi;
-    use ast;
-    use std::io;
-    use super::indent_unit;
-
-    // This function is the trick that all the rest of the routines
-    // hang on.
-    pub fn to_string_hyg<F>(f: F) -> String where
-        F: FnOnce(&mut super::State) -> io::Result<()>,
-    {
-        super::to_string(move |s| {
-            s.encode_idents_with_hygiene = true;
-            f(s)
-        })
-    }
-
-    thing_to_string_impls! { to_string_hyg }
+    to_string(|s| s.print_mac(arg, ::parse::token::Paren))
 }
 
 pub fn visibility_qualified(vis: ast::Visibility, s: &str) -> String {
@@ -2011,12 +1971,7 @@ impl<'a> State<'a> {
     }
 
     pub fn print_ident(&mut self, ident: ast::Ident) -> io::Result<()> {
-        if self.encode_idents_with_hygiene {
-            let encoded = ident.encode_with_hygiene();
-            try!(word(&mut self.s, &encoded[..]))
-        } else {
-            try!(word(&mut self.s, &token::get_ident(ident)))
-        }
+        try!(word(&mut self.s, &token::get_ident(ident)));
         self.ann.post(self, NodeIdent(&ident))
     }
 
@@ -2799,13 +2754,13 @@ impl<'a> State<'a> {
         match lit.node {
             ast::LitStr(ref st, style) => self.print_string(&st, style),
             ast::LitByte(byte) => {
-                let mut res = String::from_str("b'");
+                let mut res = String::from("b'");
                 res.extend(ascii::escape_default(byte).map(|c| c as char));
                 res.push('\'');
                 word(&mut self.s, &res[..])
             }
             ast::LitChar(ch) => {
-                let mut res = String::from_str("'");
+                let mut res = String::from("'");
                 res.extend(ch.escape_default());
                 res.push('\'');
                 word(&mut self.s, &res[..])
@@ -3013,7 +2968,7 @@ impl<'a> State<'a> {
 fn repeat(s: &str, n: usize) -> String { iter::repeat(s).take(n).collect() }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     use ast;

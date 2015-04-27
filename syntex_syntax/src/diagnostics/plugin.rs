@@ -20,6 +20,9 @@ use parse::token;
 use ptr::P;
 use util::small_vector::SmallVector;
 
+// Maximum width of any line in an extended error description (inclusive).
+const MAX_DESCRIPTION_WIDTH: usize = 80;
+
 thread_local! {
     static REGISTERED_DIAGNOSTICS: RefCell<BTreeMap<Name, Option<Name>>> = {
         RefCell::new(BTreeMap::new())
@@ -51,8 +54,8 @@ pub fn expand_diagnostic_used<'cx>(ecx: &'cx mut ExtCtxt,
                                    span: Span,
                                    token_tree: &[TokenTree])
                                    -> Box<MacResult+'cx> {
-    let code = match token_tree {
-        [ast::TtToken(_, token::Ident(code, _))] => code,
+    let code = match (token_tree.len(), token_tree.get(0)) {
+        (1, Some(&ast::TtToken(_, token::Ident(code, _)))) => code,
         _ => unreachable!()
     };
     with_used_diagnostics(|diagnostics| {
@@ -74,24 +77,47 @@ pub fn expand_diagnostic_used<'cx>(ecx: &'cx mut ExtCtxt,
             ));
         }
     });
-    MacEager::expr(quote_expr!(ecx, ()))
+    MacEager::expr(ecx.expr_tuple(span, Vec::new()))
 }
 
 pub fn expand_register_diagnostic<'cx>(ecx: &'cx mut ExtCtxt,
                                        span: Span,
                                        token_tree: &[TokenTree])
                                        -> Box<MacResult+'cx> {
-    let (code, description) = match token_tree {
-        [ast::TtToken(_, token::Ident(ref code, _))] => {
+    let (code, description) = match (
+        token_tree.len(),
+        token_tree.get(0),
+        token_tree.get(1),
+        token_tree.get(2)
+    ) {
+        (1, Some(&ast::TtToken(_, token::Ident(ref code, _))), None, None) => {
             (code, None)
         },
-        [ast::TtToken(_, token::Ident(ref code, _)),
-         ast::TtToken(_, token::Comma),
-         ast::TtToken(_, token::Literal(token::StrRaw(description, _), None))] => {
+        (3, Some(&ast::TtToken(_, token::Ident(ref code, _))),
+            Some(&ast::TtToken(_, token::Comma)),
+            Some(&ast::TtToken(_, token::Literal(token::StrRaw(description, _), None)))) => {
             (code, Some(description))
         }
         _ => unreachable!()
     };
+    // Check that the description starts and ends with a newline and doesn't
+    // overflow the maximum line width.
+    description.map(|raw_msg| {
+        let msg = raw_msg.as_str();
+        if !msg.starts_with("\n") || !msg.ends_with("\n") {
+            ecx.span_err(span, &format!(
+                "description for error code {} doesn't start and end with a newline",
+                token::get_ident(*code)
+            ));
+        }
+        if msg.lines().any(|line| line.len() > MAX_DESCRIPTION_WIDTH) {
+            ecx.span_err(span, &format!(
+                "description for error code {} contains a line longer than {} characters",
+                token::get_ident(*code), MAX_DESCRIPTION_WIDTH
+            ));
+        }
+        raw_msg
+    });
     with_registered_diagnostics(|diagnostics| {
         if diagnostics.insert(code.name, description).is_some() {
             ecx.span_err(span, &format!(
@@ -102,15 +128,23 @@ pub fn expand_register_diagnostic<'cx>(ecx: &'cx mut ExtCtxt,
     let sym = Ident::new(token::gensym(&(
         "__register_diagnostic_".to_string() + &token::get_ident(*code)
     )));
-    MacEager::items(SmallVector::many(vec![quote_item!(ecx, mod $sym {}).unwrap()]))
+    MacEager::items(SmallVector::many(vec![
+        ecx.item_mod(
+            span,
+            span,
+            sym,
+            Vec::new(),
+            Vec::new()
+        )
+    ]))
 }
 
 pub fn expand_build_diagnostic_array<'cx>(ecx: &'cx mut ExtCtxt,
                                           span: Span,
                                           token_tree: &[TokenTree])
                                           -> Box<MacResult+'cx> {
-    let name = match token_tree {
-        [ast::TtToken(_, token::Ident(ref name, _))] => name,
+    let name = match (token_tree.len(), token_tree.get(0)) {
+        (1, Some(&ast::TtToken(_, token::Ident(ref name, _)))) => name,
         _ => unreachable!()
     };
 
@@ -127,7 +161,37 @@ pub fn expand_build_diagnostic_array<'cx>(ecx: &'cx mut ExtCtxt,
             (descriptions.len(), ecx.expr_vec(span, descriptions))
         });
 
-    MacEager::items(SmallVector::many(vec![quote_item!(ecx,
-        pub static $name: [(&'static str, &'static str); $count] = $expr;
-    ).unwrap()]))
+    let static_ = ecx.lifetime(span, ecx.name_of("'static"));
+    let ty_str = ecx.ty_rptr(
+        span,
+        ecx.ty_ident(span, ecx.ident_of("str")),
+        Some(static_),
+        ast::MutImmutable,
+    );
+
+    let ty = ecx.ty(
+        span,
+        ast::TyFixedLengthVec(
+            ecx.ty(
+                span,
+                ast::TyTup(vec![ty_str.clone(), ty_str])
+            ),
+            ecx.expr_usize(span, count),
+        ),
+    );
+
+    MacEager::items(SmallVector::many(vec![
+        P(ast::Item {
+            ident: name.clone(),
+            attrs: Vec::new(),
+            id: ast::DUMMY_NODE_ID,
+            node: ast::ItemStatic(
+                ty,
+                ast::MutImmutable,
+                expr,
+            ),
+            vis: ast::Public,
+            span: span,
+        })
+    ]))
 }
