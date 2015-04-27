@@ -14,11 +14,6 @@
 //! Parsing does not happen at runtime: structures of `std::fmt::rt` are
 //! generated instead.
 
-// Do not remove on snapshot creation. Needed for bootstrap. (Issue #22364)
-#![cfg_attr(stage0, feature(custom_attribute))]
-#![crate_name = "fmt_macros"]
-#![unstable(feature = "rustc_private")]
-#![staged_api]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
@@ -26,8 +21,7 @@
        html_root_url = "http://doc.rust-lang.org/nightly/",
        html_playground_url = "http://play.rust-lang.org/")]
 
-#![feature(staged_api)]
-#![feature(unicode)]
+extern crate unicode_xid;
 
 pub use self::Piece::*;
 pub use self::Position::*;
@@ -37,6 +31,7 @@ pub use self::Count::*;
 
 use std::str;
 use std::string;
+use unicode_xid::UnicodeXID;
 
 /// A piece is a portion of the format string which represents the next part
 /// to emit. These are emitted as a stream by the `Parser` class.
@@ -393,7 +388,7 @@ impl<'a> Parser<'a> {
     /// characters.
     fn word(&mut self) -> &'a str {
         let start = match self.cur.clone().next() {
-            Some((pos, c)) if c.is_xid_start() => {
+            Some((pos, c)) if UnicodeXID::is_xid_start(c) => {
                 self.cur.next();
                 pos
             }
@@ -402,7 +397,7 @@ impl<'a> Parser<'a> {
         let mut end;
         loop {
             match self.cur.clone().next() {
-                Some((_, c)) if c.is_xid_continue() => {
+                Some((_, c)) if UnicodeXID::is_xid_continue(c) => {
                     self.cur.next();
                 }
                 Some((pos, _)) => { end = pos; break }

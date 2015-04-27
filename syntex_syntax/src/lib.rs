@@ -20,9 +20,7 @@
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/nightly/")]
 
-#![feature(rustc_private)]
-
-extern crate fmt_macros;
+extern crate syntex_fmt_macros as fmt_macros;
 extern crate term;
 extern crate libc;
 #[macro_use] extern crate log;
