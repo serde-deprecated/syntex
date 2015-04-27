@@ -22,7 +22,6 @@
 
 #![feature(rustc_private)]
 
-extern crate arena;
 extern crate fmt_macros;
 extern crate term;
 extern crate libc;
