@@ -2898,7 +2898,7 @@ impl<'a> State<'a> {
                         style: ast::StrStyle) -> io::Result<()> {
         let st = match style {
             ast::CookedStr => {
-                (format!("\"{}\"", st.escape_default()))
+                (format!("\"{}\"", st.chars().flat_map(char::escape_default).collect::<String>()))
             }
             ast::RawStr(n) => {
                 (format!("r{delim}\"{string}\"{delim}",
