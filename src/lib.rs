@@ -4,16 +4,24 @@ use std::fs::File;
 use std::io;
 use std::path::Path;
 
-use syntex_syntax::ast::{MacroDef, Name};
+use syntex_syntax::ast::MacroDef;
 use syntex_syntax::config;
-use syntex_syntax::ext::base::{SyntaxExtension, TTMacroExpander};
+use syntex_syntax::ext::base::{
+    IdentMacroExpander,
+    ItemDecorator,
+    ItemModifier,
+    MultiItemModifier,
+    NamedSyntaxExtension,
+    SyntaxExtension,
+    TTMacroExpander,
+};
 use syntex_syntax::ext::expand;
 use syntex_syntax::parse::{self, token};
 use syntex_syntax::print::{pp, pprust};
 
 pub struct Registry {
     macros: Vec<MacroDef>,
-    syntax_exts: Vec<(Name, SyntaxExtension)>,
+    syntax_exts: Vec<NamedSyntaxExtension>,
 }
 
 impl Registry {
@@ -29,11 +37,51 @@ impl Registry {
         registry
     }
 
-    pub fn register_fn<F>(&mut self, name: &str, extension: F)
+    pub fn register_macro<F>(&mut self, name: &str, extension: F)
         where F: TTMacroExpander + 'static
     {
         let name = token::intern(name);
-        let syntax_extension = SyntaxExtension::NormalTT(Box::new(extension), None, false);
+        let syntax_extension = SyntaxExtension::NormalTT(
+            Box::new(extension),
+            None,
+            false
+        );
+        self.syntax_exts.push((name, syntax_extension));
+    }
+
+    pub fn register_ident<F>(&mut self, name: &str, extension: F)
+        where F: IdentMacroExpander + 'static
+    {
+        let name = token::intern(name);
+        let syntax_extension = SyntaxExtension::IdentTT(
+            Box::new(extension),
+            None,
+            false
+        );
+        self.syntax_exts.push((name, syntax_extension));
+    }
+
+    pub fn register_decorator<F>(&mut self, name: &str, extension: F)
+        where F: ItemDecorator + 'static
+    {
+        let name = token::intern(name);
+        let syntax_extension = SyntaxExtension::Decorator(Box::new(extension));
+        self.syntax_exts.push((name, syntax_extension));
+    }
+
+    pub fn register_item_modifier<F>(&mut self, name: &str, extension: F)
+        where F: ItemModifier + 'static
+    {
+        let name = token::intern(name);
+        let syntax_extension = SyntaxExtension::Modifier(Box::new(extension));
+        self.syntax_exts.push((name, syntax_extension));
+    }
+
+    pub fn register_multi_item_modifier<F>(&mut self, name: &str, extension: F)
+        where F: MultiItemModifier + 'static
+    {
+        let name = token::intern(name);
+        let syntax_extension = SyntaxExtension::MultiModifier(Box::new(extension));
         self.syntax_exts.push((name, syntax_extension));
     }
 
