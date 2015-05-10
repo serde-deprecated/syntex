@@ -1,6 +1,6 @@
 [package]
 name = "syntex_syntax"
-version = "0.4.2"
+version = "0.4.3"
 authors = [ "erick.tryzelaar@gmail.com" ]
 license = "MIT/Apache-2.0"
 description = "Export of libsyntax for code generation"
@@ -11,6 +11,6 @@ bitflags = "*"
 libc = "*"
 log = "*"
 rustc-serialize = "*"
-syntex_fmt_macros = "*"
+syntex_fmt_macros = { version = "*", path = "../syntex_fmt_macros" }
 term = "*"
 unicode-xid = "*"
