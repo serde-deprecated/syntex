@@ -1,0 +1,5 @@
+fn main() {
+    // Unfortunately syntex macros cannot be embedded in macros it doesn't know about.
+    let s = hello_world!();
+    println!("{}", s);
+}

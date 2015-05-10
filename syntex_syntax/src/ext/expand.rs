@@ -34,7 +34,7 @@ use visit::Visitor;
 use std_inject;
 
 pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
-    e.and_then(|ast::Expr {id, node, span}| match node {
+    e.clone().and_then(|ast::Expr {id, node, span}| match node {
         // expr_mac should really be expr_ext or something; it's the
         // entry-point for all syntax extensions.
         ast::ExprMac(mac) => {
@@ -43,11 +43,9 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
                                                        mark_expr, fld) {
                 Some(expr) => expr,
                 None => {
-                    return P(ast::Expr {
-                        id: id,
-                        node: ast::ExprMac(mac),
-                        span: span,
-                    });
+                    // Ignore unknown macros.
+                    // return DummyResult::raw_expr(span);
+                    return e;
                 }
             };
 
@@ -365,6 +363,14 @@ fn expand_mac_invoc<T, F, G>(mac: ast::Mac, span: codemap::Span,
             let extnamestr = token::get_ident(extname);
             match fld.cx.syntax_env.find(&extname.name) {
                 None => {
+                    // Ignore unknown macros.
+                    /*
+                    fld.cx.span_err(
+                        pth.span,
+                        &format!("macro undefined: '{}!'",
+                                &extnamestr));
+                    */
+
                     // let compilation continue
                     None
                 }
@@ -721,7 +727,7 @@ pub fn expand_item_mac(it: P<ast::Item>,
 /// Expand a stmt
 fn expand_stmt(stmt: P<Stmt>, fld: &mut MacroExpander) -> SmallVector<P<Stmt>> {
     let stmt = stmt.and_then(|stmt| stmt);
-    let (mac, style) = match stmt.node {
+    let (mac, style) = match stmt.clone().node {
         StmtMac(mac, style) => (mac, style),
         _ => return expand_non_macro_stmt(stmt, fld)
     };
@@ -741,7 +747,11 @@ fn expand_stmt(stmt: P<Stmt>, fld: &mut MacroExpander) -> SmallVector<P<Stmt>> {
             fld.cx.bt_pop();
             new_items
         }
-        None => SmallVector::zero()
+        None => {
+            // Ignore unknown macros.
+            // SmallVector::zero()
+            SmallVector::one(P(stmt))
+        }
     };
 
     // If this is a macro invocation with a semicolon, then apply that
@@ -1278,7 +1288,7 @@ fn expand_impl_item(ii: P<ast::ImplItem>, fld: &mut MacroExpander)
             span: fld.new_span(ii.span)
         })),
         ast::MacImplItem(_) => {
-            let (span, mac) = ii.and_then(|ii| match ii.node {
+            let (span, mac) = ii.clone().and_then(|ii| match ii.node {
                 ast::MacImplItem(mac) => (ii.span, mac),
                 _ => unreachable!()
             });
@@ -1297,7 +1307,11 @@ fn expand_impl_item(ii: P<ast::ImplItem>, fld: &mut MacroExpander)
                     fld.cx.bt_pop();
                     new_items
                 }
-                None => SmallVector::zero()
+                None => {
+                    // Ignore unknown macros.
+                    // SmallVector::zero()
+                    SmallVector::one(ii)
+                }
             }
         }
         _ => fold::noop_fold_impl_item(ii, fld)
