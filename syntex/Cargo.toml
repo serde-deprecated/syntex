@@ -7,4 +7,4 @@ description = "High-level bindings to the zeromq library"
 repository = "https://github.com/erickt/rust-zmq"
 
 [dependencies]
-syntex_syntax = { version = "*", path = "syntex_syntax" }
+syntex_syntax = { version = "*", path = "../syntex_syntax" }
