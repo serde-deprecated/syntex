@@ -1,3 +1,2 @@
-/Cargo.lock
-/target/
-/syntax/target/
+Cargo.lock
+target
