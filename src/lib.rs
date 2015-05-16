@@ -8,8 +8,7 @@ use syntex_syntax::ast::MacroDef;
 use syntex_syntax::config;
 use syntex_syntax::ext::base::{
     IdentMacroExpander,
-    ItemDecorator,
-    ItemModifier,
+    MultiItemDecorator,
     MultiItemModifier,
     NamedSyntaxExtension,
     SyntaxExtension,
@@ -62,22 +61,14 @@ impl Registry {
     }
 
     pub fn register_decorator<F>(&mut self, name: &str, extension: F)
-        where F: ItemDecorator + 'static
+        where F: MultiItemDecorator + 'static
     {
         let name = token::intern(name);
-        let syntax_extension = SyntaxExtension::Decorator(Box::new(extension));
+        let syntax_extension = SyntaxExtension::MultiDecorator(Box::new(extension));
         self.syntax_exts.push((name, syntax_extension));
     }
 
-    pub fn register_item_modifier<F>(&mut self, name: &str, extension: F)
-        where F: ItemModifier + 'static
-    {
-        let name = token::intern(name);
-        let syntax_extension = SyntaxExtension::Modifier(Box::new(extension));
-        self.syntax_exts.push((name, syntax_extension));
-    }
-
-    pub fn register_multi_item_modifier<F>(&mut self, name: &str, extension: F)
+    pub fn register_modifier<F>(&mut self, name: &str, extension: F)
         where F: MultiItemModifier + 'static
     {
         let name = token::intern(name);

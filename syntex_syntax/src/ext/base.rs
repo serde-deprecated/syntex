@@ -30,50 +30,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::default::Default;
 
-pub trait ItemDecorator {
-    fn expand(&self,
-              ecx: &mut ExtCtxt,
-              sp: Span,
-              meta_item: &ast::MetaItem,
-              item: &ast::Item,
-              push: &mut FnMut(P<ast::Item>));
-}
-
-impl<F> ItemDecorator for F
-    where F : Fn(&mut ExtCtxt, Span, &ast::MetaItem, &ast::Item, &mut FnMut(P<ast::Item>))
-{
-    fn expand(&self,
-              ecx: &mut ExtCtxt,
-              sp: Span,
-              meta_item: &ast::MetaItem,
-              item: &ast::Item,
-              push: &mut FnMut(P<ast::Item>)) {
-        (*self)(ecx, sp, meta_item, item, push)
-    }
-}
-
-pub trait ItemModifier {
-    fn expand(&self,
-              ecx: &mut ExtCtxt,
-              span: Span,
-              meta_item: &ast::MetaItem,
-              item: P<ast::Item>)
-              -> P<ast::Item>;
-}
-
-impl<F> ItemModifier for F
-    where F : Fn(&mut ExtCtxt, Span, &ast::MetaItem, P<ast::Item>) -> P<ast::Item>
-{
-    fn expand(&self,
-              ecx: &mut ExtCtxt,
-              span: Span,
-              meta_item: &ast::MetaItem,
-              item: P<ast::Item>)
-              -> P<ast::Item> {
-        (*self)(ecx, span, meta_item, item)
-    }
-}
-
 #[derive(Debug,Clone)]
 pub enum Annotatable {
     Item(P<ast::Item>),
@@ -112,6 +68,16 @@ impl Annotatable {
         }
     }
 
+    pub fn map_item_or<F, G>(self, mut f: F, mut or: G) -> Annotatable
+        where F: FnMut(P<ast::Item>) -> P<ast::Item>,
+              G: FnMut(Annotatable) -> Annotatable
+    {
+        match self {
+            Annotatable::Item(i) => Annotatable::Item(f(i)),
+            _ => or(self)
+        }
+    }
+
     pub fn expect_trait_item(self) -> P<ast::TraitItem> {
         match self {
             Annotatable::TraitItem(i) => i,
@@ -124,6 +90,29 @@ impl Annotatable {
             Annotatable::ImplItem(i) => i,
             _ => panic!("expected Item")
         }
+    }
+}
+
+// A more flexible ItemDecorator.
+pub trait MultiItemDecorator {
+    fn expand(&self,
+              ecx: &mut ExtCtxt,
+              sp: Span,
+              meta_item: &ast::MetaItem,
+              item: Annotatable,
+              push: &mut FnMut(Annotatable));
+}
+
+impl<F> MultiItemDecorator for F
+    where F : Fn(&mut ExtCtxt, Span, &ast::MetaItem, Annotatable, &mut FnMut(Annotatable))
+{
+    fn expand(&self,
+              ecx: &mut ExtCtxt,
+              sp: Span,
+              meta_item: &ast::MetaItem,
+              item: Annotatable,
+              push: &mut FnMut(Annotatable)) {
+        (*self)(ecx, sp, meta_item, item, push)
     }
 }
 
@@ -398,12 +387,8 @@ pub enum SyntaxExtension {
     /// A syntax extension that is attached to an item and creates new items
     /// based upon it.
     ///
-    /// `#[derive(...)]` is an `ItemDecorator`.
-    Decorator(Box<ItemDecorator + 'static>),
-
-    /// A syntax extension that is attached to an item and modifies it
-    /// in-place.
-    Modifier(Box<ItemModifier + 'static>),
+    /// `#[derive(...)]` is a `MultiItemDecorator`.
+    MultiDecorator(Box<MultiItemDecorator + 'static>),
 
     /// A syntax extension that is attached to an item and modifies it
     /// in-place. More flexible version than Modifier.
