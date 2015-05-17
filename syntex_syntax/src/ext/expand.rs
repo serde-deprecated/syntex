@@ -571,11 +571,15 @@ pub fn expand_item_mac(it: P<ast::Item>,
     let items = {
         let expanded = match fld.cx.syntax_env.find(&extname.name) {
             None => {
+                // Ignore unknown macros.
+                /*
                 fld.cx.span_err(path_span,
                                 &format!("macro undefined: '{}!'",
                                         extnamestr));
+                */
+
                 // let compilation continue
-                return SmallVector::zero();
+                return SmallVector::one(it);
             }
 
             Some(rc) => match *rc {
@@ -937,7 +941,7 @@ fn expand_pat(p: P<ast::Pat>, fld: &mut MacroExpander) -> P<ast::Pat> {
         PatMac(_) => {}
         _ => return noop_fold_pat(p, fld)
     }
-    p.map(|ast::Pat {node, span, ..}| {
+    p.clone().map(|ast::Pat {node, span, ..}| {
         let (pth, tts) = match node {
             PatMac(mac) => match mac.node {
                 MacInvocTT(pth, tts, _) => {
@@ -954,11 +958,15 @@ fn expand_pat(p: P<ast::Pat>, fld: &mut MacroExpander) -> P<ast::Pat> {
         let extnamestr = token::get_ident(extname);
         let marked_after = match fld.cx.syntax_env.find(&extname.name) {
             None => {
+                // Ignore unknown macros.
+                /*
                 fld.cx.span_err(pth.span,
                                 &format!("macro undefined: '{}!'",
                                         extnamestr));
+                */
+
                 // let compilation continue
-                return DummyResult::raw_pat(span);
+                return p.and_then(|p| p);
             }
 
             Some(rc) => match *rc {
