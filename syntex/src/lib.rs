@@ -70,7 +70,7 @@ impl Registry {
         }));
     }
 
-    pub fn register_macro<F>(&mut self, name: &str, extension: F)
+    pub fn add_macro<F>(&mut self, name: &str, extension: F)
         where F: TTMacroExpander + 'static
     {
         let name = token::intern(name);
@@ -82,7 +82,7 @@ impl Registry {
         self.syntax_exts.push((name, syntax_extension));
     }
 
-    pub fn register_ident<F>(&mut self, name: &str, extension: F)
+    pub fn add_ident_macro<F>(&mut self, name: &str, extension: F)
         where F: IdentMacroExpander + 'static
     {
         let name = token::intern(name);
@@ -94,7 +94,7 @@ impl Registry {
         self.syntax_exts.push((name, syntax_extension));
     }
 
-    pub fn register_decorator<F>(&mut self, name: &str, extension: F)
+    pub fn add_decorator<F>(&mut self, name: &str, extension: F)
         where F: MultiItemDecorator + 'static
     {
         let name = token::intern(name);
@@ -102,7 +102,7 @@ impl Registry {
         self.syntax_exts.push((name, syntax_extension));
     }
 
-    pub fn register_modifier<F>(&mut self, name: &str, extension: F)
+    pub fn add_modifier<F>(&mut self, name: &str, extension: F)
         where F: MultiItemModifier + 'static
     {
         let name = token::intern(name);
@@ -117,6 +117,7 @@ impl Registry {
     pub fn add_post_expansion_pass(&mut self, pass: Pass) {
         self.post_expansion_passes.push(Box::new(pass))
     }
+
 
     pub fn expand(self, crate_name: &str, src: &Path, dst: &Path) -> io::Result<()> {
         let sess = parse::new_parse_sess();
