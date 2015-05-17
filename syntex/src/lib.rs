@@ -4,7 +4,9 @@ use std::fs::File;
 use std::io;
 use std::path::Path;
 
-use syntex_syntax::ast::MacroDef;
+use syntex_syntax::ast;
+use syntex_syntax::attr;
+use syntex_syntax::codemap::{DUMMY_SP, respan};
 use syntex_syntax::config;
 use syntex_syntax::ext::base::{
     IdentMacroExpander,
@@ -15,12 +17,16 @@ use syntex_syntax::ext::base::{
     TTMacroExpander,
 };
 use syntex_syntax::ext::expand;
+use syntex_syntax::feature_gate;
 use syntex_syntax::parse::{self, token};
 use syntex_syntax::print::{pp, pprust};
+use syntex_syntax::ptr::P;
 
 pub struct Registry {
-    macros: Vec<MacroDef>,
+    macros: Vec<ast::MacroDef>,
     syntax_exts: Vec<NamedSyntaxExtension>,
+    cfg: Vec<P<ast::MetaItem>>,
+    attrs: Vec<ast::Attribute>,
 }
 
 impl Registry {
@@ -28,12 +34,34 @@ impl Registry {
         Registry {
             macros: Vec::new(),
             syntax_exts: Vec::new(),
+            cfg: Vec::new(),
+            attrs: Vec::new(),
         }
     }
 
-    pub fn with_standard_macros() -> Registry {
-        let registry = Registry::new();
-        registry
+    pub fn add_cfg(&mut self, cfg: &str) {
+        let meta_item = parse::parse_meta_from_source_str(
+            "cfgspec".to_string(),
+            cfg.to_string(),
+            Vec::new(),
+            &parse::new_parse_sess());
+
+        self.cfg.push(meta_item);
+    }
+
+    pub fn add_attr(&mut self, attr: &str) {
+        let meta_item = parse::parse_meta_from_source_str(
+            "attrspec".to_string(),
+            attr.to_string(),
+            Vec::new(),
+            &parse::new_parse_sess());
+
+        self.attrs.push(respan(DUMMY_SP, ast::Attribute_ {
+            id: attr::mk_attr_id(),
+            style: ast::AttrOuter,
+            value: meta_item,
+            is_sugared_doc: false,
+        }));
     }
 
     pub fn register_macro<F>(&mut self, name: &str, extension: F)
@@ -78,22 +106,29 @@ impl Registry {
 
     pub fn expand(self, crate_name: &str, src: &Path, dst: &Path) -> io::Result<()> {
         let sess = parse::new_parse_sess();
-        let cfg = vec![];
 
-        let krate = parse::parse_crate_from_file(
+        let mut krate = parse::parse_crate_from_file(
             src,
-            cfg,
+            self.cfg,
             &sess);
+
+        krate.attrs.extend(self.attrs);
 
         let krate = config::strip_unconfigured_items(
             &sess.span_diagnostic,
             krate);
 
-        let cfg = expand::ExpansionConfig::default(crate_name.to_string());
+        let features = feature_gate::check_crate_macros(
+            &sess.span_diagnostic.cm,
+            &sess.span_diagnostic,
+            &krate);
+
+        let mut ecfg = expand::ExpansionConfig::default(crate_name.to_string());
+        ecfg.features = Some(&features);
 
         let krate = expand::expand_crate(
             &sess,
-            cfg,
+            ecfg,
             self.macros,
             self.syntax_exts,
             krate);
