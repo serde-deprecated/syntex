@@ -22,9 +22,13 @@ use syntex_syntax::parse::{self, token};
 use syntex_syntax::print::{pp, pprust};
 use syntex_syntax::ptr::P;
 
+pub type Pass = fn(ast::Crate) -> ast::Crate;
+
 pub struct Registry {
     macros: Vec<ast::MacroDef>,
     syntax_exts: Vec<NamedSyntaxExtension>,
+    pre_expansion_passes: Vec<Box<Pass>>,
+    post_expansion_passes: Vec<Box<Pass>>,
     cfg: Vec<P<ast::MetaItem>>,
     attrs: Vec<ast::Attribute>,
 }
@@ -34,6 +38,8 @@ impl Registry {
         Registry {
             macros: Vec::new(),
             syntax_exts: Vec::new(),
+            pre_expansion_passes: Vec::new(),
+            post_expansion_passes: Vec::new(),
             cfg: Vec::new(),
             attrs: Vec::new(),
         }
@@ -104,6 +110,14 @@ impl Registry {
         self.syntax_exts.push((name, syntax_extension));
     }
 
+    pub fn add_pre_expansion_pass(&mut self, pass: Pass) {
+        self.pre_expansion_passes.push(Box::new(pass))
+    }
+
+    pub fn add_post_expansion_pass(&mut self, pass: Pass) {
+        self.post_expansion_passes.push(Box::new(pass))
+    }
+
     pub fn expand(self, crate_name: &str, src: &Path, dst: &Path) -> io::Result<()> {
         let sess = parse::new_parse_sess();
 
@@ -123,6 +137,9 @@ impl Registry {
             &sess.span_diagnostic,
             &krate);
 
+        let krate = self.pre_expansion_passes.iter()
+            .fold(krate, |krate, f| (f)(krate));
+
         let mut ecfg = expand::ExpansionConfig::default(crate_name.to_string());
         ecfg.features = Some(&features);
 
@@ -132,6 +149,9 @@ impl Registry {
             self.macros,
             self.syntax_exts,
             krate);
+
+        let krate = self.post_expansion_passes.iter()
+            .fold(krate, |krate, f| (f)(krate));
 
         let dst = try!(File::create(dst));
 
