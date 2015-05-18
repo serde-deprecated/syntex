@@ -15,7 +15,7 @@
 
 use ast::{MetaItem, MetaWord};
 use attr::AttrMetaMethods;
-use ext::base::{ExtCtxt, SyntaxEnv, MultiDecorator, MultiItemDecorator, MultiModifier, Annotatable};
+use ext::base::{ExtCtxt, SyntaxEnv, MultiModifier, Annotatable};
 use ext::build::AstBuilder;
 use feature_gate;
 use codemap::Span;
@@ -188,17 +188,4 @@ derive_traits! {
     "Show" => show::expand_deriving_show,
     "Encodable" => encodable::expand_deriving_encodable,
     "Decodable" => decodable::expand_deriving_decodable,
-}
-
-#[inline] // because `name` is a compile-time constant
-fn warn_if_deprecated(ecx: &mut ExtCtxt, sp: Span, name: &str) {
-    if let Some(replacement) = match name {
-        "Show" => Some("Debug"),
-        "Encodable" => Some("RustcEncodable"),
-        "Decodable" => Some("RustcDecodable"),
-        _ => None,
-    } {
-        ecx.span_warn(sp, &format!("derive({}) is deprecated in favor of derive({})",
-                                   name, replacement));
-    }
 }

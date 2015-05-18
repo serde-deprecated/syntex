@@ -431,7 +431,7 @@ impl BlockInfo {
 
 /// The base map of methods for expanding syntax extension
 /// AST nodes into full ASTs
-fn initial_syntax_expander_table<'feat>(ecfg: &expand::ExpansionConfig<'feat>)
+fn initial_syntax_expander_table<'feat>(_ecfg: &expand::ExpansionConfig<'feat>)
                                         -> SyntaxEnv {
     // utility function to simplify creating NormalTT syntax extensions
     fn builtin_normal_expander(f: MacroExpanderFn) -> SyntaxExtension {
