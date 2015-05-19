@@ -1,20 +1,26 @@
 language: rust
 rust:
-  - stable
-  - beta
-  - nightly
+- stable
+- beta
+- nightly
 script:
-  - cargo build
-  - (test $TRAVIS_RUST_VERSION == "nightly" && cargo test)
-  - cargo 
+- "(cd syntex && cargo build)"
+- (test $TRAVIS_RUST_VERSION == "nightly" && cd syntex && cargo test)
+- (test $TRAVIS_RUST_VERSION == "nightly" && cd syntex_fmt_macros && cargo test)
+- (test $TRAVIS_RUST_VERSION == "nightly" && cd syntex_syntax && cargo test)
+- "(cd syntex && cargo doc --no-deps)"
+- "(cd syntex_fmt_macros && cargo doc --no-deps)"
+- "(cd syntex_syntax && cargo doc --no-deps)"
 after_success: |
   [ $TRAVIS_BRANCH = "master" ] &&
   [ $TRAVIS_PULL_REQUEST  = false ] &&
-  cargo doc &&
+  mkdir -p target/doc &&
+  cp -r syntex/target/doc target/doc/syntex &&
+  cp -r syntex_syntax/target/doc target/doc/syntex_syntax &&
   echo "<meta http-equiv=refresh content=0;url=`echo $TRAVIS_REPO_SLUG | cut -d '/' -f 2`/index.html>" > target/doc/index.html &&
   sudo pip install ghp-import &&
   ghp-import -n target/doc &&
   git push -fq https://${GH_TOKEN}@github.com/${TRAVIS_REPO_SLUG}.git gh-pages
 env:
   global:
-    secure: HO41LMpMXkF2In9+1sxWVu7fgolL+y9+4Q5PI6wZX2L5pDwpPJCjxaQarQXCEnoIxED1PlP03JuF7ULNz0zw1ylYhAOfOSdkxFZRnE2wMZqq6qvXBHwyMiDrAociIzoPKSGv7JVrKPsjsnd+96K6xxueIodQZrmAdyq7N/M82Mc=
+  - secure: MkGJwAWwduRZ7N8TjTtmftzlcIai0luUnpGwjGXOZ/xpKSVZddeQN/CRimVgua1a3tBvlQ15Fr4YNkwBeDU+G3ERIHCfTowzR0bhOo5NPBiULvp3l/u8ECp2IUa8kNh9XFH4DibFvmzhaiQa1eIdojLok24RP7E2XvBHPKw4xYI=
