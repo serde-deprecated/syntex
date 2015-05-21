@@ -11,6 +11,5 @@ bitflags = "*"
 libc = "*"
 log = "*"
 rustc-serialize = "*"
-syntex_fmt_macros = { version = "*", path = "../syntex_fmt_macros" }
 term = "*"
 unicode-xid = "*"

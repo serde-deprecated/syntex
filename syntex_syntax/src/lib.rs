@@ -20,7 +20,6 @@
        html_favicon_url = "https://doc.rust-lang.org/favicon.ico",
        html_root_url = "http://doc.rust-lang.org/nightly/")]
 
-extern crate syntex_fmt_macros as fmt_macros;
 extern crate term;
 extern crate libc;
 #[macro_use] extern crate log;
@@ -98,7 +97,6 @@ pub mod ext {
     pub mod deriving;
     pub mod env;
     pub mod expand;
-    pub mod format;
     pub mod log_syntax;
     pub mod mtwt;
     pub mod quote;
