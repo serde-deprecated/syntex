@@ -42,6 +42,7 @@ pub fn expand_deriving_show(cx: &mut ExtCtxt,
                 args: vec!(fmtr),
                 ret_ty: Literal(path_std!(cx, core::fmt::Result)),
                 attributes: Vec::new(),
+                is_unsafe: false,
                 combine_substructure: combine_substructure(Box::new(|a, b, c| {
                     show_substructure(a, b, c)
                 }))
@@ -74,6 +75,7 @@ fn show_substructure(cx: &mut ExtCtxt, span: Span,
 
     match *substr.fields {
         Struct(ref fields) | EnumMatching(_, _, ref fields) => {
+
             if fields.is_empty() || fields[0].name.is_none() {
                 // tuple struct/"normal" variant
                 expr = cx.expr_method_call(span,
@@ -82,11 +84,14 @@ fn show_substructure(cx: &mut ExtCtxt, span: Span,
                                            vec![name]);
 
                 for field in fields {
+                    // Use double indirection to make sure this works for unsized types
+                    let field = cx.expr_addr_of(field.span, field.self_.clone());
+                    let field = cx.expr_addr_of(field.span, field);
+
                     expr = cx.expr_method_call(span,
                                                expr,
                                                token::str_to_ident("field"),
-                                               vec![cx.expr_addr_of(field.span,
-                                                                    field.self_.clone())]);
+                                               vec![field]);
                 }
             } else {
                 // normal struct/struct variant
@@ -99,12 +104,14 @@ fn show_substructure(cx: &mut ExtCtxt, span: Span,
                     let name = cx.expr_lit(field.span, ast::Lit_::LitStr(
                             token::get_ident(field.name.clone().unwrap()),
                             ast::StrStyle::CookedStr));
+
+                    // Use double indirection to make sure this works for unsized types
+                    let field = cx.expr_addr_of(field.span, field.self_.clone());
+                    let field = cx.expr_addr_of(field.span, field);
                     expr = cx.expr_method_call(span,
                                                expr,
                                                token::str_to_ident("field"),
-                                               vec![name,
-                                                    cx.expr_addr_of(field.span,
-                                                                    field.self_.clone())]);
+                                               vec![name, field]);
                 }
             }
         }
