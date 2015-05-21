@@ -19,5 +19,5 @@ pub fn expand_hello_world<'cx>(
 }
 
 pub fn register(registry: &mut Registry) {
-    registry.register_macro("hello_world", expand_hello_world);
+    registry.add_macro("hello_world", expand_hello_world);
 }
