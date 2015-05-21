@@ -1628,7 +1628,7 @@ mod tests {
     #[test] fn macros_cant_escape_fns_test () {
         let src = "fn bogus() {macro_rules! z (() => (3+4));}\
                    fn inty() -> i32 { z!() }".to_string();
-        let sess = parse::new_parse_sess();
+        let sess = parse::ParseSess::new();
         let crate_ast = parse::parse_crate_from_source_str(
             "<test>".to_string(),
             src,
@@ -1642,7 +1642,7 @@ mod tests {
     #[test] fn macros_cant_escape_mods_test () {
         let src = "mod foo {macro_rules! z (() => (3+4));}\
                    fn inty() -> i32 { z!() }".to_string();
-        let sess = parse::new_parse_sess();
+        let sess = parse::ParseSess::new();
         let crate_ast = parse::parse_crate_from_source_str(
             "<test>".to_string(),
             src,
@@ -1654,7 +1654,7 @@ mod tests {
     #[test] fn macros_can_escape_flattened_mods_test () {
         let src = "#[macro_use] mod foo {macro_rules! z (() => (3+4));}\
                    fn inty() -> i32 { z!() }".to_string();
-        let sess = parse::new_parse_sess();
+        let sess = parse::ParseSess::new();
         let crate_ast = parse::parse_crate_from_source_str(
             "<test>".to_string(),
             src,
@@ -1663,7 +1663,7 @@ mod tests {
     }
 
     fn expand_crate_str(crate_str: String) -> ast::Crate {
-        let ps = parse::new_parse_sess();
+        let ps = parse::ParseSess::new();
         let crate_ast = panictry!(string_to_parser(&ps, crate_str).parse_crate_mod());
         // the cfg argument actually does matter, here...
         expand_crate(&ps,test_ecfg(),vec!(),vec!(),crate_ast)

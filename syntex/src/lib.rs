@@ -50,7 +50,7 @@ impl Registry {
             "cfgspec".to_string(),
             cfg.to_string(),
             Vec::new(),
-            &parse::new_parse_sess());
+            &parse::ParseSess::new());
 
         self.cfg.push(meta_item);
     }
@@ -60,7 +60,7 @@ impl Registry {
             "attrspec".to_string(),
             attr.to_string(),
             Vec::new(),
-            &parse::new_parse_sess());
+            &parse::ParseSess::new());
 
         self.attrs.push(respan(DUMMY_SP, ast::Attribute_ {
             id: attr::mk_attr_id(),
@@ -120,7 +120,7 @@ impl Registry {
 
 
     pub fn expand(self, crate_name: &str, src: &Path, dst: &Path) -> io::Result<()> {
-        let sess = parse::new_parse_sess();
+        let sess = parse::ParseSess::new();
 
         let mut krate = parse::parse_crate_from_file(
             src,
