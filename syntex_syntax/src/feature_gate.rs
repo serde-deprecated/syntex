@@ -137,9 +137,6 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Status)] = &[
     // Allows the use of rustc_* attributes; RFC 572
     ("rustc_attrs", "1.0.0", Active),
 
-    // Allows the use of `static_assert`
-    ("static_assert", "1.0.0", Active),
-
     // Allows the use of #[allow_internal_unstable]. This is an
     // attribute on macro_rules! and can't use the attribute handling
     // below (it has to be checked before expansion possibly makes
@@ -155,6 +152,9 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Status)] = &[
     // Allows the definition of associated constants in `trait` or `impl`
     // blocks.
     ("associated_consts", "1.0.0", Active),
+
+    // Allows the definition of `const fn` functions.
+    ("const_fn", "1.2.0", Active),
 ];
 // (changing above list without updating src/doc/reference.md makes @cmr sad)
 
@@ -258,8 +258,6 @@ pub const KNOWN_ATTRIBUTES: &'static [(&'static str, AttributeType)] = &[
     ("no_builtins", Whitelisted),
     ("no_mangle", Whitelisted),
     ("no_stack_check", Whitelisted),
-    ("static_assert", Gated("static_assert",
-                            "`#[static_assert]` is an experimental feature, and has a poor API")),
     ("no_debug", Whitelisted),
     ("omit_gdb_pretty_printer_section", Whitelisted),
     ("unsafe_no_drop_flag", Gated("unsafe_no_drop_flag",
@@ -329,7 +327,8 @@ pub struct Features {
     /// spans of #![feature] attrs for stable language features. for error reporting
     pub declared_stable_lang_features: Vec<Span>,
     /// #![feature] attrs for non-language (library) features
-    pub declared_lib_features: Vec<(InternedString, Span)>
+    pub declared_lib_features: Vec<(InternedString, Span)>,
+    pub const_fn: bool,
 }
 
 impl Features {
@@ -349,7 +348,8 @@ impl Features {
             unmarked_api: false,
             negate_unsigned: false,
             declared_stable_lang_features: Vec::new(),
-            declared_lib_features: Vec::new()
+            declared_lib_features: Vec::new(),
+            const_fn: false,
         }
     }
 }
@@ -358,6 +358,7 @@ struct Context<'a> {
     features: Vec<&'static str>,
     span_handler: &'a SpanHandler,
     cm: &'a CodeMap,
+    plugin_attributes: &'a [(String, AttributeType)],
 }
 
 impl<'a> Context<'a> {
@@ -372,7 +373,7 @@ impl<'a> Context<'a> {
         self.features.iter().any(|&n| n == feature)
     }
 
-    fn check_attribute(&self, attr: &ast::Attribute) {
+    fn check_attribute(&self, attr: &ast::Attribute, is_macro: bool) {
         debug!("check_attribute(attr = {:?})", attr);
         let name = &*attr.name();
         for &(n, ty) in KNOWN_ATTRIBUTES {
@@ -381,6 +382,15 @@ impl<'a> Context<'a> {
                     self.gate_feature(gate, attr.span, desc);
                 }
                 debug!("check_attribute: {:?} is known, {:?}", name, ty);
+                return;
+            }
+        }
+        for &(ref n, ref ty) in self.plugin_attributes.iter() {
+            if &*n == name {
+                // Plugins can't gate attributes, so we don't check for it
+                // unlike the code above; we only use this loop to
+                // short-circuit to avoid the checks below
+                debug!("check_attribute: {:?} is registered by a plugin, {:?}", name, ty);
                 return;
             }
         }
@@ -394,12 +404,18 @@ impl<'a> Context<'a> {
                               "attributes of the form `#[derive_*]` are reserved \
                                for the compiler");
         } else {
-            self.gate_feature("custom_attribute", attr.span,
-                       &format!("The attribute `{}` is currently \
-                                unknown to the compiler and \
-                                may have meaning \
-                                added to it in the future",
-                                name));
+            // Only run the custom attribute lint during regular
+            // feature gate checking. Macro gating runs
+            // before the plugin attributes are registered
+            // so we skip this then
+            if !is_macro {
+                self.gate_feature("custom_attribute", attr.span,
+                           &format!("The attribute `{}` is currently \
+                                    unknown to the compiler and \
+                                    may have meaning \
+                                    added to it in the future",
+                                    name));
+            }
         }
     }
 }
@@ -478,7 +494,7 @@ impl<'a, 'v> Visitor<'v> for MacroVisitor<'a> {
     }
 
     fn visit_attribute(&mut self, attr: &'v ast::Attribute) {
-        self.context.check_attribute(attr);
+        self.context.check_attribute(attr, true);
     }
 }
 
@@ -497,7 +513,7 @@ impl<'a> PostExpansionVisitor<'a> {
 impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
     fn visit_attribute(&mut self, attr: &ast::Attribute) {
         if !self.context.cm.span_allows_unstable(attr.span) {
-            self.context.check_attribute(attr);
+            self.context.check_attribute(attr, false);
         }
     }
 
@@ -640,13 +656,26 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
                 block: &'v ast::Block,
                 span: Span,
                 _node_id: NodeId) {
+        // check for const fn declarations
         match fn_kind {
-            visit::FkItemFn(_, _, _, abi, _) if abi == Abi::RustIntrinsic => {
+            visit::FkItemFn(_, _, _, ast::Constness::Const, _, _) => {
+                self.gate_feature("const_fn", span, "const fn is unstable");
+            }
+            _ => {
+                // stability of const fn methods are covered in
+                // visit_trait_item and visit_impl_item below; this is
+                // because default methods don't pass through this
+                // point.
+            }
+        }
+
+        match fn_kind {
+            visit::FkItemFn(_, _, _, _, abi, _) if abi == Abi::RustIntrinsic => {
                 self.gate_feature("intrinsics",
                                   span,
                                   "intrinsics are subject to change")
             }
-            visit::FkItemFn(_, _, _, abi, _) |
+            visit::FkItemFn(_, _, _, _, abi, _) |
             visit::FkMethod(_, &ast::MethodSig { abi, .. }, _) if abi == Abi::RustCall => {
                 self.gate_feature("unboxed_closures",
                                   span,
@@ -664,6 +693,11 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
                                   ti.span,
                                   "associated constants are experimental")
             }
+            ast::MethodTraitItem(ref sig, _) => {
+                if sig.constness == ast::Constness::Const {
+                    self.gate_feature("const_fn", ti.span, "const fn is unstable");
+                }
+            }
             _ => {}
         }
         visit::walk_trait_item(self, ti);
@@ -676,6 +710,11 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
                                   ii.span,
                                   "associated constants are experimental")
             }
+            ast::MethodImplItem(ref sig, _) => {
+                if sig.constness == ast::Constness::Const {
+                    self.gate_feature("const_fn", ii.span, "const fn is unstable");
+                }
+            }
             _ => {}
         }
         visit::walk_impl_item(self, ii);
@@ -684,6 +723,7 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
 
 fn check_crate_inner<F>(cm: &CodeMap, span_handler: &SpanHandler,
                         krate: &ast::Crate,
+                        plugin_attributes: &[(String, AttributeType)],
                         check: F)
                        -> Features
     where F: FnOnce(&mut Context, &ast::Crate)
@@ -692,6 +732,7 @@ fn check_crate_inner<F>(cm: &CodeMap, span_handler: &SpanHandler,
         features: Vec::new(),
         span_handler: span_handler,
         cm: cm,
+        plugin_attributes: plugin_attributes,
     };
 
     let mut accepted_features = Vec::new();
@@ -758,20 +799,21 @@ fn check_crate_inner<F>(cm: &CodeMap, span_handler: &SpanHandler,
         unmarked_api: cx.has_feature("unmarked_api"),
         negate_unsigned: cx.has_feature("negate_unsigned"),
         declared_stable_lang_features: accepted_features,
-        declared_lib_features: unknown_features
+        declared_lib_features: unknown_features,
+        const_fn: cx.has_feature("const_fn"),
     }
 }
 
 pub fn check_crate_macros(cm: &CodeMap, span_handler: &SpanHandler, krate: &ast::Crate)
 -> Features {
-    check_crate_inner(cm, span_handler, krate,
+    check_crate_inner(cm, span_handler, krate, &[] as &'static [_],
                       |ctx, krate| visit::walk_crate(&mut MacroVisitor { context: ctx }, krate))
 }
 
-pub fn check_crate(cm: &CodeMap, span_handler: &SpanHandler, krate: &ast::Crate)
-                   -> Features
+pub fn check_crate(cm: &CodeMap, span_handler: &SpanHandler, krate: &ast::Crate,
+                   plugin_attributes: &[(String, AttributeType)]) -> Features
 {
-    check_crate_inner(cm, span_handler, krate,
+    check_crate_inner(cm, span_handler, krate, plugin_attributes,
                       |ctx, krate| visit::walk_crate(&mut PostExpansionVisitor { context: ctx },
                                                      krate))
 }
