@@ -925,6 +925,7 @@ mod tests {
                                 variadic: false
                             }),
                                     ast::Unsafety::Normal,
+                                    ast::Constness::NotConst,
                                     abi::Rust,
                                     ast::Generics{ // no idea on either of these:
                                         lifetimes: Vec::new(),
