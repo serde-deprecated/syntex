@@ -7,7 +7,6 @@ use std::path::Path;
 use syntex_syntax::ast;
 use syntex_syntax::attr;
 use syntex_syntax::codemap::{DUMMY_SP, respan};
-use syntex_syntax::config;
 use syntex_syntax::ext::base::{
     IdentMacroExpander,
     MultiItemDecorator,
