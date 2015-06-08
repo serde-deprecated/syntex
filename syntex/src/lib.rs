@@ -129,10 +129,6 @@ impl Registry {
 
         krate.attrs.extend(self.attrs);
 
-        let krate = config::strip_unconfigured_items(
-            &sess.span_diagnostic,
-            krate);
-
         let features = feature_gate::check_crate_macros(
             &sess.span_diagnostic.cm,
             &sess.span_diagnostic,
