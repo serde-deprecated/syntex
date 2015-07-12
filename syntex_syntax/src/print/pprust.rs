@@ -120,11 +120,13 @@ pub fn print_crate<'a>(cm: &'a CodeMap,
         // of the feature gate, so we fake them up here.
 
         let no_std_meta = attr::mk_word_item(InternedString::new("no_std"));
+        let prelude_import_meta = attr::mk_word_item(InternedString::new("prelude_import"));
 
         // #![feature(no_std)]
         let fake_attr = attr::mk_attr_inner(attr::mk_attr_id(),
                                             attr::mk_list_item(InternedString::new("feature"),
-                                                               vec![no_std_meta.clone()]));
+                                                               vec![no_std_meta.clone(),
+                                                                    prelude_import_meta]));
         try!(s.print_attribute(&fake_attr));
 
         // #![no_std]
@@ -2110,7 +2112,7 @@ impl<'a> State<'a> {
                         comma = true;
                 }
 
-                for binding in &*data.bindings {
+                for binding in data.bindings.iter() {
                     if comma {
                         try!(self.word_space(","))
                     }
@@ -2845,7 +2847,7 @@ impl<'a> State<'a> {
             }
             ast::LitBinary(ref v) => {
                 let mut escaped: String = String::new();
-                for &ch in &**v {
+                for &ch in v.iter() {
                     escaped.extend(ascii::escape_default(ch)
                                          .map(|c| c as char));
                 }

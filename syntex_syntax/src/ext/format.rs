@@ -23,7 +23,6 @@ use parse::token;
 use ptr::P;
 
 use std::collections::HashMap;
-use std::iter::repeat;
 
 #[derive(PartialEq)]
 enum ArgumentType {
@@ -452,6 +451,7 @@ impl<'a, 'b> Context<'a, 'b> {
             Some(ecx.lifetime(sp, special_idents::static_lifetime.name)),
             ast::MutImmutable);
         let slice = ecx.expr_vec_slice(sp, pieces);
+        // static instead of const to speed up codegen by not requiring this to be inlined
         let st = ast::ItemStatic(ty, ast::MutImmutable, slice);
 
         let name = ecx.ident_of(name);
@@ -468,7 +468,7 @@ impl<'a, 'b> Context<'a, 'b> {
     /// to
     fn into_expr(mut self) -> P<ast::Expr> {
         let mut locals = Vec::new();
-        let mut names: Vec<_> = repeat(None).take(self.name_positions.len()).collect();
+        let mut names = vec![None; self.name_positions.len()];
         let mut pats = Vec::new();
         let mut heads = Vec::new();
 

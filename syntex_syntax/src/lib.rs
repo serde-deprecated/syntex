@@ -26,16 +26,18 @@
        html_root_url = "http://doc.rust-lang.org/nightly/")]
 
 #![feature(associated_consts)]
-#![feature(collections)]
-#![feature(collections_drain)]
-#![feature(core)]
+#![feature(bitset)]
+#![feature(drain)]
+#![feature(filling_drop)]
 #![feature(libc)]
+#![feature(ref_slice)]
 #![feature(rustc_private)]
 #![feature(staged_api)]
 #![feature(str_char)]
+#![feature(str_escape)]
 #![feature(unicode)]
+#![feature(vec_push_all)]
 
-extern crate arena;
 extern crate fmt_macros;
 extern crate serialize;
 extern crate term;
@@ -82,7 +84,6 @@ pub mod syntax {
 
 pub mod abi;
 pub mod ast;
-pub mod ast_map;
 pub mod ast_util;
 pub mod attr;
 pub mod codemap;

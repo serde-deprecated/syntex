@@ -60,14 +60,14 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
             };
 
             // Keep going, outside-in.
-            //
             let fully_expanded = fld.fold_expr(expanded_expr);
+            let span = fld.new_span(span);
             fld.cx.bt_pop();
 
             fully_expanded.map(|e| ast::Expr {
                 id: ast::DUMMY_NODE_ID,
                 node: e.node,
-                span: fld.new_span(span),
+                span: span,
             })
         }
 
@@ -183,7 +183,7 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
 
             let mut arms = Vec::with_capacity(else_if_arms.len() + 2);
             arms.push(pat_arm);
-            arms.extend(else_if_arms.into_iter());
+            arms.extend(else_if_arms);
             arms.push(else_arm);
 
             let match_expr = fld.cx.expr(span,
@@ -367,7 +367,8 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
 /// of expansion and the mark which must be applied to the result.
 /// Our current interface doesn't allow us to apply the mark to the
 /// result until after calling make_expr, make_items, etc.
-fn expand_mac_invoc<T, F, G>(mac: ast::Mac, span: codemap::Span,
+fn expand_mac_invoc<T, F, G>(mac: ast::Mac,
+                             span: codemap::Span,
                              parse_thunk: F,
                              mark_thunk: G,
                              fld: &mut MacroExpander)
@@ -779,7 +780,7 @@ fn expand_non_macro_stmt(Spanned {node, span: stmt_span}: Stmt, fld: &mut MacroE
                     };
                     // add them to the existing pending renames:
                     fld.cx.syntax_env.info().pending_renames
-                          .extend(new_pending_renames.into_iter());
+                          .extend(new_pending_renames);
                     Local {
                         id: id,
                         ty: expanded_ty,

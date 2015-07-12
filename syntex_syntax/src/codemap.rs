@@ -17,9 +17,9 @@
 //! within the CodeMap, which upon request can be converted to line and column
 //! information, source code snippets, etc.
 
-pub use self::MacroFormat::*;
+pub use self::ExpnFormat::*;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::ops::{Add, Sub};
 use std::path::Path;
 use std::rc::Rc;
@@ -115,7 +115,7 @@ impl Sub for CharPos {
 /// are *absolute* positions from the beginning of the codemap, not positions
 /// relative to FileMaps. Methods on the CodeMap can be used to relate spans back
 /// to the original source.
-#[derive(Clone, Copy, Debug, Hash)]
+#[derive(Clone, Copy, Hash)]
 pub struct Span {
     pub lo: BytePos,
     pub hi: BytePos,
@@ -161,6 +161,20 @@ impl Decodable for Span {
         let lo = BytePos(lo_hi as u32);
         let hi = BytePos((lo_hi >> 32) as u32);
         Ok(mk_sp(lo, hi))
+    }
+}
+
+fn default_span_debug(span: Span, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "Span {{ lo: {:?}, hi: {:?}, expn_id: {:?} }}",
+           span.lo, span.hi, span.expn_id)
+}
+
+thread_local!(pub static SPAN_DEBUG: Cell<fn(Span, &mut fmt::Formatter) -> fmt::Result> =
+                Cell::new(default_span_debug));
+
+impl fmt::Debug for Span {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        SPAN_DEBUG.with(|span_debug| span_debug.get()(*self, f))
     }
 }
 
@@ -228,17 +242,17 @@ pub struct FileMapAndBytePos { pub fm: Rc<FileMap>, pub pos: BytePos }
 
 
 // _____________________________________________________________________________
-// MacroFormat, NameAndSpan, ExpnInfo, ExpnId
+// ExpnFormat, NameAndSpan, ExpnInfo, ExpnId
 //
 
-/// The syntax with which a macro was invoked.
-#[derive(Clone, Copy, Hash, Debug)]
-pub enum MacroFormat {
+/// The source of expansion.
+#[derive(Clone, Copy, Hash, Debug, PartialEq, Eq)]
+pub enum ExpnFormat {
     /// e.g. #[derive(...)] <item>
     MacroAttribute,
     /// e.g. `format!()`
     MacroBang,
-    /// Expansion performed by the compiler (libsyntax::expand).
+    /// Syntax sugar expansion performed by the compiler (libsyntax::expand).
     CompilerExpansion,
 }
 
@@ -248,7 +262,7 @@ pub struct NameAndSpan {
     /// with this Span.
     pub name: String,
     /// The format with which the macro was invoked.
-    pub format: MacroFormat,
+    pub format: ExpnFormat,
     /// Whether the macro is allowed to use #[unstable]/feature-gated
     /// features internally without forcing the whole crate to opt-in
     /// to them.
@@ -259,11 +273,11 @@ pub struct NameAndSpan {
     pub span: Option<Span>
 }
 
-/// Extra information for tracking macro expansion of spans
+/// Extra information for tracking spans of macro and syntax sugar expansion
 #[derive(Hash, Debug)]
 pub struct ExpnInfo {
-    /// The location of the actual macro invocation, e.g. `let x =
-    /// foo!();`
+    /// The location of the actual macro invocation or syntax sugar , e.g.
+    /// `let x = foo!();` or `if let Some(y) = x {}`
     ///
     /// This may recursively refer to other macro invocations, e.g. if
     /// `foo!()` invoked `bar!()` internally, and there was an
@@ -272,12 +286,7 @@ pub struct ExpnInfo {
     /// call_site span would have its own ExpnInfo, with the call_site
     /// pointing to the `foo!` invocation.
     pub call_site: Span,
-    /// Information about the macro and its definition.
-    ///
-    /// The `callee` of the inner expression in the `call_site`
-    /// example would point to the `macro_rules! bar { ... }` and that
-    /// of the `bar!()` invocation would point to the `macro_rules!
-    /// foo { ... }`.
+    /// Information about the expansion.
     pub callee: NameAndSpan
 }
 
@@ -677,7 +686,39 @@ impl CodeMap {
 
     /// Lookup source information about a BytePos
     pub fn lookup_char_pos(&self, pos: BytePos) -> Loc {
-        self.lookup_pos(pos)
+        let FileMapAndLine {fm: f, line: a} = self.lookup_line(pos);
+        let line = a + 1; // Line numbers start at 1
+        let chpos = self.bytepos_to_file_charpos(pos);
+        let linebpos = (*f.lines.borrow())[a];
+        let linechpos = self.bytepos_to_file_charpos(linebpos);
+        debug!("byte pos {:?} is on the line at byte pos {:?}",
+               pos, linebpos);
+        debug!("char pos {:?} is on the line at char pos {:?}",
+               chpos, linechpos);
+        debug!("byte is on line: {}", line);
+        assert!(chpos >= linechpos);
+        Loc {
+            file: f,
+            line: line,
+            col: chpos - linechpos
+        }
+    }
+
+    fn lookup_line(&self, pos: BytePos) -> FileMapAndLine {
+        let idx = self.lookup_filemap_idx(pos);
+
+        let files = self.files.borrow();
+        let f = (*files)[idx].clone();
+        let mut a = 0;
+        {
+            let lines = f.lines.borrow();
+            let mut b = lines.len();
+            while b - a > 1 {
+                let m = (a + b) / 2;
+                if (*lines)[m] > pos { b = m; } else { a = m; }
+            }
+        }
+        FileMapAndLine {fm: f, line: a}
     }
 
     pub fn lookup_char_pos_adj(&self, pos: BytePos) -> LocWithOpt {
@@ -796,7 +837,7 @@ impl CodeMap {
     }
 
     pub fn get_filemap(&self, filename: &str) -> Rc<FileMap> {
-        for fm in &*self.files.borrow() {
+        for fm in self.files.borrow().iter() {
             if filename == fm.name {
                 return fm.clone();
             }
@@ -821,7 +862,7 @@ impl CodeMap {
         // The number of extra bytes due to multibyte chars in the FileMap
         let mut total_extra_bytes = 0;
 
-        for mbc in &*map.multibyte_chars.borrow() {
+        for mbc in map.multibyte_chars.borrow().iter() {
             debug!("{}-byte char at {:?}", mbc.bytes, mbc.pos);
             if mbc.pos < bpos {
                 // every character is at least one byte, so we only
@@ -875,42 +916,6 @@ impl CodeMap {
         }
 
         return a;
-    }
-
-    fn lookup_line(&self, pos: BytePos) -> FileMapAndLine {
-        let idx = self.lookup_filemap_idx(pos);
-
-        let files = self.files.borrow();
-        let f = (*files)[idx].clone();
-        let mut a = 0;
-        {
-            let lines = f.lines.borrow();
-            let mut b = lines.len();
-            while b - a > 1 {
-                let m = (a + b) / 2;
-                if (*lines)[m] > pos { b = m; } else { a = m; }
-            }
-        }
-        FileMapAndLine {fm: f, line: a}
-    }
-
-    fn lookup_pos(&self, pos: BytePos) -> Loc {
-        let FileMapAndLine {fm: f, line: a} = self.lookup_line(pos);
-        let line = a + 1; // Line numbers start at 1
-        let chpos = self.bytepos_to_file_charpos(pos);
-        let linebpos = (*f.lines.borrow())[a];
-        let linechpos = self.bytepos_to_file_charpos(linebpos);
-        debug!("byte pos {:?} is on the line at byte pos {:?}",
-               pos, linebpos);
-        debug!("char pos {:?} is on the line at char pos {:?}",
-               chpos, linechpos);
-        debug!("byte is on line: {}", line);
-        assert!(chpos >= linechpos);
-        Loc {
-            file: f,
-            line: line,
-            col: chpos - linechpos
-        }
     }
 
     pub fn record_expansion(&self, expn_info: ExpnInfo) -> ExpnId {
