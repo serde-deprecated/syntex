@@ -1,6 +1,6 @@
 [package]
 name = "hello_world"
-version = "0.5.0"
+version = "0.8.0"
 authors = [ "erick.tryzelaar@gmail.com" ]
 build = "build.rs"
 

@@ -10,6 +10,7 @@
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::env;
 
 use ast;
 use ast::{Ident, Name, TokenTree};
@@ -19,6 +20,8 @@ use ext::build::AstBuilder;
 use parse::token;
 use ptr::P;
 use util::small_vector::SmallVector;
+
+use diagnostics::metadata::output_metadata;
 
 // Maximum width of any line in an extended error description (inclusive).
 const MAX_DESCRIPTION_WIDTH: usize = 80;
@@ -99,6 +102,7 @@ pub fn expand_register_diagnostic<'cx>(ecx: &'cx mut ExtCtxt,
         }
         _ => unreachable!()
     };
+
     // Check that the description starts and ends with a newline and doesn't
     // overflow the maximum line width.
     description.map(|raw_msg| {
@@ -109,9 +113,15 @@ pub fn expand_register_diagnostic<'cx>(ecx: &'cx mut ExtCtxt,
                 token::get_ident(*code)
             ));
         }
-        if msg.lines().any(|line| line.len() > MAX_DESCRIPTION_WIDTH) {
+
+        // URLs can be unavoidably longer than the line limit, so we allow them.
+        // Allowed format is: `[name]: http://rust-lang.org/`
+        let is_url = |l: &str| l.starts_with('[') && l.contains("]:") && l.contains("http");
+
+        if msg.lines().any(|line| line.len() > MAX_DESCRIPTION_WIDTH && !is_url(line)) {
             ecx.span_err(span, &format!(
-                "description for error code {} contains a line longer than {} characters",
+                "description for error code {} contains a line longer than {} characters.\n\
+                 if you're inserting a long URL use the footnote style to bypass this check.",
                 token::get_ident(*code), MAX_DESCRIPTION_WIDTH
             ));
         }
@@ -147,7 +157,7 @@ pub fn expand_build_diagnostic_array<'cx>(ecx: &'cx mut ExtCtxt,
                                           token_tree: &[TokenTree])
                                           -> Box<MacResult+'cx> {
     assert_eq!(token_tree.len(), 3);
-    let (_crate_name, name) = match (&token_tree[0], &token_tree[2]) {
+    let (crate_name, name) = match (&token_tree[0], &token_tree[2]) {
         (
             // Crate name.
             &ast::TtToken(_, token::Ident(ref crate_name, _)),
@@ -157,9 +167,18 @@ pub fn expand_build_diagnostic_array<'cx>(ecx: &'cx mut ExtCtxt,
         _ => unreachable!()
     };
 
-    // FIXME (#25705): we used to ensure error code uniqueness and
-    // output error description JSON metadata here, but the approach
-    // employed was too brittle.
+    // Output error metadata to `tmp/extended-errors/<target arch>/<crate name>.json`
+    let target_triple = env::var("CFG_COMPILER_HOST_TRIPLE")
+        .ok().expect("unable to determine target arch from $CFG_COMPILER_HOST_TRIPLE");
+
+    with_registered_diagnostics(|diagnostics| {
+        if let Err(e) = output_metadata(ecx, &target_triple, crate_name, &diagnostics) {
+            ecx.span_bug(span, &format!(
+                "error writing metadata for triple `{}` and crate `{}`, error: {}, cause: {:?}",
+                target_triple, crate_name, e.description(), e.cause()
+            ));
+        }
+    });
 
     // Construct the output expression.
     let (count, expr) =
@@ -200,9 +219,8 @@ pub fn expand_build_diagnostic_array<'cx>(ecx: &'cx mut ExtCtxt,
             ident: name.clone(),
             attrs: Vec::new(),
             id: ast::DUMMY_NODE_ID,
-            node: ast::ItemStatic(
+            node: ast::ItemConst(
                 ty,
-                ast::MutImmutable,
                 expr,
             ),
             vis: ast::Public,
