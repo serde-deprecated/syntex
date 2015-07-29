@@ -538,7 +538,6 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
             init: Some(ex),
             id: ast::DUMMY_NODE_ID,
             span: sp,
-            source: ast::LocalLet,
         });
         let decl = respan(sp, ast::DeclLocal(local));
         P(respan(sp, ast::StmtDecl(P(decl), ast::DUMMY_NODE_ID)))
@@ -562,7 +561,6 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
             init: Some(ex),
             id: ast::DUMMY_NODE_ID,
             span: sp,
-            source: ast::LocalLet,
         });
         let decl = respan(sp, ast::DeclLocal(local));
         P(respan(sp, ast::StmtDecl(P(decl), ast::DUMMY_NODE_ID)))
@@ -631,9 +629,8 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
     }
 
     fn expr_field_access(&self, sp: Span, expr: P<ast::Expr>, ident: ast::Ident) -> P<ast::Expr> {
-        let field_name = token::get_ident(ident);
         let field_span = Span {
-            lo: sp.lo - Pos::from_usize(field_name.len()),
+            lo: sp.lo - Pos::from_usize(ident.name.as_str().len()),
             hi: sp.hi,
             expn_id: sp.expn_id,
         };
