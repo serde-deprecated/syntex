@@ -174,6 +174,11 @@ impl<'a> StringReader<'a> {
         self.span_diagnostic.span_err(sp, m)
     }
 
+    /// Suggest some help with a given span.
+    pub fn help_span(&self, sp: Span, m: &str) {
+        self.span_diagnostic.span_help(sp, m)
+    }
+
     /// Report a fatal error spanning [`from_pos`, `to_pos`).
     fn fatal_span_(&self, from_pos: BytePos, to_pos: BytePos, m: &str) -> ! {
         self.fatal_span(codemap::mk_sp(from_pos, to_pos), m)
@@ -182,6 +187,11 @@ impl<'a> StringReader<'a> {
     /// Report a lexical error spanning [`from_pos`, `to_pos`).
     fn err_span_(&self, from_pos: BytePos, to_pos: BytePos, m: &str) {
         self.err_span(codemap::mk_sp(from_pos, to_pos), m)
+    }
+
+    /// Suggest some help spanning [`from_pos`, `to_pos`).
+    fn help_span_(&self, from_pos: BytePos, to_pos: BytePos, m: &str) {
+        self.help_span(codemap::mk_sp(from_pos, to_pos), m)
     }
 
     /// Report a lexical error spanning [`from_pos`, `to_pos`), appending an
@@ -223,6 +233,7 @@ impl<'a> StringReader<'a> {
             None => {
                 if self.is_eof() {
                     self.peek_tok = token::Eof;
+                    self.peek_span = codemap::mk_sp(self.filemap.end_pos, self.filemap.end_pos);
                 } else {
                     let start_bytepos = self.last_pos;
                     self.peek_tok = self.next_token_inner();
@@ -686,7 +697,7 @@ impl<'a> StringReader<'a> {
             accum_int *= 16;
             accum_int += c.to_digit(16).unwrap_or_else(|| {
                 self.err_span_char(self.last_pos, self.pos,
-                              "illegal character in numeric character escape", c);
+                              "invalid character in numeric character escape", c);
 
                 valid = false;
                 0
@@ -706,7 +717,7 @@ impl<'a> StringReader<'a> {
             Some(_) => valid,
             None => {
                 let last_bpos = self.last_pos;
-                self.err_span_(start_bpos, last_bpos, "illegal numeric character escape");
+                self.err_span_(start_bpos, last_bpos, "invalid numeric character escape");
                 false
             }
         }
@@ -731,19 +742,24 @@ impl<'a> StringReader<'a> {
                         return match e {
                             'n' | 'r' | 't' | '\\' | '\'' | '"' | '0' => true,
                             'x' => self.scan_byte_escape(delim, !ascii_only),
-                            'u' if self.curr_is('{') => {
-                                let valid = self.scan_unicode_escape(delim);
-                                if valid && ascii_only {
-                                    self.err_span_(
-                                        escaped_pos,
-                                        self.last_pos,
+                            'u' => {
+                                let valid = if self.curr_is('{') {
+                                    self.scan_unicode_escape(delim) && !ascii_only
+                                } else {
+                                    self.err_span_(start, self.last_pos,
+                                        "incorrect unicode escape sequence");
+                                    self.help_span_(start, self.last_pos,
+                                        "format of unicode escape sequences is `\\u{…}`");
+                                    false
+                                };
+                                if ascii_only {
+                                    self.err_span_(start, self.last_pos,
                                         "unicode escape sequences cannot be used as a byte or in \
                                         a byte string"
                                     );
-                                    false
-                                } else {
-                                   valid
                                 }
+                                valid
+
                             }
                             '\n' if delim == '"' => {
                                 self.consume_whitespace();
@@ -760,16 +776,13 @@ impl<'a> StringReader<'a> {
                                     if ascii_only { "unknown byte escape" }
                                     else { "unknown character escape" },
                                     c);
-                                let sp = codemap::mk_sp(escaped_pos, last_pos);
                                 if e == '\r' {
-                                    self.span_diagnostic.span_help(
-                                        sp,
+                                    self.help_span_(escaped_pos, last_pos,
                                         "this is an isolated carriage return; consider checking \
                                          your editor and version control settings")
                                 }
                                 if (e == '{' || e == '}') && !ascii_only {
-                                    self.span_diagnostic.span_help(
-                                        sp,
+                                    self.help_span_(escaped_pos, last_pos,
                                         "if used in a formatting string, \
                                         curly braces are escaped with `{{` and `}}`")
                                 }
@@ -836,7 +849,7 @@ impl<'a> StringReader<'a> {
                                      "unterminated unicode escape (needed a `}`)");
                 } else {
                     self.err_span_char(self.last_pos, self.pos,
-                                   "illegal character in unicode escape", c);
+                                   "invalid character in unicode escape", c);
                 }
                 valid = false;
                 0
@@ -851,14 +864,12 @@ impl<'a> StringReader<'a> {
             valid = false;
         }
 
-        self.bump(); // past the ending }
-
         if valid && (char::from_u32(accum_int).is_none() || count == 0) {
-            self.err_span_(start_bpos, self.last_pos, "illegal unicode character escape");
+            self.err_span_(start_bpos, self.last_pos, "invalid unicode character escape");
             valid = false;
         }
 
-
+        self.bump(); // past the ending }
         valid
     }
 
@@ -1130,8 +1141,8 @@ impl<'a> StringReader<'a> {
                 let last_bpos = self.last_pos;
                 let curr_char = self.curr.unwrap();
                 self.fatal_span_char(start_bpos, last_bpos,
-                                "only `#` is allowed in raw string delimitation; \
-                                 found illegal character",
+                                "found invalid character; \
+                                 only `#` is allowed in raw string delimitation",
                                 curr_char);
             }
             self.bump();
@@ -1315,8 +1326,8 @@ impl<'a> StringReader<'a> {
             let last_pos = self.last_pos;
             let ch = self.curr.unwrap();
             self.fatal_span_char(start_bpos, last_pos,
-                            "only `#` is allowed in raw string delimitation; \
-                             found illegal character",
+                            "found invalid character; \
+                             only `#` is allowed in raw string delimitation",
                             ch);
         }
         self.bump();
