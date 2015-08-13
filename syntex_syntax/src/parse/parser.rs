@@ -51,6 +51,7 @@ use ast::{SelfExplicit, SelfRegion, SelfStatic, SelfValue};
 use ast::{Delimited, SequenceRepetition, TokenTree, TraitItem, TraitRef};
 use ast::{TtDelimited, TtSequence, TtToken};
 use ast::{TupleVariantKind, Ty, Ty_, TypeBinding};
+use ast::{TyMac};
 use ast::{TyFixedLengthVec, TyBareFn, TyTypeof, TyInfer};
 use ast::{TyParam, TyParamBound, TyParen, TyPath, TyPolyTraitRef, TyPtr};
 use ast::{TyRptr, TyTup, TyU32, TyVec, UnUniq};
@@ -577,10 +578,12 @@ impl<'a> Parser<'a> {
     pub fn parse_path_list_item(&mut self) -> PResult<ast::PathListItem> {
         let lo = self.span.lo;
         let node = if try!(self.eat_keyword(keywords::SelfValue)) {
-            ast::PathListMod { id: ast::DUMMY_NODE_ID }
+            let rename = try!(self.parse_rename());
+            ast::PathListMod { id: ast::DUMMY_NODE_ID, rename: rename }
         } else {
             let ident = try!(self.parse_ident());
-            ast::PathListIdent { name: ident, id: ast::DUMMY_NODE_ID }
+            let rename = try!(self.parse_rename());
+            ast::PathListIdent { name: ident, rename: rename, id: ast::DUMMY_NODE_ID }
         };
         let hi = self.last_span.hi;
         Ok(spanned(lo, hi, node))
@@ -1373,8 +1376,20 @@ impl<'a> Parser<'a> {
         } else if self.check(&token::ModSep) ||
                   self.token.is_ident() ||
                   self.token.is_path() {
-            // NAMED TYPE
-            try!(self.parse_ty_path())
+            let path = try!(self.parse_path(LifetimeAndTypesWithoutColons));
+            if self.check(&token::Not) {
+                // MACRO INVOCATION
+                try!(self.bump());
+                let delim = try!(self.expect_open_delim());
+                let tts = try!(self.parse_seq_to_end(&token::CloseDelim(delim),
+                                                     seq_sep_none(),
+                                                     |p| p.parse_token_tree()));
+                let hi = self.span.hi;
+                TyMac(spanned(lo, hi, MacInvocTT(path, tts, EMPTY_CTXT)))
+            } else {
+                // NAMED TYPE
+                TyPath(None, path)
+            }
         } else if try!(self.eat(&token::Underscore) ){
             // TYPE TO BE INFERRED
             TyInfer
@@ -2068,7 +2083,7 @@ impl<'a> Parser<'a> {
                     // Nonempty vector.
                     let first_expr = try!(self.parse_expr_nopanic());
                     if self.check(&token::Semi) {
-                        // Repeating vector syntax: [ 0; 512 ]
+                        // Repeating array syntax: [ 0; 512 ]
                         try!(self.bump());
                         let count = try!(self.parse_expr_nopanic());
                         try!(self.expect(&token::CloseDelim(token::Bracket)));
@@ -3252,7 +3267,7 @@ impl<'a> Parser<'a> {
             pat = PatTup(fields);
           }
           token::OpenDelim(token::Bracket) => {
-            // Parse [pat,pat,...] as vector pattern
+            // Parse [pat,pat,...] as slice pattern
             try!(self.bump());
             let (before, slice, after) = try!(self.parse_pat_vec_elements());
             try!(self.expect(&token::CloseDelim(token::Bracket)));
@@ -4621,7 +4636,7 @@ impl<'a> Parser<'a> {
             None
         };
 
-        if try!(self.eat(&token::DotDot) ){
+        if opt_trait.is_some() && try!(self.eat(&token::DotDot) ){
             if generics.is_parameterized() {
                 self.span_err(impl_span, "default trait implementations are not \
                                           allowed to have generics");
@@ -5115,8 +5130,8 @@ impl<'a> Parser<'a> {
                                 -> PResult<P<Item>> {
 
         let crate_name = try!(self.parse_ident());
-        let (maybe_path, ident) = if try!(self.eat_keyword(keywords::As)) {
-            (Some(crate_name.name), try!(self.parse_ident()))
+        let (maybe_path, ident) = if let Some(ident) = try!(self.parse_rename()) {
+            (Some(crate_name.name), ident)
         } else {
             (None, crate_name)
         };
@@ -5777,10 +5792,16 @@ impl<'a> Parser<'a> {
                 }
             }).collect()
         };
-        if try!(self.eat_keyword(keywords::As)) {
-            rename_to = try!(self.parse_ident())
-        }
+        rename_to = try!(self.parse_rename()).unwrap_or(rename_to);
         Ok(P(spanned(lo, self.last_span.hi, ViewPathSimple(rename_to, path))))
+    }
+
+    fn parse_rename(&mut self) -> PResult<Option<Ident>> {
+        if try!(self.eat_keyword(keywords::As)) {
+            self.parse_ident().map(Some)
+        } else {
+            Ok(None)
+        }
     }
 
     /// Parses a source module as a crate. This is the main

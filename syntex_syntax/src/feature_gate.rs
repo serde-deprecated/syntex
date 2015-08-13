@@ -85,6 +85,7 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Status)] = &[
     ("on_unimplemented", "1.0.0", Active),
     ("simd_ffi", "1.0.0", Active),
     ("allocator", "1.0.0", Active),
+    ("linked_from", "1.3.0", Active),
 
     ("if_let", "1.0.0", Accepted),
     ("while_let", "1.0.0", Accepted),
@@ -121,6 +122,9 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Status)] = &[
 
     // Allows using #![no_std]
     ("no_std", "1.0.0", Active),
+
+    // Allows using #![no_core]
+    ("no_core", "1.3.0", Active),
 
     // Allows using `box` in patterns; RFC 469
     ("box_patterns", "1.0.0", Active),
@@ -163,8 +167,15 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Status)] = &[
 
     // Allows the definition recursive static items.
     ("static_recursion", "1.3.0", Active),
-// Allows default type parameters to influence type inference.
-    ("default_type_parameter_fallback", "1.3.0", Active)
+
+    // Allows default type parameters to influence type inference.
+    ("default_type_parameter_fallback", "1.3.0", Active),
+
+    // Allows associated type defaults
+    ("associated_type_defaults", "1.2.0", Active),
+    // Allows macros to appear in the type position.
+
+    ("type_macros", "1.3.0", Active),
 ];
 // (changing above list without updating src/doc/reference.md makes @cmr sad)
 
@@ -215,6 +226,9 @@ pub const KNOWN_ATTRIBUTES: &'static [(&'static str, AttributeType)] = &[
     ("link_args", Normal),
     ("macro_escape", Normal),
 
+    // Not used any more, but we can't feature gate it
+    ("no_stack_check", Normal),
+
     ("staged_api", Gated("staged_api",
                          "staged_api is for use by rustc only")),
     ("plugin", Gated("plugin",
@@ -222,6 +236,8 @@ pub const KNOWN_ATTRIBUTES: &'static [(&'static str, AttributeType)] = &[
                       and possibly buggy")),
     ("no_std", Gated("no_std",
                      "no_std is experimental")),
+    ("no_core", Gated("no_core",
+                     "no_core is experimental")),
     ("lang", Gated("lang_items",
                      "language items are subject to change")),
     ("linkage", Gated("linkage",
@@ -254,6 +270,10 @@ pub const KNOWN_ATTRIBUTES: &'static [(&'static str, AttributeType)] = &[
                           "the `#[fundamental]` attribute \
                            is an experimental feature")),
 
+    ("linked_from", Gated("linked_from",
+                          "the `#[linked_from]` attribute \
+                           is an experimental feature")),
+
     // FIXME: #14408 whitelist docs since rustdoc looks at them
     ("doc", Whitelisted),
 
@@ -267,7 +287,6 @@ pub const KNOWN_ATTRIBUTES: &'static [(&'static str, AttributeType)] = &[
     ("link_section", Whitelisted),
     ("no_builtins", Whitelisted),
     ("no_mangle", Whitelisted),
-    ("no_stack_check", Whitelisted),
     ("no_debug", Whitelisted),
     ("omit_gdb_pretty_printer_section", Whitelisted),
     ("unsafe_no_drop_flag", Gated("unsafe_no_drop_flag",
@@ -345,6 +364,7 @@ pub struct Features {
     pub const_fn: bool,
     pub static_recursion: bool,
     pub default_type_parameter_fallback: bool,
+    pub type_macros: bool,
 }
 
 impl Features {
@@ -371,6 +391,7 @@ impl Features {
             const_fn: false,
             static_recursion: false,
             default_type_parameter_fallback: false,
+            type_macros: false,
         }
     }
 }
@@ -762,6 +783,10 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
                     self.gate_feature("const_fn", ti.span, "const fn is unstable");
                 }
             }
+            ast::TypeTraitItem(_, Some(_)) => {
+                self.gate_feature("associated_type_defaults", ti.span,
+                                  "associated type defaults are unstable");
+            }
             _ => {}
         }
         visit::walk_trait_item(self, ti);
@@ -870,6 +895,7 @@ fn check_crate_inner<F>(cm: &CodeMap, span_handler: &SpanHandler,
         const_fn: cx.has_feature("const_fn"),
         static_recursion: cx.has_feature("static_recursion"),
         default_type_parameter_fallback: cx.has_feature("default_type_parameter_fallback"),
+        type_macros: cx.has_feature("type_macros"),
     }
 }
 
