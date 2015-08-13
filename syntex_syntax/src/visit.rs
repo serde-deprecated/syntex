@@ -233,10 +233,17 @@ pub fn walk_item<'v, V: Visitor<'v>>(visitor: &mut V, item: &'v Item) {
                 ViewPathList(ref prefix, ref list) => {
                     for id in list {
                         match id.node {
-                            PathListIdent { name, .. } => {
+                            PathListIdent { name, rename, .. } => {
                                 visitor.visit_ident(id.span, name);
+                                if let Some(ident) = rename {
+                                    visitor.visit_ident(id.span, ident);
+                                }
                             }
-                            PathListMod { .. } => ()
+                            PathListMod { rename, .. } => {
+                                if let Some(ident) = rename {
+                                    visitor.visit_ident(id.span, ident);
+                                }
+                            }
                         }
                     }
 
@@ -405,6 +412,9 @@ pub fn walk_ty<'v, V: Visitor<'v>>(visitor: &mut V, typ: &'v Ty) {
             visitor.visit_expr(&**expression)
         }
         TyInfer => {}
+        TyMac(ref mac) => {
+            visitor.visit_mac(mac)
+        }
     }
 }
 

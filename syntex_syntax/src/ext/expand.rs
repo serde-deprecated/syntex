@@ -38,8 +38,7 @@ use std_inject;
 fn mk_core_path(fld: &mut MacroExpander,
                 span: Span,
                 suffix: &[&'static str]) -> ast::Path {
-    let mut idents = vec![fld.cx.ident_of_std("core")];
-    for s in suffix.iter() { idents.push(fld.cx.ident_of(*s)); }
+    let idents = fld.cx.std_path(suffix);
     fld.cx.path_global(span, idents)
 }
 
@@ -401,7 +400,7 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
             // `::std::option::Option::Some(<pat>) => <body>`
             let pat_arm = {
                 let body_expr = fld.cx.expr_block(body);
-                let pat = noop_fold_pat(pat, fld);
+                let pat = fld.fold_pat(pat);
                 let some_pat = fld.cx.pat_some(pat_span, pat);
 
                 fld.cx.arm(pat_span, vec![some_pat], body_expr)
@@ -417,12 +416,7 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
             // `match ::std::iter::Iterator::next(&mut iter) { ... }`
             let match_expr = {
                 let next_path = {
-                    let strs = vec![
-                        fld.cx.ident_of_std("core"),
-                        fld.cx.ident_of("iter"),
-                        fld.cx.ident_of("Iterator"),
-                        fld.cx.ident_of("next"),
-                    ];
+                    let strs = fld.cx.std_path(&["iter", "Iterator", "next"]);
 
                     fld.cx.path_global(span, strs)
                 };
@@ -450,12 +444,8 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
             // `match ::std::iter::IntoIterator::into_iter(<head>) { ... }`
             let into_iter_expr = {
                 let into_iter_path = {
-                    let strs = vec![
-                        fld.cx.ident_of_std("core"),
-                        fld.cx.ident_of("iter"),
-                        fld.cx.ident_of("IntoIterator"),
-                        fld.cx.ident_of("into_iter"),
-                    ];
+                    let strs = fld.cx.std_path(&["iter", "IntoIterator",
+                                                 "into_iter"]);
 
                     fld.cx.path_global(span, strs)
                 };
@@ -1552,6 +1542,45 @@ fn expand_and_rename_method(sig: ast::MethodSig, body: P<ast::Block>,
     }, rewritten_body)
 }
 
+pub fn expand_type(t: P<ast::Ty>, fld: &mut MacroExpander) -> P<ast::Ty> {
+    let t = match t.node.clone() {
+        ast::Ty_::TyMac(mac) => {
+            if fld.cx.ecfg.features.unwrap().type_macros {
+                let expanded_ty = match expand_mac_invoc(mac, t.span,
+                                                         |r| r.make_ty(),
+                                                         mark_ty,
+                                                         fld) {
+                    Some(ty) => ty,
+                    None => {
+                        return DummyResult::raw_ty(t.span);
+                    }
+                };
+
+                // Keep going, outside-in.
+                let fully_expanded = fld.fold_ty(expanded_ty);
+                fld.cx.bt_pop();
+
+                fully_expanded.map(|t| ast::Ty {
+                    id: ast::DUMMY_NODE_ID,
+                    node: t.node,
+                    span: t.span,
+                    })
+            } else {
+                feature_gate::emit_feature_err(
+                    &fld.cx.parse_sess.span_diagnostic,
+                    "type_macros",
+                    t.span,
+                    "type macros are experimental (see issue: #27336)");
+
+                DummyResult::raw_ty(t.span)
+            }
+        }
+        _ => t
+    };
+
+    fold::noop_fold_ty(t, fld)
+}
+
 /// A tree-folder that performs macro expansion
 pub struct MacroExpander<'a, 'b:'a> {
     pub cx: &'a mut ExtCtxt<'b>,
@@ -1600,6 +1629,10 @@ impl<'a, 'b> Folder for MacroExpander<'a, 'b> {
     fn fold_impl_item(&mut self, i: P<ast::ImplItem>) -> SmallVector<P<ast::ImplItem>> {
         expand_annotatable(Annotatable::ImplItem(i), self)
             .into_iter().map(|i| i.expect_impl_item()).collect()
+    }
+
+    fn fold_ty(&mut self, ty: P<ast::Ty>) -> P<ast::Ty> {
+        expand_type(ty, self)
     }
 
     fn new_span(&mut self, span: Span) -> Span {
@@ -1665,7 +1698,13 @@ pub fn expand_crate<'feat>(parse_sess: &parse::ParseSess,
                            user_exts: Vec<NamedSyntaxExtension>,
                            c: Crate) -> Crate {
     let mut cx = ExtCtxt::new(parse_sess, c.config.clone(), cfg);
-    cx.use_std = std_inject::use_std(&c);
+    if std_inject::no_core(&c) {
+        cx.crate_root = None;
+    } else if std_inject::no_std(&c) {
+        cx.crate_root = Some("core");
+    } else {
+        cx.crate_root = Some("std");
+    }
 
     let mut expander = MacroExpander::new(&mut cx);
 
@@ -1746,6 +1785,10 @@ fn mark_item(expr: P<ast::Item>, m: Mrk) -> P<ast::Item> {
 fn mark_impl_item(ii: P<ast::ImplItem>, m: Mrk) -> P<ast::ImplItem> {
     Marker{mark:m}.fold_impl_item(ii)
         .expect_one("marking an impl item didn't return exactly one impl item")
+}
+
+fn mark_ty(ty: P<ast::Ty>, m: Mrk) -> P<ast::Ty> {
+    Marker { mark: m }.fold_ty(ty)
 }
 
 /// Check that there are no macro invocations left in the AST:

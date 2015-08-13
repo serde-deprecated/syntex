@@ -113,7 +113,7 @@ pub fn print_crate<'a>(cm: &'a CodeMap,
                                       out,
                                       ann,
                                       is_expanded);
-    if is_expanded && std_inject::use_std(krate) {
+    if is_expanded && !std_inject::no_std(krate) {
         // We need to print `#![no_std]` (and its feature gate) so that
         // compiling pretty-printed source won't inject libstd again.
         // However we don't want these attributes in the AST because
@@ -733,6 +733,9 @@ impl<'a> State<'a> {
             }
             ast::TyInfer => {
                 try!(word(&mut self.s, "_"));
+            }
+            ast::TyMac(ref m) => {
+                try!(self.print_mac(m, token::Paren));
             }
         }
         self.end()
@@ -2643,11 +2646,23 @@ impl<'a> State<'a> {
                 }
                 try!(self.commasep(Inconsistent, &idents[..], |s, w| {
                     match w.node {
-                        ast::PathListIdent { name, .. } => {
-                            s.print_ident(name)
+                        ast::PathListIdent { name, rename, .. } => {
+                            try!(s.print_ident(name));
+                            if let Some(ident) = rename {
+                                try!(space(&mut s.s));
+                                try!(s.word_space("as"));
+                                try!(s.print_ident(ident));
+                            }
+                            Ok(())
                         },
-                        ast::PathListMod { .. } => {
-                            word(&mut s.s, "self")
+                        ast::PathListMod { rename, .. } => {
+                            try!(word(&mut s.s, "self"));
+                            if let Some(ident) = rename {
+                                try!(space(&mut s.s));
+                                try!(s.word_space("as"));
+                                try!(s.print_ident(ident));
+                            }
+                            Ok(())
                         }
                     }
                 }));
