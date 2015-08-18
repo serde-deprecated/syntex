@@ -10,9 +10,6 @@
 
 // Functions dealing with attributes and meta items
 
-// BitSet
-#![allow(deprecated)]
-
 pub use self::StabilityLevel::*;
 pub use self::ReprAttr::*;
 pub use self::IntType::*;
@@ -22,6 +19,7 @@ use ast::{AttrId, Attribute, Attribute_, MetaItem, MetaWord, MetaNameValue, Meta
 use codemap::{Span, Spanned, spanned, dummy_spanned};
 use codemap::BytePos;
 use diagnostic::SpanHandler;
+use feature_gate::GatedCfg;
 use parse::lexer::comments::{doc_comment_style, strip_doc_comment_decoration};
 use parse::token::{InternedString, intern_and_get_ident};
 use parse::token;
@@ -31,16 +29,31 @@ use std::cell::{RefCell, Cell};
 use std::collections::HashSet;
 use std::fmt;
 
-thread_local! { static USED_ATTRS: RefCell<HashSet<usize>> = RefCell::new(HashSet::new()) }
+thread_local! {
+    static USED_ATTRS: RefCell<Vec<u64>> = RefCell::new(Vec::new())
+}
 
 pub fn mark_used(attr: &Attribute) {
     let AttrId(id) = attr.node.id;
-    USED_ATTRS.with(|slot| slot.borrow_mut().insert(id));
+    USED_ATTRS.with(|slot| {
+        let idx = (id / 64) as usize;
+        let shift = id % 64;
+        if slot.borrow().len() <= idx {
+            slot.borrow_mut().extend(
+                (slot.borrow().len() .. idx).map(|_| 0));
+        }
+        slot.borrow_mut()[idx] |= 1 << shift;
+    });
 }
 
 pub fn is_used(attr: &Attribute) -> bool {
     let AttrId(id) = attr.node.id;
-    USED_ATTRS.with(|slot| slot.borrow().contains(&id))
+    USED_ATTRS.with(|slot| {
+        let idx = (id / 64) as usize;
+        let shift = id % 64;
+        slot.borrow().get(idx).map(|bits| bits & (1 << shift) != 0)
+            .unwrap_or(false)
+    })
 }
 
 pub trait AttrMetaMethods {
@@ -346,24 +359,28 @@ pub fn requests_inline(attrs: &[Attribute]) -> bool {
 }
 
 /// Tests if a cfg-pattern matches the cfg set
-pub fn cfg_matches(diagnostic: &SpanHandler, cfgs: &[P<MetaItem>], cfg: &ast::MetaItem) -> bool {
+pub fn cfg_matches(diagnostic: &SpanHandler, cfgs: &[P<MetaItem>], cfg: &ast::MetaItem,
+                   feature_gated_cfgs: &mut Vec<GatedCfg>) -> bool {
     match cfg.node {
         ast::MetaList(ref pred, ref mis) if &pred[..] == "any" =>
-            mis.iter().any(|mi| cfg_matches(diagnostic, cfgs, &**mi)),
+            mis.iter().any(|mi| cfg_matches(diagnostic, cfgs, &**mi, feature_gated_cfgs)),
         ast::MetaList(ref pred, ref mis) if &pred[..] == "all" =>
-            mis.iter().all(|mi| cfg_matches(diagnostic, cfgs, &**mi)),
+            mis.iter().all(|mi| cfg_matches(diagnostic, cfgs, &**mi, feature_gated_cfgs)),
         ast::MetaList(ref pred, ref mis) if &pred[..] == "not" => {
             if mis.len() != 1 {
                 diagnostic.span_err(cfg.span, "expected 1 cfg-pattern");
                 return false;
             }
-            !cfg_matches(diagnostic, cfgs, &*mis[0])
+            !cfg_matches(diagnostic, cfgs, &*mis[0], feature_gated_cfgs)
         }
         ast::MetaList(ref pred, _) => {
             diagnostic.span_err(cfg.span, &format!("invalid predicate `{}`", pred));
             false
         },
-        ast::MetaWord(_) | ast::MetaNameValue(..) => contains(cfgs, cfg),
+        ast::MetaWord(_) | ast::MetaNameValue(..) => {
+            feature_gated_cfgs.extend(GatedCfg::gate(cfg));
+            contains(cfgs, cfg)
+        }
     }
 }
 
@@ -521,10 +538,9 @@ fn find_stability_generic<'a,
         }
     } else if stab.as_ref().map_or(false, |s| s.level == Unstable && s.issue.is_none()) {
         // non-deprecated unstable items need to point to issues.
-        // FIXME: uncomment this error
-        // diagnostic.span_err(item_sp,
-        //                     "non-deprecated unstable items need to point \
-        //                      to an issue with `issue = \"NNN\"`");
+        diagnostic.span_err(item_sp,
+                            "non-deprecated unstable items need to point \
+                             to an issue with `issue = \"NNN\"`");
     }
 
     (stab, used_attrs)
@@ -569,6 +585,7 @@ pub fn find_repr_attrs(diagnostic: &SpanHandler, attr: &Attribute) -> Vec<ReprAt
                             // Can't use "extern" because it's not a lexical identifier.
                             "C" => Some(ReprExtern),
                             "packed" => Some(ReprPacked),
+                            "simd" => Some(ReprSimd),
                             _ => match int_type_of_word(&word) {
                                 Some(ity) => Some(ReprInt(item.span, ity)),
                                 None => {
@@ -618,6 +635,7 @@ pub enum ReprAttr {
     ReprInt(Span, IntType),
     ReprExtern,
     ReprPacked,
+    ReprSimd,
 }
 
 impl ReprAttr {
@@ -626,7 +644,8 @@ impl ReprAttr {
             ReprAny => false,
             ReprInt(_sp, ity) => ity.is_ffi_safe(),
             ReprExtern => true,
-            ReprPacked => false
+            ReprPacked => false,
+            ReprSimd => true,
         }
     }
 }

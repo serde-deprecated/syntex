@@ -144,6 +144,7 @@ impl Registry {
             ecfg,
             self.macros,
             self.syntax_exts,
+            &mut Vec::new(),
             krate);
 
         let krate = self.post_expansion_passes.iter()
