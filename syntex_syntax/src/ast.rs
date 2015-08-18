@@ -23,7 +23,6 @@ pub use self::FloatTy::*;
 pub use self::FunctionRetTy::*;
 pub use self::ForeignItem_::*;
 pub use self::ImplItem_::*;
-pub use self::InlinedItem::*;
 pub use self::IntTy::*;
 pub use self::Item_::*;
 pub use self::KleeneOp::*;
@@ -475,7 +474,7 @@ pub enum WherePredicate {
     /// A lifetime predicate, e.g. `'a: 'b+'c`
     RegionPredicate(WhereRegionPredicate),
     /// An equality predicate (unsupported)
-    EqPredicate(WhereEqPredicate)
+    EqPredicate(WhereEqPredicate),
 }
 
 /// A type bound, eg `for<'c> Foo: Send+Clone+'c`
@@ -1340,6 +1339,15 @@ impl IntTy {
             TyI16 | TyI32 | TyI64  => 3,
         }
     }
+    pub fn bit_width(&self) -> Option<usize> {
+        Some(match *self {
+            TyIs => return None,
+            TyI8 => 8,
+            TyI16 => 16,
+            TyI32 => 32,
+            TyI64 => 64,
+        })
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Copy)]
@@ -1357,6 +1365,15 @@ impl UintTy {
             TyUs | TyU8 => 2,
             TyU16 | TyU32 | TyU64  => 3,
         }
+    }
+    pub fn bit_width(&self) -> Option<usize> {
+        Some(match *self {
+            TyUs => return None,
+            TyU8 => 8,
+            TyU16 => 16,
+            TyU32 => 32,
+            TyU64 => 64,
+        })
     }
 }
 
@@ -1394,6 +1411,12 @@ impl FloatTy {
     pub fn suffix_len(&self) -> usize {
         match *self {
             TyF32 | TyF64 => 3, // add F128 handling here
+        }
+    }
+    pub fn bit_width(&self) -> usize {
+        match *self {
+            TyF32 => 32,
+            TyF64 => 64,
         }
     }
 }
@@ -1923,17 +1946,6 @@ impl ForeignItem_ {
             ForeignItemStatic(..) => "foreign static item"
         }
     }
-}
-
-/// The data we save and restore about an inlined item or method.  This is not
-/// part of the AST that we parse from a file, but it becomes part of the tree
-/// that we trans.
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
-pub enum InlinedItem {
-    IIItem(P<Item>),
-    IITraitItem(DefId /* impl id */, P<TraitItem>),
-    IIImplItem(DefId /* impl id */, P<ImplItem>),
-    IIForeign(P<ForeignItem>),
 }
 
 /// A macro definition, in this crate or imported from another.
