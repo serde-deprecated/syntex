@@ -39,8 +39,8 @@ pub fn mark_used(attr: &Attribute) {
         let idx = (id / 64) as usize;
         let shift = id % 64;
         if slot.borrow().len() <= idx {
-            slot.borrow_mut().extend(
-                (slot.borrow().len() .. idx).map(|_| 0));
+            let len = slot.borrow().len();
+            slot.borrow_mut().extend((0 .. (idx + 1 - len)).map(|_| 0));
         }
         slot.borrow_mut()[idx] |= 1 << shift;
     });
