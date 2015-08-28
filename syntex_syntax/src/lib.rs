@@ -71,6 +71,7 @@ pub mod attr;
 pub mod codemap;
 pub mod config;
 pub mod diagnostic;
+pub mod entry;
 pub mod feature_gate;
 pub mod fold;
 pub mod owned_slice;

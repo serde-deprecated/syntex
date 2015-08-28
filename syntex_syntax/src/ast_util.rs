@@ -28,12 +28,6 @@ pub fn path_name_i(idents: &[Ident]) -> String {
     idents.iter().map(|i| i.to_string()).collect::<Vec<String>>().connect("::")
 }
 
-pub fn local_def(id: NodeId) -> DefId {
-    ast::DefId { krate: LOCAL_CRATE, node: id }
-}
-
-pub fn is_local(did: ast::DefId) -> bool { did.krate == LOCAL_CRATE }
-
 pub fn stmt_id(s: &Stmt) -> NodeId {
     match s.node {
       StmtDecl(_, id) => id,
@@ -444,7 +438,7 @@ impl<'a, 'v, O: IdVisitingOperation> Visitor<'v> for IdVisitor<'a, O> {
             visit::FkMethod(_, sig, _) => {
                 self.visit_generics_helper(&sig.generics)
             }
-            visit::FkFnBlock => {}
+            visit::FkClosure => {}
         }
 
         for argument in &function_declaration.inputs {

@@ -19,7 +19,8 @@ use ext::build::AstBuilder;
 use attr;
 use attr::AttrMetaMethods;
 use codemap;
-use codemap::{Span, Spanned, ExpnInfo, NameAndSpan, MacroBang, MacroAttribute, CompilerExpansion};
+use codemap::{Span, Spanned, ExpnInfo, NameAndSpan, MacroBang, MacroAttribute};
+use codemap::{CompilerExpansion, CompilerExpansionFormat};
 use ext::base::*;
 use feature_gate::{self, Features, GatedCfg};
 use fold;
@@ -43,12 +44,12 @@ fn mk_core_path(fld: &mut MacroExpander,
 }
 
 pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
-    fn push_compiler_expansion(fld: &mut MacroExpander, span: Span, expansion_desc: &str) {
+    fn push_compiler_expansion(fld: &mut MacroExpander, span: Span,
+                               expansion_type: CompilerExpansionFormat) {
         fld.cx.bt_push(ExpnInfo {
             call_site: span,
             callee: NameAndSpan {
-                name: expansion_desc.to_string(),
-                format: CompilerExpansion,
+                format: CompilerExpansion(expansion_type),
 
                 // This does *not* mean code generated after
                 // `push_compiler_expansion` is automatically exempt
@@ -113,7 +114,7 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
                 &fld.cx.parse_sess.span_diagnostic,
                 expr_span);
 
-            push_compiler_expansion(fld, expr_span, "placement-in expansion");
+            push_compiler_expansion(fld, expr_span, CompilerExpansionFormat::PlacementIn);
 
             let value_span = value_expr.span;
             let placer_span = placer.span;
@@ -225,7 +226,7 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
             //     }
             //   }
 
-            push_compiler_expansion(fld, span, "while let expansion");
+            push_compiler_expansion(fld, span, CompilerExpansionFormat::WhileLet);
 
             // `<pat> => <body>`
             let pat_arm = {
@@ -264,7 +265,7 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
             //     _ => [<elseopt> | ()]
             //   }
 
-            push_compiler_expansion(fld, span, "if let expansion");
+            push_compiler_expansion(fld, span, CompilerExpansionFormat::IfLet);
 
             // `<pat> => <body>`
             let pat_arm = {
@@ -336,7 +337,7 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
         ast::ExprIf(cond, blk, elseopt) => {
             let elseopt = elseopt.map(|els| els.and_then(|els| match els.node {
                 ast::ExprIfLet(..) => {
-                    push_compiler_expansion(fld, span, "if let expansion");
+                    push_compiler_expansion(fld, span, CompilerExpansionFormat::IfLet);
                     // wrap the if-let expr in a block
                     let span = els.span;
                     let blk = P(ast::Block {
@@ -380,7 +381,7 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
             //     result
             //   }
 
-            push_compiler_expansion(fld, span, "for loop expansion");
+            push_compiler_expansion(fld, span, CompilerExpansionFormat::ForLoop);
 
             let span = fld.new_span(span);
 
@@ -460,7 +461,7 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
         }
 
         ast::ExprClosure(capture_clause, fn_decl, block) => {
-            push_compiler_expansion(fld, span, "closure expansion");
+            push_compiler_expansion(fld, span, CompilerExpansionFormat::Closure);
             let (rewritten_fn_decl, rewritten_block)
                 = expand_and_rename_fn_decl_and_block(fn_decl, block, fld);
             let new_node = ast::ExprClosure(capture_clause,
@@ -547,8 +548,7 @@ fn expand_mac_invoc<T, F, G>(mac: ast::Mac,
                         fld.cx.bt_push(ExpnInfo {
                                 call_site: span,
                                 callee: NameAndSpan {
-                                    name: extname.to_string(),
-                                    format: MacroBang,
+                                    format: MacroBang(extname),
                                     span: exp_span,
                                     allow_internal_unstable: allow_internal_unstable,
                                 },
@@ -729,8 +729,7 @@ pub fn expand_item_mac(it: P<ast::Item>,
                     fld.cx.bt_push(ExpnInfo {
                         call_site: it.span,
                         callee: NameAndSpan {
-                            name: extname.to_string(),
-                            format: MacroBang,
+                            format: MacroBang(extname),
                             span: span,
                             allow_internal_unstable: allow_internal_unstable,
                         }
@@ -749,8 +748,7 @@ pub fn expand_item_mac(it: P<ast::Item>,
                     fld.cx.bt_push(ExpnInfo {
                         call_site: it.span,
                         callee: NameAndSpan {
-                            name: extname.to_string(),
-                            format: MacroBang,
+                            format: MacroBang(extname),
                             span: span,
                             allow_internal_unstable: allow_internal_unstable,
                         }
@@ -770,8 +768,7 @@ pub fn expand_item_mac(it: P<ast::Item>,
                     fld.cx.bt_push(ExpnInfo {
                         call_site: it.span,
                         callee: NameAndSpan {
-                            name: extname.to_string(),
-                            format: MacroBang,
+                            format: MacroBang(extname),
                             span: None,
                             // `macro_rules!` doesn't directly allow
                             // unstable (this is orthogonal to whether
@@ -1105,8 +1102,7 @@ fn expand_pat(p: P<ast::Pat>, fld: &mut MacroExpander) -> P<ast::Pat> {
                     fld.cx.bt_push(ExpnInfo {
                         call_site: span,
                         callee: NameAndSpan {
-                            name: extname.to_string(),
-                            format: MacroBang,
+                            format: MacroBang(extname),
                             span: tt_span,
                             allow_internal_unstable: allow_internal_unstable,
                         }
@@ -1305,8 +1301,8 @@ fn expand_decorators(a: Annotatable,
                      new_attrs: &mut Vec<ast::Attribute>)
 {
     for attr in a.attrs() {
-        let mname = attr.name();
-        match fld.cx.syntax_env.find(&intern(&mname)) {
+        let mname = intern(&attr.name());
+        match fld.cx.syntax_env.find(&mname) {
             Some(rc) => match *rc {
                 MultiDecorator(ref dec) => {
                     attr::mark_used(&attr);
@@ -1314,8 +1310,7 @@ fn expand_decorators(a: Annotatable,
                     fld.cx.bt_push(ExpnInfo {
                         call_site: attr.span,
                         callee: NameAndSpan {
-                            name: mname.to_string(),
-                            format: MacroAttribute,
+                            format: MacroAttribute(mname),
                             span: Some(attr.span),
                             // attributes can do whatever they like,
                             // for now.
@@ -1356,17 +1351,16 @@ fn expand_item_multi_modifier(mut it: Annotatable,
     }
 
     for attr in &modifiers {
-        let mname = attr.name();
+        let mname = intern(&attr.name());
 
-        match fld.cx.syntax_env.find(&intern(&mname)) {
+        match fld.cx.syntax_env.find(&mname) {
             Some(rc) => match *rc {
                 MultiModifier(ref mac) => {
                     attr::mark_used(attr);
                     fld.cx.bt_push(ExpnInfo {
                         call_site: attr.span,
                         callee: NameAndSpan {
-                            name: mname.to_string(),
-                            format: MacroAttribute,
+                            format: MacroAttribute(mname),
                             span: Some(attr.span),
                             // attributes can do whatever they like,
                             // for now
