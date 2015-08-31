@@ -1,12 +1,12 @@
 Syntex Code Generation Framework
 ================================
 
-[![Build Status](https://api.travis-ci.org/erickt/rust-syntex.png?branch=master)](https://travis-ci.org/erickt/rust-syntex)
+[![Build Status](https://api.travis-ci.org/serde-rs/syntex.png?branch=master)](https://travis-ci.org/erickt/rust-syntex)
 [![Latest Version](https://img.shields.io/crates/v/syntex.svg)](https://crates.io/crates/syntex)
 
 `syntex` is a library that enables compile time syntax extension expansion.
-This allows users to use libraries like [regex\_macros]() in a rust 1.0
-compatible context.
+This allows users to use libraries like [serde](https://github.com/serde-rs/serde)
+on stable Rust.
 
 Configuring with Cargo
 ======================
