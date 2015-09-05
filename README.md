@@ -1,7 +1,7 @@
 Syntex Code Generation Framework
 ================================
 
-[![Build Status](https://api.travis-ci.org/serde-rs/syntex.png?branch=master)](https://travis-ci.org/erickt/rust-syntex)
+[![Build Status](https://api.travis-ci.org/serde-rs/syntex.png?branch=master)](https://travis-ci.org/serde-rs/syntex)
 [![Latest Version](https://img.shields.io/crates/v/syntex.svg)](https://crates.io/crates/syntex)
 
 `syntex` is a library that enables compile time syntax extension expansion.
