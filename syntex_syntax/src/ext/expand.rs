@@ -461,15 +461,12 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
         }
 
         ast::ExprClosure(capture_clause, fn_decl, block) => {
-            push_compiler_expansion(fld, span, CompilerExpansionFormat::Closure);
             let (rewritten_fn_decl, rewritten_block)
                 = expand_and_rename_fn_decl_and_block(fn_decl, block, fld);
             let new_node = ast::ExprClosure(capture_clause,
                                             rewritten_fn_decl,
                                             rewritten_block);
-            let result = P(ast::Expr{id:id, node: new_node, span: fld.new_span(span)});
-            fld.cx.bt_pop();
-            result
+            P(ast::Expr{id:id, node: new_node, span: fld.new_span(span)})
         }
 
         _ => {
@@ -644,9 +641,9 @@ macro_rules! with_exts_frame {
 // When we enter a module, record it, for the sake of `module!`
 pub fn expand_item(it: P<ast::Item>, fld: &mut MacroExpander)
                    -> SmallVector<P<ast::Item>> {
-    let it = expand_item_modifiers(it, fld);
+    let it = expand_item_multi_modifier(Annotatable::Item(it), fld);
 
-    expand_annotatable(Annotatable::Item(it), fld)
+    expand_annotatable(it, fld)
         .into_iter().map(|i| i.expect_item()).collect()
 }
 
@@ -1378,13 +1375,6 @@ fn expand_item_multi_modifier(mut it: Annotatable,
 
     // Expansion may have added new ItemModifiers.
     expand_item_multi_modifier(it, fld)
-}
-
-fn expand_item_modifiers(it: P<ast::Item>,
-                         fld: &mut MacroExpander)
-                         -> P<ast::Item> {
-    let it = expand_item_multi_modifier(Annotatable::Item(it), fld);
-    it.expect_item()
 }
 
 fn expand_impl_item(ii: P<ast::ImplItem>, fld: &mut MacroExpander)
