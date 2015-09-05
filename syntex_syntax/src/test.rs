@@ -14,7 +14,6 @@
 #![allow(unused_imports)]
 use self::HasTestSignature::*;
 
-use std::iter;
 use std::slice;
 use std::mem;
 use std::vec;
@@ -225,7 +224,7 @@ impl fold::Folder for EntryPointCleaner {
                             .filter(|attr| {
                                 !attr.check_name("main") && !attr.check_name("start")
                             })
-                            .chain(iter::once(allow_dead_code))
+                            .chain(Some(allow_dead_code))
                             .collect(),
                         node: node,
                         vis: vis,
