@@ -1263,7 +1263,7 @@ impl<'a> Parser<'a> {
     pub fn parse_ret_ty(&mut self) -> PResult<FunctionRetTy> {
         if try!(self.eat(&token::RArrow) ){
             if try!(self.eat(&token::Not) ){
-                Ok(NoReturn(self.span))
+                Ok(NoReturn(self.last_span))
             } else {
                 Ok(Return(try!(self.parse_ty_nopanic())))
             }
@@ -2231,15 +2231,6 @@ impl<'a> Parser<'a> {
                                                  &[token::CloseDelim(token::Brace)]));
                             }
 
-                            if fields.is_empty() && base.is_none() {
-                                let last_span = self.last_span;
-                                self.span_err(last_span,
-                                              "structure literal must either \
-                                              have at least one field or use \
-                                              functional structure update \
-                                              syntax");
-                            }
-
                             hi = self.span.hi;
                             try!(self.expect(&token::CloseDelim(token::Brace)));
                             ex = ExprStruct(pth, fields, base);
@@ -2366,7 +2357,7 @@ impl<'a> Parser<'a> {
                         self.fileline_help(last_span,
                             &format!("try parenthesizing the first index; e.g., `(foo.{}){}`",
                                     float.trunc() as usize,
-                                    &float.fract().to_string()[1..]));
+                                    format!(".{}", fstr.splitn(2, ".").last().unwrap())));
                     }
                     self.abort_if_errors();
 
@@ -3965,7 +3956,7 @@ impl<'a> Parser<'a> {
                     p.span_warn(span, "whoops, no =?");
                 }
                 let ty = try!(p.parse_ty_nopanic());
-                let hi = p.span.hi;
+                let hi = ty.span.hi;
                 let span = mk_sp(lo, hi);
                 return Ok(P(TypeBinding{id: ast::DUMMY_NODE_ID,
                     ident: ident,
@@ -4693,11 +4684,6 @@ impl<'a> Parser<'a> {
         let class_name = try!(self.parse_ident());
         let mut generics = try!(self.parse_generics());
 
-        if try!(self.eat(&token::Colon) ){
-            let ty = try!(self.parse_ty_sum());
-            self.span_err(ty.span, "`virtual` structs have been removed from the language");
-        }
-
         // There is a special case worth noting here, as reported in issue #17904.
         // If we are parsing a tuple struct it is the case that the where clause
         // should follow the field list. Like so:
@@ -4719,19 +4705,23 @@ impl<'a> Parser<'a> {
                 (Vec::new(), Some(ast::DUMMY_NODE_ID))
             } else {
                 // If we see: `struct Foo<T> where T: Copy { ... }`
-                (try!(self.parse_record_struct_body(&class_name)), None)
+                (try!(self.parse_record_struct_body()), None)
             }
         // No `where` so: `struct Foo<T>;`
         } else if try!(self.eat(&token::Semi) ){
             (Vec::new(), Some(ast::DUMMY_NODE_ID))
         // Record-style struct definition
         } else if self.token == token::OpenDelim(token::Brace) {
-            let fields = try!(self.parse_record_struct_body(&class_name));
+            let fields = try!(self.parse_record_struct_body());
             (fields, None)
         // Tuple-style struct definition with optional where-clause.
-        } else {
+        } else if self.token == token::OpenDelim(token::Paren) {
             let fields = try!(self.parse_tuple_struct_body(&class_name, &mut generics));
             (fields, Some(ast::DUMMY_NODE_ID))
+        } else {
+            let token_str = self.this_token_to_string();
+            return Err(self.fatal(&format!("expected `where`, `{{`, `(`, or `;` after struct \
+                                            name, found `{}`", token_str)))
         };
 
         Ok((class_name,
@@ -4742,25 +4732,18 @@ impl<'a> Parser<'a> {
          None))
     }
 
-    pub fn parse_record_struct_body(&mut self,
-                                    class_name: &ast::Ident) -> PResult<Vec<StructField>> {
+    pub fn parse_record_struct_body(&mut self) -> PResult<Vec<StructField>> {
         let mut fields = Vec::new();
         if try!(self.eat(&token::OpenDelim(token::Brace)) ){
             while self.token != token::CloseDelim(token::Brace) {
                 fields.push(try!(self.parse_struct_decl_field(true)));
             }
 
-            if fields.is_empty() {
-                return Err(self.fatal(&format!("unit-like struct definition should be \
-                    written as `struct {};`",
-                    class_name)));
-            }
-
             try!(self.bump());
         } else {
             let token_str = self.this_token_to_string();
-            return Err(self.fatal(&format!("expected `where`, or `{}` after struct \
-                                name, found `{}`", "{",
+            return Err(self.fatal(&format!("expected `where`, or `{{` after struct \
+                                name, found `{}`",
                                 token_str)));
         }
 
@@ -4772,43 +4755,32 @@ impl<'a> Parser<'a> {
                                    generics: &mut ast::Generics)
                                    -> PResult<Vec<StructField>> {
         // This is the case where we find `struct Foo<T>(T) where T: Copy;`
-        if self.check(&token::OpenDelim(token::Paren)) {
-            let fields = try!(self.parse_unspanned_seq(
-                &token::OpenDelim(token::Paren),
-                &token::CloseDelim(token::Paren),
-                seq_sep_trailing_allowed(token::Comma),
-                |p| {
-                    let attrs = p.parse_outer_attributes();
-                    let lo = p.span.lo;
-                    let struct_field_ = ast::StructField_ {
-                        kind: UnnamedField(try!(p.parse_visibility())),
-                        id: ast::DUMMY_NODE_ID,
-                        ty: try!(p.parse_ty_sum()),
-                        attrs: attrs,
-                    };
-                    Ok(spanned(lo, p.span.hi, struct_field_))
-                }));
+        // Unit like structs are handled in parse_item_struct function
+        let fields = try!(self.parse_unspanned_seq(
+            &token::OpenDelim(token::Paren),
+            &token::CloseDelim(token::Paren),
+            seq_sep_trailing_allowed(token::Comma),
+            |p| {
+                let attrs = p.parse_outer_attributes();
+                let lo = p.span.lo;
+                let struct_field_ = ast::StructField_ {
+                    kind: UnnamedField(try!(p.parse_visibility())),
+                    id: ast::DUMMY_NODE_ID,
+                    ty: try!(p.parse_ty_sum()),
+                    attrs: attrs,
+                };
+                Ok(spanned(lo, p.span.hi, struct_field_))
+            }));
 
-            if fields.is_empty() {
-                return Err(self.fatal(&format!("unit-like struct definition should be \
-                    written as `struct {};`",
-                    class_name)));
-            }
-
-            generics.where_clause = try!(self.parse_where_clause());
-            try!(self.expect(&token::Semi));
-            Ok(fields)
-        // This is the case where we just see struct Foo<T> where T: Copy;
-        } else if self.token.is_keyword(keywords::Where) {
-            generics.where_clause = try!(self.parse_where_clause());
-            try!(self.expect(&token::Semi));
-            Ok(Vec::new())
-        // This case is where we see: `struct Foo<T>;`
-        } else {
-            let token_str = self.this_token_to_string();
-            Err(self.fatal(&format!("expected `where`, `{}`, `(`, or `;` after struct \
-                name, found `{}`", "{", token_str)))
+        if fields.is_empty() {
+            return Err(self.fatal(&format!("unit-like struct definition should be \
+                                            written as `struct {};`",
+                                           class_name)));
         }
+
+        generics.where_clause = try!(self.parse_where_clause());
+        try!(self.expect(&token::Semi));
+        Ok(fields)
     }
 
     /// Parse a structure field declaration
@@ -5129,12 +5101,19 @@ impl<'a> Parser<'a> {
         try!(self.expect(&token::Semi));
 
         let last_span = self.last_span;
+
+        if visibility == ast::Public {
+            self.span_warn(mk_sp(lo, last_span.hi),
+                           "`pub extern crate` does not work as expected and should not be used. \
+                            Likely to become an error. Prefer `extern crate` and `pub use`.");
+        }
+
         Ok(self.mk_item(lo,
-                     last_span.hi,
-                     ident,
-                     ItemExternCrate(maybe_path),
-                     visibility,
-                     attrs))
+                        last_span.hi,
+                        ident,
+                        ItemExternCrate(maybe_path),
+                        visibility,
+                        attrs))
     }
 
     /// Parse `extern` for foreign ABIs
@@ -5213,13 +5192,10 @@ impl<'a> Parser<'a> {
             let variant_attrs = self.parse_outer_attributes();
             let vlo = self.span.lo;
 
-            let vis = try!(self.parse_visibility());
-
-            let ident;
             let kind;
             let mut args = Vec::new();
             let mut disr_expr = None;
-            ident = try!(self.parse_ident());
+            let ident = try!(self.parse_ident());
             if try!(self.eat(&token::OpenDelim(token::Brace)) ){
                 // Parse a struct variant.
                 all_nullary = false;
@@ -5261,7 +5237,6 @@ impl<'a> Parser<'a> {
                 kind: kind,
                 id: ast::DUMMY_NODE_ID,
                 disr_expr: disr_expr,
-                vis: vis,
             };
             variants.push(P(spanned(vlo, self.last_span.hi, vr)));
 
@@ -5382,11 +5357,6 @@ impl<'a> Parser<'a> {
             }
 
             try!(self.expect_one_of(&[], &[]));
-        }
-
-        if try!(self.eat_keyword_noexpect(keywords::Virtual) ){
-            let span = self.span;
-            self.span_err(span, "`virtual` structs have been removed from the language");
         }
 
         if try!(self.eat_keyword(keywords::Static) ){
