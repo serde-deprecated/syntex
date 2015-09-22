@@ -1977,14 +1977,10 @@ impl<'a> Parser<'a> {
         ExprAssignOp(binop, lhs, rhs)
     }
 
-    pub fn mk_mac_expr(&mut self,
-                       lo: BytePos,
-                       hi: BytePos,
-                       m: Mac_,
-                       delim: token::DelimToken) -> P<Expr> {
+    pub fn mk_mac_expr(&mut self, lo: BytePos, hi: BytePos, m: Mac_) -> P<Expr> {
         P(Expr {
             id: ast::DUMMY_NODE_ID,
-            node: ExprMac(codemap::Spanned {node: m, span: mk_sp(lo, hi)}, delim),
+            node: ExprMac(codemap::Spanned {node: m, span: mk_sp(lo, hi)}),
             span: mk_sp(lo, hi),
         })
     }
@@ -3675,10 +3671,8 @@ impl<'a> Parser<'a> {
                             try!(self.bump());
                         }
                         _ => {
-                            let e = self.mk_mac_expr(span.lo,
-                                                     span.hi,
-                                                     mac.and_then(|m| m.node),
-                                                     token::Brace);
+                            let e = self.mk_mac_expr(span.lo, span.hi,
+                                                     mac.and_then(|m| m.node));
                             let e = try!(self.parse_dot_or_call_expr_with(e));
                             let e = try!(self.parse_more_binops(e, 0));
                             let e = try!(self.parse_assign_expr_with(e));
@@ -3703,10 +3697,8 @@ impl<'a> Parser<'a> {
                         token::CloseDelim(token::Brace) => {
                             // if a block ends in `m!(arg)` without
                             // a `;`, it must be an expr
-                            expr = Some(self.mk_mac_expr(span.lo,
-                                                         span.hi,
-                                                         m.and_then(|x| x.node),
-                                                         token::Brace));
+                            expr = Some(self.mk_mac_expr(span.lo, span.hi,
+                                                         m.and_then(|x| x.node)));
                         }
                         _ => {
                             stmts.push(P(Spanned {
@@ -5288,7 +5280,7 @@ impl<'a> Parser<'a> {
                             last_span,
                             &format!("invalid ABI: expected one of [{}], \
                                      found `{}`",
-                                    abi::all_names().connect(", "),
+                                    abi::all_names().join(", "),
                                     s));
                         Ok(None)
                     }

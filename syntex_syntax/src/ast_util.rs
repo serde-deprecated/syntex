@@ -25,7 +25,7 @@ use std::u32;
 
 pub fn path_name_i(idents: &[Ident]) -> String {
     // FIXME: Bad copies (#2543 -- same for everything else that says "bad")
-    idents.iter().map(|i| i.to_string()).collect::<Vec<String>>().connect("::")
+    idents.iter().map(|i| i.to_string()).collect::<Vec<String>>().join("::")
 }
 
 pub fn stmt_id(s: &Stmt) -> NodeId {

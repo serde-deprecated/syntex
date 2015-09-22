@@ -899,7 +899,7 @@ pub enum Expr_ {
     ExprInlineAsm(InlineAsm),
 
     /// A macro invocation; pre-expansion
-    ExprMac(Mac, token::DelimToken),
+    ExprMac(Mac),
 
     /// A struct literal expression.
     ///

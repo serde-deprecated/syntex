@@ -854,7 +854,7 @@ pub fn walk_expr<'v, V: Visitor<'v>>(visitor: &mut V, expression: &'v Expr) {
         ExprRet(ref optional_expression) => {
             walk_expr_opt(visitor, optional_expression)
         }
-        ExprMac(ref mac, _) => visitor.visit_mac(mac),
+        ExprMac(ref mac) => visitor.visit_mac(mac),
         ExprParen(ref subexpression) => {
             visitor.visit_expr(&**subexpression)
         }

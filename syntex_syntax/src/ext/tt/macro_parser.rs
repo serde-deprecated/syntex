@@ -445,7 +445,7 @@ pub fn parse(sess: &ParseSess,
                         format!("{} ('{}')", name, bind)
                     }
                     _ => panic!()
-                }).collect::<Vec<String>>().connect(" or ");
+                }).collect::<Vec<String>>().join(" or ");
 
                 return Error(sp, format!(
                     "local ambiguity: multiple parsing options: {}",

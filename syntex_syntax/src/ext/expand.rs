@@ -72,7 +72,7 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
 
         // expr_mac should really be expr_ext or something; it's the
         // entry-point for all syntax extensions.
-        ast::ExprMac(mac, _) => {
+        ast::ExprMac(mac) => {
             let expanded_expr = match expand_mac_invoc(mac.clone(), span,
                                                        |r| r.make_expr(),
                                                        mark_expr, fld) {
@@ -528,10 +528,13 @@ fn expand_mac_invoc<T, F, G>(mac: ast::Mac,
     let extname = pth.segments[0].identifier.name;
     match fld.cx.syntax_env.find(&extname) {
         None => {
+            // Ignore unknown macros.
+            /*
             fld.cx.span_err(
                 pth.span,
                 &format!("macro undefined: '{}!'",
                         &extname));
+            */
 
             // let compilation continue
             None
@@ -683,7 +686,7 @@ fn contains_macro_use(fld: &mut MacroExpander, attrs: &[ast::Attribute]) -> bool
 // logic as for expression-position macro invocations.
 pub fn expand_item_mac(it: P<ast::Item>,
                        fld: &mut MacroExpander) -> SmallVector<P<ast::Item>> {
-    let (extname, path_span, tts, span, attrs, ident) = it.and_then(|it| match it.node {
+    let (extname, path_span, tts, span, attrs, ident) = it.clone().and_then(|it| match it.node {
         ItemMac(codemap::Spanned { node: Mac_ { path, tts, .. }, .. }) =>
             (path.segments[0].identifier.name, path.span, tts, it.span, it.attrs, it.ident),
         _ => fld.cx.span_bug(it.span, "invalid item macro invocation")

@@ -22,6 +22,7 @@ use feature_gate;
 use parse::token::{intern, InternedString};
 use parse::token;
 use ptr::P;
+use str::slice_shift_char;
 use syntax::ast::AsmDialect;
 
 enum State {
