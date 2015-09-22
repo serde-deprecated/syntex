@@ -194,6 +194,15 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status
 
     // allow empty structs/enum variants with braces
     ("braced_empty_structs", "1.5.0", None, Active),
+
+    // allow overloading augmented assignment operations like `a += b`
+    ("augmented_assignments", "1.5.0", None, Active),
+
+    // allow `#[no_debug]`
+    ("no_debug", "1.5.0", None, Active),
+
+    // allow `#[omit_gdb_pretty_printer_section]`
+    ("omit_gdb_pretty_printer_section", "1.5.0", None, Active),
 ];
 // (changing above list without updating src/doc/reference.md makes @cmr sad)
 
@@ -317,8 +326,13 @@ pub const KNOWN_ATTRIBUTES: &'static [(&'static str, AttributeType, AttributeGat
     ("link_section", Whitelisted, Ungated),
     ("no_builtins", Whitelisted, Ungated),
     ("no_mangle", Whitelisted, Ungated),
-    ("no_debug", Whitelisted, Ungated),
-    ("omit_gdb_pretty_printer_section", Whitelisted, Ungated),
+    ("no_debug", Whitelisted, Gated("no_debug",
+                                    "the `#[no_debug]` attribute \
+                                     is an experimental feature")),
+    ("omit_gdb_pretty_printer_section", Whitelisted, Gated("omit_gdb_pretty_printer_section",
+                                                       "the `#[omit_gdb_pretty_printer_section]` \
+                                                        attribute is just used for the Rust test \
+                                                        suite")),
     ("unsafe_no_drop_flag", Whitelisted, Gated("unsafe_no_drop_flag",
                                                "unsafe_no_drop_flag has unstable semantics \
                                                 and may be removed in the future")),
@@ -457,6 +471,7 @@ pub struct Features {
     pub default_type_parameter_fallback: bool,
     pub type_macros: bool,
     pub cfg_target_feature: bool,
+    pub augmented_assignments: bool,
 }
 
 impl Features {
@@ -485,6 +500,7 @@ impl Features {
             default_type_parameter_fallback: false,
             type_macros: false,
             cfg_target_feature: false,
+            augmented_assignments: false,
         }
     }
 }
@@ -650,7 +666,7 @@ struct MacroVisitor<'a> {
 
 impl<'a, 'v> Visitor<'v> for MacroVisitor<'a> {
     fn visit_mac(&mut self, mac: &ast::Mac) {
-        let ast::MacInvocTT(ref path, _, _) = mac.node;
+        let path = &mac.node.path;
         let id = path.segments.last().unwrap().identifier;
 
         // Issue 22234: If you add a new case here, make sure to also
@@ -1053,6 +1069,7 @@ fn check_crate_inner<F>(cm: &CodeMap, span_handler: &SpanHandler,
         default_type_parameter_fallback: cx.has_feature("default_type_parameter_fallback"),
         type_macros: cx.has_feature("type_macros"),
         cfg_target_feature: cx.has_feature("cfg_target_feature"),
+        augmented_assignments: cx.has_feature("augmented_assignments"),
     }
 }
 
