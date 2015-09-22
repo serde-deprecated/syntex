@@ -37,7 +37,7 @@ use ast::{LifetimeDef, Lit, Lit_};
 use ast::{LitBool, LitChar, LitByte, LitByteStr};
 use ast::{LitStr, LitInt, Local};
 use ast::{MacStmtWithBraces, MacStmtWithSemicolon, MacStmtWithoutBraces};
-use ast::{MutImmutable, MutMutable, Mac_, MacInvocTT, MatchSource};
+use ast::{MutImmutable, MutMutable, Mac_, MatchSource};
 use ast::{MutTy, BiMul, Mutability};
 use ast::{MethodImplItem, NamedField, UnNeg, NoReturn, UnNot};
 use ast::{Pat, PatBox, PatEnum, PatIdent, PatLit, PatQPath, PatMac, PatRange};
@@ -1385,7 +1385,7 @@ impl<'a> Parser<'a> {
                                                      seq_sep_none(),
                                                      |p| p.parse_token_tree()));
                 let hi = self.span.hi;
-                TyMac(spanned(lo, hi, MacInvocTT(path, tts, EMPTY_CTXT)))
+                TyMac(spanned(lo, hi, Mac_ { path: path, tts: tts, ctxt: EMPTY_CTXT }))
             } else {
                 // NAMED TYPE
                 TyPath(None, path)
@@ -2211,8 +2211,7 @@ impl<'a> Parser<'a> {
 
                         return Ok(self.mk_mac_expr(lo,
                                                    hi,
-                                                   MacInvocTT(pth, tts, EMPTY_CTXT),
-                                                   delim));
+                                                   Mac_ { path: pth, tts: tts, ctxt: EMPTY_CTXT }));
                     }
                     if self.check(&token::OpenDelim(token::Brace)) {
                         // This is a struct literal, unless we're prohibited
@@ -3296,7 +3295,7 @@ impl<'a> Parser<'a> {
                         let delim = try!(self.expect_open_delim());
                         let tts = try!(self.parse_seq_to_end(&token::CloseDelim(delim),
                                 seq_sep_none(), |p| p.parse_token_tree()));
-                        let mac = MacInvocTT(path, tts, EMPTY_CTXT);
+                        let mac = Mac_ { path: path, tts: tts, ctxt: EMPTY_CTXT };
                         pat = PatMac(codemap::Spanned {node: mac, span: self.span});
                     } else {
                         // Parse ident @ pat
@@ -3564,7 +3563,7 @@ impl<'a> Parser<'a> {
                 spanned(lo, hi,
                         StmtMac(P(spanned(lo,
                                           hi,
-                                          MacInvocTT(pth, tts, EMPTY_CTXT))),
+                                          Mac_ { path: pth, tts: tts, ctxt: EMPTY_CTXT })),
                                   style))
             } else {
                 // if it has a special ident, it's definitely an item
@@ -3583,7 +3582,8 @@ impl<'a> Parser<'a> {
                     P(spanned(lo, hi, DeclItem(
                         self.mk_item(
                             lo, hi, id /*id is good here*/,
-                            ItemMac(spanned(lo, hi, MacInvocTT(pth, tts, EMPTY_CTXT))),
+                            ItemMac(spanned(lo, hi,
+                                            Mac_ { path: pth, tts: tts, ctxt: EMPTY_CTXT })),
                             Inherited, Vec::new(/*no attrs*/))))),
                     ast::DUMMY_NODE_ID))
             }
@@ -4535,7 +4535,7 @@ impl<'a> Parser<'a> {
             let tts = try!(self.parse_seq_to_end(&token::CloseDelim(delim),
                                             seq_sep_none(),
                                             |p| p.parse_token_tree()));
-            let m_ = ast::MacInvocTT(pth, tts, EMPTY_CTXT);
+            let m_ = Mac_ { path: pth, tts: tts, ctxt: EMPTY_CTXT };
             let m: ast::Mac = codemap::Spanned { node: m_,
                                                 span: mk_sp(self.span.lo,
                                                             self.span.hi) };
@@ -4854,7 +4854,7 @@ impl<'a> Parser<'a> {
         let hi = if self.span == codemap::DUMMY_SP {
             inner_lo
         } else {
-            self.span.lo
+            self.last_span.hi
         };
 
         Ok(ast::Mod {
@@ -5048,9 +5048,8 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a function declaration from a foreign module
-    fn parse_item_foreign_fn(&mut self, vis: ast::Visibility,
+    fn parse_item_foreign_fn(&mut self, vis: ast::Visibility, lo: BytePos,
                              attrs: Vec<Attribute>) -> PResult<P<ForeignItem>> {
-        let lo = self.span.lo;
         try!(self.expect_keyword(keywords::Fn));
 
         let (ident, mut generics) = try!(self.parse_fn_header());
@@ -5069,10 +5068,8 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a static item from a foreign module
-    fn parse_item_foreign_static(&mut self, vis: ast::Visibility,
+    fn parse_item_foreign_static(&mut self, vis: ast::Visibility, lo: BytePos,
                                  attrs: Vec<Attribute>) -> PResult<P<ForeignItem>> {
-        let lo = self.span.lo;
-
         try!(self.expect_keyword(keywords::Static));
         let mutbl = try!(self.eat_keyword(keywords::Mut));
 
@@ -5568,11 +5565,11 @@ impl<'a> Parser<'a> {
 
         if self.check_keyword(keywords::Static) {
             // FOREIGN STATIC ITEM
-            return Ok(Some(try!(self.parse_item_foreign_static(visibility, attrs))));
+            return Ok(Some(try!(self.parse_item_foreign_static(visibility, lo, attrs))));
         }
         if self.check_keyword(keywords::Fn) || self.check_keyword(keywords::Unsafe) {
             // FOREIGN FUNCTION ITEM
-            return Ok(Some(try!(self.parse_item_foreign_fn(visibility, attrs))));
+            return Ok(Some(try!(self.parse_item_foreign_fn(visibility, lo, attrs))));
         }
 
         // FIXME #5668: this will occur for a macro invocation:
@@ -5620,7 +5617,7 @@ impl<'a> Parser<'a> {
                                             seq_sep_none(),
                                             |p| p.parse_token_tree()));
             // single-variant-enum... :
-            let m = ast::MacInvocTT(pth, tts, EMPTY_CTXT);
+            let m = Mac_ { path: pth, tts: tts, ctxt: EMPTY_CTXT };
             let m: ast::Mac = codemap::Spanned { node: m,
                                              span: mk_sp(self.span.lo,
                                                          self.span.hi) };
