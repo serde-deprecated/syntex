@@ -35,7 +35,7 @@ use codemap::{CodeMap, Span};
 use diagnostic::SpanHandler;
 use visit;
 use visit::{FnKind, Visitor};
-use parse::token::{self, InternedString};
+use parse::token::InternedString;
 
 use std::ascii::AsciiExt;
 use std::cmp;
@@ -203,6 +203,9 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status
 
     // allow `#[omit_gdb_pretty_printer_section]`
     ("omit_gdb_pretty_printer_section", "1.5.0", None, Active),
+
+    // Allows cfg(target_vendor = "...").
+    ("cfg_target_vendor", "1.5.0", None, Active),
 ];
 // (changing above list without updating src/doc/reference.md makes @cmr sad)
 
@@ -377,6 +380,7 @@ macro_rules! cfg_fn {
 const GATED_CFGS: &'static [(&'static str, &'static str, fn(&Features) -> bool)] = &[
     // (name in cfg, feature, function to check if the feature is enabled)
     ("target_feature", "cfg_target_feature", cfg_fn!(|x| x.cfg_target_feature)),
+    ("target_vendor", "cfg_target_vendor", cfg_fn!(|x| x.cfg_target_vendor)),
 ];
 
 #[derive(Debug, Eq, PartialEq)]
@@ -471,6 +475,7 @@ pub struct Features {
     pub default_type_parameter_fallback: bool,
     pub type_macros: bool,
     pub cfg_target_feature: bool,
+    pub cfg_target_vendor: bool,
     pub augmented_assignments: bool,
 }
 
@@ -500,6 +505,7 @@ impl Features {
             default_type_parameter_fallback: false,
             type_macros: false,
             cfg_target_feature: false,
+            cfg_target_vendor: false,
             augmented_assignments: false,
         }
     }
@@ -667,7 +673,7 @@ struct MacroVisitor<'a> {
 impl<'a, 'v> Visitor<'v> for MacroVisitor<'a> {
     fn visit_mac(&mut self, mac: &ast::Mac) {
         let path = &mac.node.path;
-        let id = path.segments.last().unwrap().identifier;
+        let name = path.segments.last().unwrap().identifier.name.as_str();
 
         // Issue 22234: If you add a new case here, make sure to also
         // add code to catch the macro during or after expansion.
@@ -677,19 +683,19 @@ impl<'a, 'v> Visitor<'v> for MacroVisitor<'a> {
         // catch uses of these macros within conditionally-compiled
         // code, e.g. `#[cfg]`-guarded functions.
 
-        if id == token::str_to_ident("asm") {
+        if name == "asm" {
             self.context.gate_feature("asm", path.span, EXPLAIN_ASM);
         }
 
-        else if id == token::str_to_ident("log_syntax") {
+        else if name == "log_syntax" {
             self.context.gate_feature("log_syntax", path.span, EXPLAIN_LOG_SYNTAX);
         }
 
-        else if id == token::str_to_ident("trace_macros") {
+        else if name == "trace_macros" {
             self.context.gate_feature("trace_macros", path.span, EXPLAIN_TRACE_MACROS);
         }
 
-        else if id == token::str_to_ident("concat_idents") {
+        else if name == "concat_idents" {
             self.context.gate_feature("concat_idents", path.span, EXPLAIN_CONCAT_IDENTS);
         }
     }
@@ -707,11 +713,11 @@ impl<'a, 'v> Visitor<'v> for MacroVisitor<'a> {
         // But we keep these checks as a pre-expansion check to catch
         // uses in e.g. conditionalized code.
 
-        if let ast::ExprBox(None, _) = e.node {
+        if let ast::ExprBox(_) = e.node {
             self.context.gate_feature("box_syntax", e.span, EXPLAIN_BOX_SYNTAX);
         }
 
-        if let ast::ExprBox(Some(_), _) = e.node {
+        if let ast::ExprInPlace(..) = e.node {
             self.context.gate_feature("placement_in_syntax", e.span, EXPLAIN_PLACEMENT_IN);
         }
 
@@ -860,7 +866,7 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
 
     fn visit_expr(&mut self, e: &ast::Expr) {
         match e.node {
-            ast::ExprBox(..) | ast::ExprUnary(ast::UnOp::UnUniq, _) => {
+            ast::ExprBox(_) => {
                 self.gate_feature("box_syntax",
                                   e.span,
                                   "box expression syntax is experimental; \
@@ -1069,6 +1075,7 @@ fn check_crate_inner<F>(cm: &CodeMap, span_handler: &SpanHandler,
         default_type_parameter_fallback: cx.has_feature("default_type_parameter_fallback"),
         type_macros: cx.has_feature("type_macros"),
         cfg_target_feature: cx.has_feature("cfg_target_feature"),
+        cfg_target_vendor: cx.has_feature("cfg_target_vendor"),
         augmented_assignments: cx.has_feature("augmented_assignments"),
     }
 }
