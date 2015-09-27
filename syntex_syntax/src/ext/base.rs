@@ -648,7 +648,7 @@ impl<'a> ExtCtxt<'a> {
         loop {
             if self.codemap().with_expn_info(expn_id, |info| {
                 info.map_or(None, |i| {
-                    if i.callee.name() == "include" {
+                    if i.callee.name().as_str() == "include" {
                         // Stop going up the backtrace once include! is encountered
                         return None;
                     }
@@ -901,9 +901,9 @@ impl SyntaxEnv {
         unreachable!()
     }
 
-    pub fn find(&self, k: &Name) -> Option<Rc<SyntaxExtension>> {
+    pub fn find(&self, k: Name) -> Option<Rc<SyntaxExtension>> {
         for frame in self.chain.iter().rev() {
-            match frame.map.get(k) {
+            match frame.map.get(&k) {
                 Some(v) => return Some(v.clone()),
                 None => {}
             }

@@ -96,8 +96,8 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
             })
         }
 
-        // Desugar ExprBox: `in (PLACE) EXPR`
-        ast::ExprBox(Some(placer), value_expr) => {
+        // Desugar ExprInPlace: `in PLACE { EXPR }`
+        ast::ExprInPlace(placer, value_expr) => {
             // to:
             //
             // let p = PLACE;
@@ -526,7 +526,7 @@ fn expand_mac_invoc<T, F, G>(mac: ast::Mac,
         return None;
     }
     let extname = pth.segments[0].identifier.name;
-    match fld.cx.syntax_env.find(&extname) {
+    match fld.cx.syntax_env.find(extname) {
         None => {
             // Ignore unknown macros.
             /*
@@ -598,7 +598,7 @@ fn expand_loop_block(loop_block: P<Block>,
                      fld: &mut MacroExpander) -> (P<Block>, Option<Ident>) {
     match opt_ident {
         Some(label) => {
-            let new_label = fresh_name(&label);
+            let new_label = fresh_name(label);
             let rename = (label, new_label);
 
             // The rename *must not* be added to the pending list of current
@@ -694,7 +694,7 @@ pub fn expand_item_mac(it: P<ast::Item>,
 
     let fm = fresh_mark();
     let items = {
-        let expanded = match fld.cx.syntax_env.find(&extname) {
+        let expanded = match fld.cx.syntax_env.find(extname) {
             None => {
                 // Ignore unknown macros.
                 /*
@@ -904,7 +904,7 @@ fn expand_non_macro_stmt(Spanned {node, span: stmt_span}: Stmt, fld: &mut MacroE
                     // generate fresh names, push them to a new pending list
                     let idents = pattern_bindings(&*expanded_pat);
                     let mut new_pending_renames =
-                        idents.iter().map(|ident| (*ident, fresh_name(ident))).collect();
+                        idents.iter().map(|ident| (*ident, fresh_name(*ident))).collect();
                     // rewrite the pattern using the new names (the old
                     // ones have already been applied):
                     let rewritten_pat = {
@@ -963,7 +963,7 @@ fn expand_arm(arm: ast::Arm, fld: &mut MacroExpander) -> ast::Arm {
     // all of the pats must have the same set of bindings, so use the
     // first one to extract them and generate new names:
     let idents = pattern_bindings(&*expanded_pats[0]);
-    let new_renames = idents.into_iter().map(|id| (id, fresh_name(&id))).collect();
+    let new_renames = idents.into_iter().map(|id| (id, fresh_name(id))).collect();
     // apply the renaming, but only to the PatIdents:
     let mut rename_pats_fld = PatIdentRenamer{renames:&new_renames};
     let rewritten_pats = expanded_pats.move_map(|pat| rename_pats_fld.fold_pat(pat));
@@ -1073,7 +1073,7 @@ fn expand_pat(p: P<ast::Pat>, fld: &mut MacroExpander) -> P<ast::Pat> {
             return DummyResult::raw_pat(span);
         }
         let extname = pth.segments[0].identifier.name;
-        let marked_after = match fld.cx.syntax_env.find(&extname) {
+        let marked_after = match fld.cx.syntax_env.find(extname) {
             None => {
                 // Ignore unknown macros.
                 /*
@@ -1149,10 +1149,7 @@ pub struct IdentRenamer<'a> {
 
 impl<'a> Folder for IdentRenamer<'a> {
     fn fold_ident(&mut self, id: Ident) -> Ident {
-        Ident {
-            name: id.name,
-            ctxt: mtwt::apply_renames(self.renames, id.ctxt),
-        }
+        Ident::new(id.name, mtwt::apply_renames(self.renames, id.ctxt))
     }
     fn fold_mac(&mut self, mac: ast::Mac) -> ast::Mac {
         fold::noop_fold_mac(mac, self)
@@ -1176,8 +1173,8 @@ impl<'a> Folder for PatIdentRenamer<'a> {
 
         pat.map(|ast::Pat {id, node, span}| match node {
             ast::PatIdent(binding_mode, Spanned{span: sp, node: ident}, sub) => {
-                let new_ident = Ident{name: ident.name,
-                                      ctxt: mtwt::apply_renames(self.renames, ident.ctxt)};
+                let new_ident = Ident::new(ident.name,
+                                           mtwt::apply_renames(self.renames, ident.ctxt));
                 let new_node =
                     ast::PatIdent(binding_mode,
                                   Spanned{span: self.new_span(sp), node: new_ident},
@@ -1268,7 +1265,7 @@ macro_rules! partition {
                     fld: &MacroExpander)
                      -> (Vec<ast::Attribute>, Vec<ast::Attribute>) {
             attrs.iter().cloned().partition(|attr| {
-                match fld.cx.syntax_env.find(&intern(&attr.name())) {
+                match fld.cx.syntax_env.find(intern(&attr.name())) {
                     Some(rc) => match *rc {
                         $variant(..) => true,
                         _ => false
@@ -1290,7 +1287,7 @@ fn expand_decorators(a: Annotatable,
 {
     for attr in a.attrs() {
         let mname = intern(&attr.name());
-        match fld.cx.syntax_env.find(&mname) {
+        match fld.cx.syntax_env.find(mname) {
             Some(rc) => match *rc {
                 MultiDecorator(ref dec) => {
                     attr::mark_used(&attr);
@@ -1341,7 +1338,7 @@ fn expand_item_multi_modifier(mut it: Annotatable,
     for attr in &modifiers {
         let mname = intern(&attr.name());
 
-        match fld.cx.syntax_env.find(&mname) {
+        match fld.cx.syntax_env.find(mname) {
             Some(rc) => match *rc {
                 MultiModifier(ref mac) => {
                     attr::mark_used(attr);
@@ -1425,7 +1422,7 @@ fn expand_and_rename_fn_decl_and_block(fn_decl: P<ast::FnDecl>, block: P<ast::Bl
     let expanded_decl = fld.fold_fn_decl(fn_decl);
     let idents = fn_decl_arg_bindings(&*expanded_decl);
     let renames =
-        idents.iter().map(|id : &ast::Ident| (*id,fresh_name(id))).collect();
+        idents.iter().map(|id| (*id,fresh_name(*id))).collect();
     // first, a renamer for the PatIdents, for the fn_decl:
     let mut rename_pat_fld = PatIdentRenamer{renames: &renames};
     let rewritten_fn_decl = rename_pat_fld.fold_fn_decl(expanded_decl);
@@ -1646,10 +1643,7 @@ struct Marker { mark: Mrk }
 
 impl Folder for Marker {
     fn fold_ident(&mut self, id: Ident) -> Ident {
-        ast::Ident {
-            name: id.name,
-            ctxt: mtwt::apply_mark(self.mark, id.ctxt)
-        }
+        ast::Ident::new(id.name, mtwt::apply_mark(self.mark, id.ctxt))
     }
     fn fold_mac(&mut self, Spanned {node, span}: ast::Mac) -> ast::Mac {
         Spanned {
@@ -2122,7 +2116,7 @@ foo_module!();
         // find the xx binding
         let bindings = crate_bindings(&cr);
         let cxbinds: Vec<&ast::Ident> =
-            bindings.iter().filter(|b| b.name == "xx").collect();
+            bindings.iter().filter(|b| b.name.as_str() == "xx").collect();
         let cxbinds: &[&ast::Ident] = &cxbinds[..];
         let cxbind = match (cxbinds.len(), cxbinds.get(0)) {
             (1, Some(b)) => *b,
@@ -2134,7 +2128,7 @@ foo_module!();
         // the xx binding should bind all of the xx varrefs:
         for (idx,v) in varrefs.iter().filter(|p| {
             p.segments.len() == 1
-            && p.segments[0].identifier.name == "xx"
+            && p.segments[0].identifier.name.as_str() == "xx"
         }).enumerate() {
             if mtwt::resolve(v.segments[0].identifier) != resolved_binding {
                 println!("uh oh, xx binding didn't match xx varref:");

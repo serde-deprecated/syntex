@@ -22,7 +22,7 @@ use ast::{Decl, DeclItem, DeclLocal, DefaultBlock, DefaultReturn};
 use ast::{UnDeref, BiDiv, EMPTY_CTXT, EnumDef, ExplicitSelf};
 use ast::{Expr, Expr_, ExprAddrOf, ExprMatch, ExprAgain};
 use ast::{ExprAssign, ExprAssignOp, ExprBinary, ExprBlock, ExprBox};
-use ast::{ExprBreak, ExprCall, ExprCast};
+use ast::{ExprBreak, ExprCall, ExprCast, ExprInPlace};
 use ast::{ExprField, ExprTupField, ExprClosure, ExprIf, ExprIfLet, ExprIndex};
 use ast::{ExprLit, ExprLoop, ExprMac, ExprRange};
 use ast::{ExprMethodCall, ExprParen, ExprPath};
@@ -54,7 +54,7 @@ use ast::{TupleVariantKind, Ty, Ty_, TypeBinding};
 use ast::{TyMac};
 use ast::{TyFixedLengthVec, TyBareFn, TyTypeof, TyInfer};
 use ast::{TyParam, TyParamBound, TyParen, TyPath, TyPolyTraitRef, TyPtr};
-use ast::{TyRptr, TyTup, TyU32, TyVec, UnUniq};
+use ast::{TyRptr, TyTup, TyU32, TyVec};
 use ast::{TypeImplItem, TypeTraitItem};
 use ast::{UnnamedField, UnsafeBlock};
 use ast::{ViewPath, ViewPathGlob, ViewPathList, ViewPathSimple};
@@ -2621,76 +2621,19 @@ impl<'a> Parser<'a> {
             hi = e.span.hi;
             ex = ExprAddrOf(m, e);
           }
-          token::Ident(_, _) => {
-            if !self.check_keyword(keywords::Box) && !self.check_keyword(keywords::In) {
-                return self.parse_dot_or_call_expr();
-            }
-
-            let lo = self.span.lo;
-            let keyword_hi = self.span.hi;
-
-            let is_in = self.token.is_keyword(keywords::In);
-            try!(self.bump());
-
-            if is_in {
+          token::Ident(..) if self.token.is_keyword(keywords::In) => {
+              try!(self.bump());
               let place = try!(self.parse_expr_res(RESTRICTION_NO_STRUCT_LITERAL));
               let blk = try!(self.parse_block());
               hi = blk.span.hi;
               let blk_expr = self.mk_expr(blk.span.lo, blk.span.hi, ExprBlock(blk));
-              ex = ExprBox(Some(place), blk_expr);
-              return Ok(self.mk_expr(lo, hi, ex));
-            }
-
-            // FIXME (#22181) Remove `box (PLACE) EXPR` support
-            // entirely after next release (enabling `(box (EXPR))`),
-            // since it will be replaced by `in PLACE { EXPR }`, ...
-            //
-            // ... but for now: check for a place: `box(PLACE) EXPR`.
-
-            if try!(self.eat(&token::OpenDelim(token::Paren))) {
-                let box_span = mk_sp(lo, self.last_span.hi);
-                self.span_warn(box_span,
-                    "deprecated syntax; use the `in` keyword now \
-                           (e.g. change `box (<expr>) <expr>` to \
-                                        `in <expr> { <expr> }`)");
-
-                // Continue supporting `box () EXPR` (temporarily)
-                if !try!(self.eat(&token::CloseDelim(token::Paren))) {
-                    let place = try!(self.parse_expr_nopanic());
-                    try!(self.expect(&token::CloseDelim(token::Paren)));
-                    // Give a suggestion to use `box()` when a parenthesised expression is used
-                    if !self.token.can_begin_expr() {
-                        let span = self.span;
-                        let this_token_to_string = self.this_token_to_string();
-                        self.span_err(span,
-                                      &format!("expected expression, found `{}`",
-                                              this_token_to_string));
-
-                        // Spanning just keyword avoids constructing
-                        // printout of arg expression (which starts
-                        // with parenthesis, as established above).
-
-                        let box_span = mk_sp(lo, keyword_hi);
-                        self.span_suggestion(box_span,
-                                             "try using `box ()` instead:",
-                                             format!("box ()"));
-                        self.abort_if_errors();
-                    }
-                    let subexpression = try!(self.parse_prefix_expr());
-                    hi = subexpression.span.hi;
-                    ex = ExprBox(Some(place), subexpression);
-                    return Ok(self.mk_expr(lo, hi, ex));
-                }
-            }
-
-            // Otherwise, we use the unique pointer default.
-            let subexpression = try!(self.parse_prefix_expr());
-            hi = subexpression.span.hi;
-
-            // FIXME (pnkfelix): After working out kinks with box
-            // desugaring, should be `ExprBox(None, subexpression)`
-            // instead.
-            ex = self.mk_unary(UnUniq, subexpression);
+              ex = ExprInPlace(place, blk_expr);
+          }
+          token::Ident(..) if self.token.is_keyword(keywords::Box) => {
+              try!(self.bump());
+              let subexpression = try!(self.parse_prefix_expr());
+              hi = subexpression.span.hi;
+              ex = ExprBox(subexpression);
           }
           _ => return self.parse_dot_or_call_expr()
         }
@@ -4719,7 +4662,7 @@ impl<'a> Parser<'a> {
             (fields, None)
         // Tuple-style struct definition with optional where-clause.
         } else if self.token == token::OpenDelim(token::Paren) {
-            let fields = try!(self.parse_tuple_struct_body(&class_name, &mut generics));
+            let fields = try!(self.parse_tuple_struct_body(class_name, &mut generics));
             (fields, Some(ast::DUMMY_NODE_ID))
         } else {
             let token_str = self.this_token_to_string();
@@ -4754,7 +4697,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_tuple_struct_body(&mut self,
-                                   class_name: &ast::Ident,
+                                   class_name: ast::Ident,
                                    generics: &mut ast::Generics)
                                    -> PResult<Vec<StructField>> {
         // This is the case where we find `struct Foo<T>(T) where T: Copy;`
@@ -5784,10 +5727,10 @@ impl<'a> Parser<'a> {
                                                  Option<ast::Name>)>> {
         let ret = match self.token {
             token::Literal(token::Str_(s), suf) => {
-                (self.id_to_interned_str(s.ident()), ast::CookedStr, suf)
+                (self.id_to_interned_str(ast::Ident::with_empty_ctxt(s)), ast::CookedStr, suf)
             }
             token::Literal(token::StrRaw(s, n), suf) => {
-                (self.id_to_interned_str(s.ident()), ast::RawStr(n), suf)
+                (self.id_to_interned_str(ast::Ident::with_empty_ctxt(s)), ast::RawStr(n), suf)
             }
             _ => return Ok(None)
         };
