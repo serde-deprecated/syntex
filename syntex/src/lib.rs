@@ -63,7 +63,7 @@ impl Registry {
 
         self.attrs.push(respan(DUMMY_SP, ast::Attribute_ {
             id: attr::mk_attr_id(),
-            style: ast::AttrOuter,
+            style: ast::AttrStyle::Outer,
             value: meta_item,
             is_sugared_doc: false,
         }));
