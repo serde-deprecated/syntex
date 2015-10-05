@@ -714,7 +714,7 @@ pub trait PrintState<'a> {
         let mut count = 0;
         for attr in attrs {
             match attr.node.style {
-                ast::AttrInner => {
+                ast::AttrStyle::Inner => {
                     try!(self.print_attribute(attr));
                     count += 1;
                 }
@@ -732,7 +732,7 @@ pub trait PrintState<'a> {
         let mut count = 0;
         for attr in attrs {
             match attr.node.style {
-                ast::AttrOuter => {
+                ast::AttrStyle::Outer => {
                     try!(self.print_attribute(attr));
                     count += 1;
                 }
@@ -752,8 +752,8 @@ pub trait PrintState<'a> {
             word(self.writer(), &attr.value_str().unwrap())
         } else {
             match attr.node.style {
-                ast::AttrInner => try!(word(self.writer(), "#![")),
-                ast::AttrOuter => try!(word(self.writer(), "#[")),
+                ast::AttrStyle::Inner => try!(word(self.writer(), "#![")),
+                ast::AttrStyle::Outer => try!(word(self.writer(), "#[")),
             }
             try!(self.print_meta_item(&*attr.meta()));
             word(self.writer(), "]")
