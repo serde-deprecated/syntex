@@ -101,7 +101,6 @@ pub mod ext {
     pub mod log_syntax;
     pub mod mtwt;
     pub mod quote;
-    pub mod pushpop_safe;
     pub mod source_util;
     pub mod trace_macros;
 
