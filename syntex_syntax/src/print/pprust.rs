@@ -14,6 +14,7 @@ use abi;
 use ast;
 use ast::{RegionTyParamBound, TraitTyParamBound, TraitBoundModifier};
 use ast_util;
+use util::parser::AssocOp;
 use attr;
 use owned_slice::OwnedSlice;
 use attr::{AttrMetaMethods, AttributeMethods};
@@ -445,7 +446,8 @@ fn needs_parentheses(expr: &ast::Expr) -> bool {
     match expr.node {
         ast::ExprAssign(..) | ast::ExprBinary(..) |
         ast::ExprClosure(..) |
-        ast::ExprAssignOp(..) | ast::ExprCast(..) => true,
+        ast::ExprAssignOp(..) | ast::ExprCast(..) |
+        ast::ExprInPlace(..) => true,
         _ => false,
     }
 }
@@ -510,19 +512,6 @@ pub trait PrintState<'a> {
 
     fn commasep<T, F>(&mut self, b: Breaks, elts: &[T], mut op: F) -> io::Result<()>
         where F: FnMut(&mut Self, &T) -> io::Result<()>,
-    {
-        try!(self.rbox(0, b));
-        let mut first = true;
-        for elt in elts {
-            if first { first = false; } else { try!(self.word_space(",")); }
-            try!(op(self, elt));
-        }
-        self.end()
-    }
-
-    fn commasep_iter<'it, T: 'it, F, I>(&mut self, b: Breaks, elts: I, mut op: F) -> io::Result<()>
-        where F: FnMut(&mut Self, &T) -> io::Result<()>,
-              I: Iterator<Item=&'it T>,
     {
         try!(self.rbox(0, b));
         let mut first = true;
@@ -1407,7 +1396,7 @@ impl<'a> State<'a> {
         if !struct_def.is_struct() {
             if struct_def.is_tuple() {
                 try!(self.popen());
-                try!(self.commasep_iter(
+                try!(self.commasep(
                     Inconsistent, struct_def.fields(),
                     |s, field| {
                         match field.node.kind {
@@ -1789,8 +1778,8 @@ impl<'a> State<'a> {
                                       binop: ast::BinOp) -> bool {
         match sub_expr.node {
             ast::ExprBinary(ref sub_op, _, _) => {
-                if ast_util::operator_prec(sub_op.node) <
-                    ast_util::operator_prec(binop.node) {
+                if AssocOp::from_ast_binop(sub_op.node).precedence() <
+                    AssocOp::from_ast_binop(binop.node).precedence() {
                     true
                 } else {
                     false
@@ -1815,10 +1804,10 @@ impl<'a> State<'a> {
     fn print_expr_in_place(&mut self,
                            place: &ast::Expr,
                            expr: &ast::Expr) -> io::Result<()> {
-        try!(self.word_space("in"));
-        try!(self.print_expr(place));
+        try!(self.print_expr_maybe_paren(place));
         try!(space(&mut self.s));
-        self.print_expr(expr)
+        try!(self.word_space("<-"));
+        self.print_expr_maybe_paren(expr)
     }
 
     fn print_expr_vec(&mut self, exprs: &[P<ast::Expr>]) -> io::Result<()> {
@@ -3071,12 +3060,13 @@ impl<'a> State<'a> {
                                 abi: abi::Abi,
                                 vis: ast::Visibility) -> io::Result<()> {
         try!(word(&mut self.s, &visibility_qualified(vis, "")));
-        try!(self.print_unsafety(unsafety));
 
         match constness {
             ast::Constness::NotConst => {}
             ast::Constness::Const => try!(self.word_nbsp("const"))
         }
+
+        try!(self.print_unsafety(unsafety));
 
         if abi != abi::Rust {
             try!(self.word_nbsp("extern"));
@@ -3104,7 +3094,6 @@ mod tests {
     use ast_util;
     use codemap;
     use parse::token;
-    use ptr::P;
 
     #[test]
     fn test_fun_to_string() {
@@ -3131,7 +3120,7 @@ mod tests {
             name: ident,
             attrs: Vec::new(),
             // making this up as I go.... ?
-            data: P(ast::VariantData::Unit(ast::DUMMY_NODE_ID)),
+            data: ast::VariantData::Unit(ast::DUMMY_NODE_ID),
             disr_expr: None,
         });
 
