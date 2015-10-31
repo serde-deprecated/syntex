@@ -15,7 +15,7 @@
 
 use ast::{MetaItem, MetaWord};
 use attr::AttrMetaMethods;
-use ext::base::{ExtCtxt, SyntaxEnv, MultiModifier, Annotatable};
+use ext::base::{ExtCtxt, SyntaxEnv, MultiDecorator, MultiItemDecorator, MultiModifier, Annotatable};
 use ext::build::AstBuilder;
 use feature_gate;
 use codemap::Span;
@@ -127,7 +127,6 @@ macro_rules! derive_traits {
     ($( $name:expr => $func:path, )+) => {
         pub fn register_all(env: &mut SyntaxEnv) {
             // Define the #[derive_*] extensions.
-            /*
             $({
                 struct DeriveExtension;
 
@@ -146,7 +145,6 @@ macro_rules! derive_traits {
                 env.insert(intern(concat!("derive_", $name)),
                            MultiDecorator(Box::new(DeriveExtension)));
             })+
-            */
 
             env.insert(intern("derive"),
                        MultiModifier(Box::new(expand_derive)));
