@@ -49,6 +49,7 @@ pub mod util {
     #[cfg(test)]
     pub mod parser_testing;
     pub mod small_vector;
+    pub mod parser;
 }
 
 pub mod diagnostics {
