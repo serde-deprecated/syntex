@@ -15,7 +15,7 @@
 
 use ast::{MetaItem, MetaWord};
 use attr::AttrMetaMethods;
-use ext::base::{ExtCtxt, SyntaxEnv, MultiDecorator, MultiItemDecorator, MultiModifier, Annotatable};
+use ext::base::{ExtCtxt, SyntaxEnv, MultiModifier, Annotatable};
 use ext::build::AstBuilder;
 use feature_gate;
 use codemap::Span;
@@ -127,6 +127,7 @@ macro_rules! derive_traits {
     ($( $name:expr => $func:path, )+) => {
         pub fn register_all(env: &mut SyntaxEnv) {
             // Define the #[derive_*] extensions.
+            /* Syntex shouldn't expand the builtin decorators.
             $({
                 struct DeriveExtension;
 
@@ -145,6 +146,7 @@ macro_rules! derive_traits {
                 env.insert(intern(concat!("derive_", $name)),
                            MultiDecorator(Box::new(DeriveExtension)));
             })+
+            */
 
             env.insert(intern("derive"),
                        MultiModifier(Box::new(expand_derive)));
@@ -188,6 +190,7 @@ derive_traits! {
     "Decodable" => decodable::expand_deriving_decodable,
 }
 
+/*
 #[inline] // because `name` is a compile-time constant
 fn warn_if_deprecated(ecx: &mut ExtCtxt, sp: Span, name: &str) {
     if let Some(replacement) = match name {
@@ -199,3 +202,4 @@ fn warn_if_deprecated(ecx: &mut ExtCtxt, sp: Span, name: &str) {
                                    name, replacement));
     }
 }
+*/
