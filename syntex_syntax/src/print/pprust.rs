@@ -11,7 +11,7 @@
 pub use self::AnnNode::*;
 
 use abi;
-use ast;
+use ast::{self, TokenTree};
 use ast::{RegionTyParamBound, TraitTyParamBound, TraitBoundModifier};
 use ast_util;
 use util::parser::AssocOp;
@@ -1452,7 +1452,7 @@ impl<'a> State<'a> {
     /// expression arguments as expressions). It can be done! I think.
     pub fn print_tt(&mut self, tt: &ast::TokenTree) -> io::Result<()> {
         match *tt {
-            ast::TtToken(_, ref tk) => {
+            TokenTree::Token(_, ref tk) => {
                 try!(word(&mut self.s, &token_to_string(tk)));
                 match *tk {
                     parse::token::DocComment(..) => {
@@ -1461,14 +1461,14 @@ impl<'a> State<'a> {
                     _ => Ok(())
                 }
             }
-            ast::TtDelimited(_, ref delimed) => {
+            TokenTree::Delimited(_, ref delimed) => {
                 try!(word(&mut self.s, &token_to_string(&delimed.open_token())));
                 try!(space(&mut self.s));
                 try!(self.print_tts(&delimed.tts));
                 try!(space(&mut self.s));
                 word(&mut self.s, &token_to_string(&delimed.close_token()))
             },
-            ast::TtSequence(_, ref seq) => {
+            TokenTree::Sequence(_, ref seq) => {
                 try!(word(&mut self.s, "$("));
                 for tt_elt in &seq.tts {
                     try!(self.print_tt(tt_elt));
@@ -1499,9 +1499,9 @@ impl<'a> State<'a> {
             // There should be no space between the module name and the following `::` in paths,
             // otherwise imported macros get re-parsed from crate metadata incorrectly (#20701)
             suppress_space = match tt {
-                &ast::TtToken(_, token::Ident(_, token::ModName)) |
-                &ast::TtToken(_, token::MatchNt(_, _, _, token::ModName)) |
-                &ast::TtToken(_, token::SubstNt(_, token::ModName)) => true,
+                &TokenTree::Token(_, token::Ident(_, token::ModName)) |
+                &TokenTree::Token(_, token::MatchNt(_, _, _, token::ModName)) |
+                &TokenTree::Token(_, token::SubstNt(_, token::ModName)) => true,
                 _ => false
             }
         }
@@ -2406,8 +2406,7 @@ impl<'a> State<'a> {
         /* Pat isn't normalized, but the beauty of it
          is that it doesn't matter */
         match pat.node {
-            ast::PatWild(ast::PatWildSingle) => try!(word(&mut self.s, "_")),
-            ast::PatWild(ast::PatWildMulti) => try!(word(&mut self.s, "..")),
+            ast::PatWild => try!(word(&mut self.s, "_")),
             ast::PatIdent(binding_mode, ref path1, ref sub) => {
                 match binding_mode {
                     ast::BindByRef(mutbl) => {
@@ -2503,13 +2502,10 @@ impl<'a> State<'a> {
                                    |s, p| s.print_pat(&**p)));
                 if let Some(ref p) = *slice {
                     if !before.is_empty() { try!(self.word_space(",")); }
-                    try!(self.print_pat(&**p));
-                    match **p {
-                        ast::Pat { node: ast::PatWild(ast::PatWildMulti), .. } => {
-                            // this case is handled by print_pat
-                        }
-                        _ => try!(word(&mut self.s, "..")),
+                    if p.node != ast::PatWild {
+                        try!(self.print_pat(&**p));
                     }
+                    try!(word(&mut self.s, ".."));
                     if !after.is_empty() { try!(self.word_space(",")); }
                 }
                 try!(self.commasep(Inconsistent,

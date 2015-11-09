@@ -79,7 +79,7 @@ pub fn expand_asm<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
                     cx.span_err(sp, "malformed inline assembly");
                     return DummyResult::expr(sp);
                 }
-                let (s, style) = match expr_to_string(cx, p.parse_expr(),
+                let (s, style) = match expr_to_string(cx, panictry!(p.parse_expr_nopanic()),
                                                    "inline assembly must be a string literal") {
                     Some((s, st)) => (s, st),
                     // let compilation continue
@@ -102,7 +102,7 @@ pub fn expand_asm<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
                     let span = p.last_span;
 
                     panictry!(p.expect(&token::OpenDelim(token::Paren)));
-                    let out = p.parse_expr();
+                    let out = panictry!(p.parse_expr_nopanic());
                     panictry!(p.expect(&token::CloseDelim(token::Paren)));
 
                     // Expands a read+write operand into two operands.
@@ -139,14 +139,14 @@ pub fn expand_asm<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
 
                     let (constraint, _str_style) = panictry!(p.parse_str());
 
-                    if constraint.starts_with("=") {
+                    if constraint.starts_with("=") && !constraint.contains("*") {
                         cx.span_err(p.last_span, "input operand constraint contains '='");
-                    } else if constraint.starts_with("+") {
+                    } else if constraint.starts_with("+") && !constraint.contains("*") {
                         cx.span_err(p.last_span, "input operand constraint contains '+'");
                     }
 
                     panictry!(p.expect(&token::OpenDelim(token::Paren)));
-                    let input = p.parse_expr();
+                    let input = panictry!(p.parse_expr_nopanic());
                     panictry!(p.expect(&token::CloseDelim(token::Paren)));
 
                     inputs.push((constraint, input));
