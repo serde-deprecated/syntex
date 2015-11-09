@@ -206,9 +206,9 @@ impl Handler {
             can_emit_warnings: can_emit_warnings
         }
     }
-    pub fn fatal(&self, msg: &str) -> ! {
+    pub fn fatal(&self, msg: &str) -> FatalError {
         self.emit.borrow_mut().emit(None, msg, None, Fatal);
-        panic!(FatalError);
+        FatalError
     }
     pub fn err(&self, msg: &str) {
         self.emit.borrow_mut().emit(None, msg, None, Error);
@@ -226,14 +226,15 @@ impl Handler {
     pub fn abort_if_errors(&self) {
         let s;
         match self.err_count.get() {
-          0 => return,
-          1 => s = "aborting due to previous error".to_string(),
-          _   => {
-            s = format!("aborting due to {} previous errors",
-                        self.err_count.get());
-          }
+            0 => return,
+            1 => s = "aborting due to previous error".to_string(),
+            _  => {
+                s = format!("aborting due to {} previous errors",
+                            self.err_count.get());
+            }
         }
-        self.fatal(&s[..]);
+
+        panic!(self.fatal(&s[..]));
     }
     pub fn warn(&self, msg: &str) {
         self.emit.borrow_mut().emit(None, msg, None, Warning);
