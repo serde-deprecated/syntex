@@ -116,7 +116,7 @@ pub fn parse_expr_from_source_str(name: String,
                                   sess: &ParseSess)
                                   -> P<ast::Expr> {
     let mut p = new_parser_from_source_str(sess, cfg, name, source);
-    maybe_aborted(panictry!(p.parse_expr_nopanic()), p)
+    maybe_aborted(panictry!(p.parse_expr()), p)
 }
 
 pub fn parse_item_from_source_str(name: String,
@@ -125,7 +125,7 @@ pub fn parse_item_from_source_str(name: String,
                                   sess: &ParseSess)
                                   -> Option<P<ast::Item>> {
     let mut p = new_parser_from_source_str(sess, cfg, name, source);
-    maybe_aborted(panictry!(p.parse_item_nopanic()), p)
+    maybe_aborted(panictry!(p.parse_item()), p)
 }
 
 pub fn parse_meta_from_source_str(name: String,
@@ -148,7 +148,7 @@ pub fn parse_stmt_from_source_str(name: String,
         name,
         source
     );
-    maybe_aborted(panictry!(p.parse_stmt_nopanic()), p)
+    maybe_aborted(panictry!(p.parse_stmt()), p)
 }
 
 // Warning: This parses with quote_depth > 0, which is not the default.
@@ -448,10 +448,10 @@ fn filtered_float_lit(data: token::InternedString, suffix: Option<&str>,
         Some(suf) => {
             if suf.len() >= 2 && looks_like_width_suffix(&['f'], suf) {
                 // if it looks like a width, lets try to be helpful.
-                sd.span_err(sp, &*format!("invalid width `{}` for float literal", &suf[1..]));
+                sd.span_err(sp, &format!("invalid width `{}` for float literal", &suf[1..]));
                 sd.fileline_help(sp, "valid widths are 32 and 64");
             } else {
-                sd.span_err(sp, &*format!("invalid suffix `{}` for float literal", suf));
+                sd.span_err(sp, &format!("invalid suffix `{}` for float literal", suf));
                 sd.fileline_help(sp, "valid suffixes are `f32` and `f64`");
             }
 
@@ -621,11 +621,11 @@ pub fn integer_lit(s: &str,
                 // i<digits> and u<digits> look like widths, so lets
                 // give an error message along those lines
                 if looks_like_width_suffix(&['i', 'u'], suf) {
-                    sd.span_err(sp, &*format!("invalid width `{}` for integer literal",
-                                              &suf[1..]));
+                    sd.span_err(sp, &format!("invalid width `{}` for integer literal",
+                                             &suf[1..]));
                     sd.fileline_help(sp, "valid widths are 8, 16, 32 and 64");
                 } else {
-                    sd.span_err(sp, &*format!("invalid suffix `{}` for numeric literal", suf));
+                    sd.span_err(sp, &format!("invalid suffix `{}` for numeric literal", suf));
                     sd.fileline_help(sp, "the suffix must be one of the integral types \
                                       (`u32`, `isize`, etc)");
                 }
@@ -884,7 +884,7 @@ mod tests {
     #[test] fn parse_ident_pat () {
         let sess = ParseSess::new();
         let mut parser = string_to_parser(&sess, "b".to_string());
-        assert!(panictry!(parser.parse_pat_nopanic())
+        assert!(panictry!(parser.parse_pat())
                 == P(ast::Pat{
                 id: ast::DUMMY_NODE_ID,
                 node: ast::PatIdent(ast::BindByValue(ast::MutImmutable),

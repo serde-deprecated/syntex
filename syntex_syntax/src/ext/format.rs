@@ -77,9 +77,10 @@ struct Context<'a, 'b:'a> {
 /// expressions.
 ///
 /// If parsing succeeds, the return value is:
-///
-///     Some((fmtstr, unnamed arguments, ordering of named arguments,
-///           named arguments))
+/// ```ignore
+/// Some((fmtstr, unnamed arguments, ordering of named arguments,
+///       named arguments))
+/// ```
 fn parse_args(ecx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
               -> Option<(P<ast::Expr>, Vec<P<ast::Expr>>, Vec<String>,
                          HashMap<String, P<ast::Expr>>)> {
@@ -93,7 +94,7 @@ fn parse_args(ecx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
         ecx.span_err(sp, "requires at least a format string argument");
         return None;
     }
-    let fmtstr = panictry!(p.parse_expr_nopanic());
+    let fmtstr = panictry!(p.parse_expr());
     let mut named = false;
     while p.token != token::Eof {
         if !panictry!(p.eat(&token::Comma)) {
@@ -124,7 +125,7 @@ fn parse_args(ecx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
             let name: &str = &ident.name.as_str();
 
             panictry!(p.expect(&token::Eq));
-            let e = panictry!(p.parse_expr_nopanic());
+            let e = panictry!(p.parse_expr());
             match names.get(name) {
                 None => {}
                 Some(prev) => {
@@ -138,7 +139,7 @@ fn parse_args(ecx: &mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
             order.push(name.to_string());
             names.insert(name.to_string(), e);
         } else {
-            args.push(panictry!(p.parse_expr_nopanic()));
+            args.push(panictry!(p.parse_expr()));
         }
     }
     Some((fmtstr, args, order, names))

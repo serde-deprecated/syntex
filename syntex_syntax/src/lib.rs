@@ -18,7 +18,8 @@
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "https://doc.rust-lang.org/favicon.ico",
-       html_root_url = "https://doc.rust-lang.org/nightly/")]
+       html_root_url = "https://doc.rust-lang.org/nightly/",
+       test(attr(deny(warnings))))]
 
 extern crate term;
 extern crate libc;
@@ -46,10 +47,11 @@ macro_rules! panictry {
 
 pub mod util {
     pub mod interner;
+    pub mod node_count;
+    pub mod parser;
     #[cfg(test)]
     pub mod parser_testing;
     pub mod small_vector;
-    pub mod parser;
 }
 
 pub mod diagnostics {

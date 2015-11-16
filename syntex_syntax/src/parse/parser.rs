@@ -113,6 +113,13 @@ pub enum BoundParsingMode {
     Modified,
 }
 
+/// `pub` should be parsed in struct fields and not parsed in variant fields
+#[derive(Clone, Copy, PartialEq)]
+pub enum ParsePub {
+    Yes,
+    No,
+}
+
 /// Possibly accept an `token::Interpolated` expression (a pre-parsed expression
 /// dropped into the token stream, which happens while parsing the result of
 /// macro expansion). Placement of these is not as complex as I feared it would
@@ -353,37 +360,6 @@ impl<'a> Parser<'a> {
             root_module_name: None,
             expected_tokens: Vec::new(),
         }
-    }
-
-    // Panicing fns (for now!)
-    // These functions are used by the quote_*!() syntax extensions, but shouldn't
-    // be used otherwise.
-    pub fn parse_expr_panic(&mut self) -> P<Expr> {
-        panictry!(self.parse_expr_nopanic())
-    }
-
-    pub fn parse_item_panic(&mut self) -> Option<P<Item>> {
-        panictry!(self.parse_item_nopanic())
-    }
-
-    pub fn parse_pat_panic(&mut self) -> P<Pat> {
-        panictry!(self.parse_pat_nopanic())
-    }
-
-    pub fn parse_arm_panic(&mut self) -> Arm {
-        panictry!(self.parse_arm_nopanic())
-    }
-
-    pub fn parse_ty_panic(&mut self) -> P<Ty> {
-        panictry!(self.parse_ty_nopanic())
-    }
-
-    pub fn parse_stmt_panic(&mut self) -> Option<P<Stmt>> {
-        panictry!(self.parse_stmt_nopanic())
-    }
-
-    pub fn parse_attribute_panic(&mut self, permit_inner: bool) -> ast::Attribute {
-        panictry!(self.parse_attribute(permit_inner))
     }
 
     /// Convert a token to a string using self's reader
@@ -1190,7 +1166,7 @@ impl<'a> Parser<'a> {
                 let ty = try!(p.parse_ty_sum());
                 let default = if p.check(&token::Eq) {
                     try!(p.bump());
-                    let expr = try!(p.parse_expr_nopanic());
+                    let expr = try!(p.parse_expr());
                     try!(p.commit_expr_expecting(&expr, token::Semi));
                     Some(expr)
                 } else {
@@ -1257,7 +1233,7 @@ impl<'a> Parser<'a> {
     /// Parse a possibly mutable type
     pub fn parse_mt(&mut self) -> PResult<MutTy> {
         let mutbl = try!(self.parse_mutability());
-        let t = try!(self.parse_ty_nopanic());
+        let t = try!(self.parse_ty());
         Ok(MutTy { ty: t, mutbl: mutbl })
     }
 
@@ -1267,7 +1243,7 @@ impl<'a> Parser<'a> {
             if try!(self.eat(&token::Not) ){
                 Ok(NoReturn(self.last_span))
             } else {
-                Ok(Return(try!(self.parse_ty_nopanic())))
+                Ok(Return(try!(self.parse_ty())))
             }
         } else {
             let pos = self.span.lo;
@@ -1278,7 +1254,7 @@ impl<'a> Parser<'a> {
     /// Parse a type in a context where `T1+T2` is allowed.
     pub fn parse_ty_sum(&mut self) -> PResult<P<Ty>> {
         let lo = self.span.lo;
-        let lhs = try!(self.parse_ty_nopanic());
+        let lhs = try!(self.parse_ty());
 
         if !try!(self.eat(&token::BinOp(token::Plus)) ){
             return Ok(lhs);
@@ -1301,7 +1277,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a type.
-    pub fn parse_ty_nopanic(&mut self) -> PResult<P<Ty>> {
+    pub fn parse_ty(&mut self) -> PResult<P<Ty>> {
         maybe_whole!(no_clone self, NtTy);
 
         let lo = self.span.lo;
@@ -1362,7 +1338,7 @@ impl<'a> Parser<'a> {
             // TYPEOF
             // In order to not be ambiguous, the type must be surrounded by parens.
             try!(self.expect(&token::OpenDelim(token::Paren)));
-            let e = try!(self.parse_expr_nopanic());
+            let e = try!(self.parse_expr());
             try!(self.expect(&token::CloseDelim(token::Paren)));
             TyTypeof(e)
         } else if try!(self.eat_lt()) {
@@ -1422,7 +1398,7 @@ impl<'a> Parser<'a> {
                            known as `*const T`");
             MutImmutable
         };
-        let t = try!(self.parse_ty_nopanic());
+        let t = try!(self.parse_ty());
         Ok(MutTy { ty: t, mutbl: mutbl })
     }
 
@@ -1448,10 +1424,12 @@ impl<'a> Parser<'a> {
     /// This version of parse arg doesn't necessarily require
     /// identifier names.
     pub fn parse_arg_general(&mut self, require_name: bool) -> PResult<Arg> {
+        maybe_whole!(no_clone self, NtArg);
+
         let pat = if require_name || self.is_named_argument() {
             debug!("parse_arg_general parse_pat (require_name:{})",
                    require_name);
-            let pat = try!(self.parse_pat_nopanic());
+            let pat = try!(self.parse_pat());
 
             try!(self.expect(&token::Colon));
             pat
@@ -1478,7 +1456,7 @@ impl<'a> Parser<'a> {
 
     /// Parse an argument in a lambda header e.g. |arg, arg|
     pub fn parse_fn_block_arg(&mut self) -> PResult<Arg> {
-        let pat = try!(self.parse_pat_nopanic());
+        let pat = try!(self.parse_pat());
         let t = if try!(self.eat(&token::Colon) ){
             try!(self.parse_ty_sum())
         } else {
@@ -1498,7 +1476,7 @@ impl<'a> Parser<'a> {
     pub fn maybe_parse_fixed_length_of_vec(&mut self) -> PResult<Option<P<ast::Expr>>> {
         if self.check(&token::Semi) {
             try!(self.bump());
-            Ok(Some(try!(self.parse_expr_nopanic())))
+            Ok(Some(try!(self.parse_expr())))
         } else {
             Ok(None)
         }
@@ -1723,7 +1701,7 @@ impl<'a> Parser<'a> {
                     |p| p.parse_ty_sum()));
 
                 let output_ty = if try!(self.eat(&token::RArrow) ){
-                    Some(try!(self.parse_ty_nopanic()))
+                    Some(try!(self.parse_ty()))
                 } else {
                     None
                 };
@@ -1928,7 +1906,7 @@ impl<'a> Parser<'a> {
         let i = try!(self.parse_ident());
         let hi = self.last_span.hi;
         try!(self.expect(&token::Colon));
-        let e = try!(self.parse_expr_nopanic());
+        let e = try!(self.parse_expr());
         Ok(ast::Field {
             ident: spanned(lo, hi, i),
             span: mk_sp(lo, e.span.hi),
@@ -2042,7 +2020,7 @@ impl<'a> Parser<'a> {
                 let mut es = vec![];
                 let mut trailing_comma = false;
                 while self.token != token::CloseDelim(token::Paren) {
-                    es.push(try!(self.parse_expr_nopanic()));
+                    es.push(try!(self.parse_expr()));
                     try!(self.commit_expr(&**es.last().unwrap(), &[],
                                      &[token::Comma, token::CloseDelim(token::Paren)]));
                     if self.check(&token::Comma) {
@@ -2088,11 +2066,11 @@ impl<'a> Parser<'a> {
                     ex = ExprVec(Vec::new());
                 } else {
                     // Nonempty vector.
-                    let first_expr = try!(self.parse_expr_nopanic());
+                    let first_expr = try!(self.parse_expr());
                     if self.check(&token::Semi) {
                         // Repeating array syntax: [ 0; 512 ]
                         try!(self.bump());
-                        let count = try!(self.parse_expr_nopanic());
+                        let count = try!(self.parse_expr());
                         try!(self.expect(&token::CloseDelim(token::Bracket)));
                         ex = ExprRepeat(first_expr, count);
                     } else if self.check(&token::Comma) {
@@ -2101,7 +2079,7 @@ impl<'a> Parser<'a> {
                         let remaining_exprs = try!(self.parse_seq_to_end(
                             &token::CloseDelim(token::Bracket),
                             seq_sep_trailing_allowed(token::Comma),
-                            |p| Ok(try!(p.parse_expr_nopanic()))
+                            |p| Ok(try!(p.parse_expr()))
                                 ));
                         let mut exprs = vec!(first_expr);
                         exprs.extend(remaining_exprs);
@@ -2180,7 +2158,7 @@ impl<'a> Parser<'a> {
                 }
                 if try!(self.eat_keyword(keywords::Return) ){
                     if self.token.can_begin_expr() {
-                        let e = try!(self.parse_expr_nopanic());
+                        let e = try!(self.parse_expr());
                         hi = e.span.hi;
                         ex = ExprRet(Some(e));
                     } else {
@@ -2234,7 +2212,7 @@ impl<'a> Parser<'a> {
 
                             while self.token != token::CloseDelim(token::Brace) {
                                 if try!(self.eat(&token::DotDot) ){
-                                    base = Some(try!(self.parse_expr_nopanic()));
+                                    base = Some(try!(self.parse_expr()));
                                     break;
                                 }
 
@@ -2310,7 +2288,7 @@ impl<'a> Parser<'a> {
                                 &token::OpenDelim(token::Paren),
                                 &token::CloseDelim(token::Paren),
                                 seq_sep_trailing_allowed(token::Comma),
-                                |p| Ok(try!(p.parse_expr_nopanic()))
+                                |p| Ok(try!(p.parse_expr()))
                             ));
                             hi = self.last_span.hi;
 
@@ -2387,7 +2365,7 @@ impl<'a> Parser<'a> {
                     &token::OpenDelim(token::Paren),
                     &token::CloseDelim(token::Paren),
                     seq_sep_trailing_allowed(token::Comma),
-                    |p| Ok(try!(p.parse_expr_nopanic()))
+                    |p| Ok(try!(p.parse_expr()))
                 ));
                 hi = self.last_span.hi;
 
@@ -2399,7 +2377,7 @@ impl<'a> Parser<'a> {
               // Could be either an index expression or a slicing expression.
               token::OpenDelim(token::Bracket) => {
                 try!(self.bump());
-                let ix = try!(self.parse_expr_nopanic());
+                let ix = try!(self.parse_expr());
                 hi = self.span.hi;
                 try!(self.commit_expr_expecting(&*ix, token::CloseDelim(token::Bracket)));
                 let index = self.mk_index(e, ix);
@@ -2674,9 +2652,9 @@ impl<'a> Parser<'a> {
             // Semi-statement forms are odd. See https://github.com/rust-lang/rust/issues/29071
             return Ok(lhs);
         }
-        let cur_op_span = self.span;
         self.expected_tokens.push(TokenType::Operator);
         while let Some(op) = AssocOp::from_token(&self.token) {
+            let cur_op_span = self.span;
             let restrictions = if op.is_assign_like() {
                 self.restrictions & RESTRICTION_NO_STRUCT_LITERAL
             } else {
@@ -2691,7 +2669,7 @@ impl<'a> Parser<'a> {
             }
             // Special cases:
             if op == AssocOp::As {
-                let rhs = try!(self.parse_ty_nopanic());
+                let rhs = try!(self.parse_ty());
                 lhs = self.mk_expr(lhs.span.lo, rhs.span.hi, ExprCast(lhs, rhs));
                 continue
             } else if op == AssocOp::DotDot {
@@ -2844,7 +2822,7 @@ impl<'a> Parser<'a> {
     pub fn parse_if_let_expr(&mut self) -> PResult<P<Expr>> {
         let lo = self.last_span.lo;
         try!(self.expect_keyword(keywords::Let));
-        let pat = try!(self.parse_pat_nopanic());
+        let pat = try!(self.parse_pat());
         try!(self.expect(&token::Eq));
         let expr = try!(self.parse_expr_res(RESTRICTION_NO_STRUCT_LITERAL));
         let thn = try!(self.parse_block());
@@ -2866,7 +2844,7 @@ impl<'a> Parser<'a> {
             DefaultReturn(_) => {
                 // If no explicit return type is given, parse any
                 // expr and wrap it up in a dummy block:
-                let body_expr = try!(self.parse_expr_nopanic());
+                let body_expr = try!(self.parse_expr());
                 P(ast::Block {
                     id: ast::DUMMY_NODE_ID,
                     stmts: vec![],
@@ -2902,7 +2880,7 @@ impl<'a> Parser<'a> {
                           span_lo: BytePos) -> PResult<P<Expr>> {
         // Parse: `for <src_pat> in <src_expr> <src_loop_block>`
 
-        let pat = try!(self.parse_pat_nopanic());
+        let pat = try!(self.parse_pat());
         try!(self.expect_keyword(keywords::In));
         let expr = try!(self.parse_expr_res(RESTRICTION_NO_STRUCT_LITERAL));
         let loop_block = try!(self.parse_block());
@@ -2927,7 +2905,7 @@ impl<'a> Parser<'a> {
     pub fn parse_while_let_expr(&mut self, opt_ident: Option<ast::Ident>,
                                 span_lo: BytePos) -> PResult<P<Expr>> {
         try!(self.expect_keyword(keywords::Let));
-        let pat = try!(self.parse_pat_nopanic());
+        let pat = try!(self.parse_pat());
         try!(self.expect(&token::Eq));
         let expr = try!(self.parse_expr_res(RESTRICTION_NO_STRUCT_LITERAL));
         let body = try!(self.parse_block());
@@ -2954,21 +2932,21 @@ impl<'a> Parser<'a> {
         }
         let mut arms: Vec<Arm> = Vec::new();
         while self.token != token::CloseDelim(token::Brace) {
-            arms.push(try!(self.parse_arm_nopanic()));
+            arms.push(try!(self.parse_arm()));
         }
         let hi = self.span.hi;
         try!(self.bump());
         return Ok(self.mk_expr(lo, hi, ExprMatch(discriminant, arms)));
     }
 
-    pub fn parse_arm_nopanic(&mut self) -> PResult<Arm> {
+    pub fn parse_arm(&mut self) -> PResult<Arm> {
         maybe_whole!(no_clone self, NtArm);
 
         let attrs = try!(self.parse_outer_attributes());
         let pats = try!(self.parse_pats());
         let mut guard = None;
         if try!(self.eat_keyword(keywords::If) ){
-            guard = Some(try!(self.parse_expr_nopanic()));
+            guard = Some(try!(self.parse_expr()));
         }
         try!(self.expect(&token::FatArrow));
         let expr = try!(self.parse_expr_res(RESTRICTION_STMT_EXPR));
@@ -2992,7 +2970,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse an expression
-    pub fn parse_expr_nopanic(&mut self) -> PResult<P<Expr>> {
+    pub fn parse_expr(&mut self) -> PResult<P<Expr>> {
         self.parse_expr_res(Restrictions::empty())
     }
 
@@ -3018,7 +2996,7 @@ impl<'a> Parser<'a> {
     fn parse_initializer(&mut self) -> PResult<Option<P<Expr>>> {
         if self.check(&token::Eq) {
             try!(self.bump());
-            Ok(Some(try!(self.parse_expr_nopanic())))
+            Ok(Some(try!(self.parse_expr())))
         } else {
             Ok(None)
         }
@@ -3028,7 +3006,7 @@ impl<'a> Parser<'a> {
     fn parse_pats(&mut self) -> PResult<Vec<P<Pat>>> {
         let mut pats = Vec::new();
         loop {
-            pats.push(try!(self.parse_pat_nopanic()));
+            pats.push(try!(self.parse_pat()));
             if self.check(&token::BinOp(token::Or)) { try!(self.bump());}
             else { return Ok(pats); }
         };
@@ -3037,11 +3015,11 @@ impl<'a> Parser<'a> {
     fn parse_pat_tuple_elements(&mut self) -> PResult<Vec<P<Pat>>> {
         let mut fields = vec![];
         if !self.check(&token::CloseDelim(token::Paren)) {
-            fields.push(try!(self.parse_pat_nopanic()));
+            fields.push(try!(self.parse_pat()));
             if self.look_ahead(1, |t| *t != token::CloseDelim(token::Paren)) {
                 while try!(self.eat(&token::Comma)) &&
                       !self.check(&token::CloseDelim(token::Paren)) {
-                    fields.push(try!(self.parse_pat_nopanic()));
+                    fields.push(try!(self.parse_pat()));
                 }
             }
             if fields.len() == 1 {
@@ -3089,7 +3067,7 @@ impl<'a> Parser<'a> {
                 }
             }
 
-            let subpat = try!(self.parse_pat_nopanic());
+            let subpat = try!(self.parse_pat());
             if before_slice && self.check(&token::DotDot) {
                 try!(self.bump());
                 slice = Some(subpat);
@@ -3137,7 +3115,7 @@ impl<'a> Parser<'a> {
                 // Parsing a pattern of the form "fieldname: pat"
                 let fieldname = try!(self.parse_ident());
                 try!(self.bump());
-                let pat = try!(self.parse_pat_nopanic());
+                let pat = try!(self.parse_pat());
                 hi = pat.span.hi;
                 (pat, fieldname, false)
             } else {
@@ -3208,7 +3186,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a pattern.
-    pub fn parse_pat_nopanic(&mut self) -> PResult<P<Pat>> {
+    pub fn parse_pat(&mut self) -> PResult<P<Pat>> {
         maybe_whole!(self, NtPat);
 
         let lo = self.span.lo;
@@ -3227,7 +3205,7 @@ impl<'a> Parser<'a> {
                 return Err(self.fatal(&format!("unexpected lifetime `{}` in pattern", ident)));
             }
 
-            let subpat = try!(self.parse_pat_nopanic());
+            let subpat = try!(self.parse_pat());
             pat = PatRegion(subpat, mutbl);
           }
           token::OpenDelim(token::Paren) => {
@@ -3255,7 +3233,7 @@ impl<'a> Parser<'a> {
                 pat = try!(self.parse_pat_ident(BindByRef(mutbl)));
             } else if try!(self.eat_keyword(keywords::Box)) {
                 // Parse box pat
-                let subpat = try!(self.parse_pat_nopanic());
+                let subpat = try!(self.parse_pat());
                 pat = PatBox(subpat);
             } else if self.is_path_start() {
                 // Parse pattern starting with a path
@@ -3327,7 +3305,7 @@ impl<'a> Parser<'a> {
                                     &token::OpenDelim(token::Paren),
                                     &token::CloseDelim(token::Paren),
                                     seq_sep_trailing_allowed(token::Comma),
-                                    |p| p.parse_pat_nopanic()));
+                                    |p| p.parse_pat()));
                             pat = PatEnum(path, Some(args));
                         }
                       }
@@ -3378,7 +3356,7 @@ impl<'a> Parser<'a> {
         let last_span = self.last_span;
         let name = codemap::Spanned{span: last_span, node: ident};
         let sub = if try!(self.eat(&token::At) ){
-            Some(try!(self.parse_pat_nopanic()))
+            Some(try!(self.parse_pat()))
         } else {
             None
         };
@@ -3402,7 +3380,7 @@ impl<'a> Parser<'a> {
     /// Parse a local variable declaration
     fn parse_local(&mut self) -> PResult<P<Local>> {
         let lo = self.span.lo;
-        let pat = try!(self.parse_pat_nopanic());
+        let pat = try!(self.parse_pat());
 
         let mut ty = None;
         if try!(self.eat(&token::Colon) ){
@@ -3459,7 +3437,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a statement. may include decl.
-    pub fn parse_stmt_nopanic(&mut self) -> PResult<Option<P<Stmt>>> {
+    pub fn parse_stmt(&mut self) -> PResult<Option<P<Stmt>>> {
         Ok(try!(self.parse_stmt_()).map(P))
     }
 
@@ -3890,7 +3868,7 @@ impl<'a> Parser<'a> {
             self.span_err(self.span, &msg);
 
             let span_hi = self.span.hi;
-            let span_hi = if self.parse_ty_nopanic().is_ok() {
+            let span_hi = if self.parse_ty().is_ok() {
                 self.span.hi
             } else {
                 span_hi
@@ -3934,7 +3912,7 @@ impl<'a> Parser<'a> {
                     let span = p.span;
                     p.span_warn(span, "whoops, no =?");
                 }
-                let ty = try!(p.parse_ty_nopanic());
+                let ty = try!(p.parse_ty());
                 let hi = ty.span.hi;
                 let span = mk_sp(lo, hi);
                 return Ok(P(TypeBinding{id: ast::DUMMY_NODE_ID,
@@ -3958,7 +3936,7 @@ impl<'a> Parser<'a> {
 
     /// Parses an optional `where` clause and places it in `generics`.
     ///
-    /// ```
+    /// ```ignore
     /// where T : Trait<U, V> + 'b, 'a : 'b
     /// ```
     pub fn parse_where_clause(&mut self) -> PResult<ast::WhereClause> {
@@ -4015,7 +3993,7 @@ impl<'a> Parser<'a> {
                         vec![]
                     };
 
-                    let bounded_ty = try!(self.parse_ty_nopanic());
+                    let bounded_ty = try!(self.parse_ty());
 
                     if try!(self.eat(&token::Colon) ){
                         let bounds = try!(self.parse_ty_param_bounds(BoundParsingMode::Bare));
@@ -4038,7 +4016,7 @@ impl<'a> Parser<'a> {
 
                         parsed_something = true;
                     } else if try!(self.eat(&token::Eq) ){
-                        // let ty = try!(self.parse_ty_nopanic());
+                        // let ty = try!(self.parse_ty());
                         let hi = self.last_span.hi;
                         let span = mk_sp(lo, hi);
                         // where_clause.predicates.push(
@@ -4454,7 +4432,7 @@ impl<'a> Parser<'a> {
             try!(self.expect(&token::Colon));
             let typ = try!(self.parse_ty_sum());
             try!(self.expect(&token::Eq));
-            let expr = try!(self.parse_expr_nopanic());
+            let expr = try!(self.parse_expr());
             try!(self.commit_expr_expecting(&expr, token::Semi));
             (name, ConstImplItem(typ, expr))
         } else {
@@ -4686,18 +4664,23 @@ impl<'a> Parser<'a> {
                 VariantData::Unit(ast::DUMMY_NODE_ID)
             } else {
                 // If we see: `struct Foo<T> where T: Copy { ... }`
-                VariantData::Struct(try!(self.parse_record_struct_body()), ast::DUMMY_NODE_ID)
+                VariantData::Struct(try!(self.parse_record_struct_body(ParsePub::Yes)),
+                                    ast::DUMMY_NODE_ID)
             }
         // No `where` so: `struct Foo<T>;`
         } else if try!(self.eat(&token::Semi) ){
             VariantData::Unit(ast::DUMMY_NODE_ID)
         // Record-style struct definition
         } else if self.token == token::OpenDelim(token::Brace) {
-            VariantData::Struct(try!(self.parse_record_struct_body()), ast::DUMMY_NODE_ID)
+            VariantData::Struct(try!(self.parse_record_struct_body(ParsePub::Yes)),
+                                ast::DUMMY_NODE_ID)
         // Tuple-style struct definition with optional where-clause.
         } else if self.token == token::OpenDelim(token::Paren) {
-            VariantData::Tuple(try!(self.parse_tuple_struct_body(&mut generics)),
-                               ast::DUMMY_NODE_ID)
+            let body = VariantData::Tuple(try!(self.parse_tuple_struct_body(ParsePub::Yes)),
+                                          ast::DUMMY_NODE_ID);
+            generics.where_clause = try!(self.parse_where_clause());
+            try!(self.expect(&token::Semi));
+            body
         } else {
             let token_str = self.this_token_to_string();
             return Err(self.fatal(&format!("expected `where`, `{{`, `(`, or `;` after struct \
@@ -4707,11 +4690,11 @@ impl<'a> Parser<'a> {
         Ok((class_name, ItemStruct(vdata, generics), None))
     }
 
-    pub fn parse_record_struct_body(&mut self) -> PResult<Vec<StructField>> {
+    pub fn parse_record_struct_body(&mut self, parse_pub: ParsePub) -> PResult<Vec<StructField>> {
         let mut fields = Vec::new();
         if try!(self.eat(&token::OpenDelim(token::Brace)) ){
             while self.token != token::CloseDelim(token::Brace) {
-                fields.push(try!(self.parse_struct_decl_field(true)));
+                fields.push(try!(self.parse_struct_decl_field(parse_pub)));
             }
 
             try!(self.bump());
@@ -4725,9 +4708,7 @@ impl<'a> Parser<'a> {
         Ok(fields)
     }
 
-    pub fn parse_tuple_struct_body(&mut self,
-                                   generics: &mut ast::Generics)
-                                   -> PResult<Vec<StructField>> {
+    pub fn parse_tuple_struct_body(&mut self, parse_pub: ParsePub) -> PResult<Vec<StructField>> {
         // This is the case where we find `struct Foo<T>(T) where T: Copy;`
         // Unit like structs are handled in parse_item_struct function
         let fields = try!(self.parse_unspanned_seq(
@@ -4738,7 +4719,13 @@ impl<'a> Parser<'a> {
                 let attrs = try!(p.parse_outer_attributes());
                 let lo = p.span.lo;
                 let struct_field_ = ast::StructField_ {
-                    kind: UnnamedField(try!(p.parse_visibility())),
+                    kind: UnnamedField (
+                        if parse_pub == ParsePub::Yes {
+                            try!(p.parse_visibility())
+                        } else {
+                            Inherited
+                        }
+                    ),
                     id: ast::DUMMY_NODE_ID,
                     ty: try!(p.parse_ty_sum()),
                     attrs: attrs,
@@ -4746,8 +4733,6 @@ impl<'a> Parser<'a> {
                 Ok(spanned(lo, p.span.hi, struct_field_))
             }));
 
-        generics.where_clause = try!(self.parse_where_clause());
-        try!(self.expect(&token::Semi));
         Ok(fields)
     }
 
@@ -4775,12 +4760,12 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse an element of a struct definition
-    fn parse_struct_decl_field(&mut self, allow_pub: bool) -> PResult<StructField> {
+    fn parse_struct_decl_field(&mut self, parse_pub: ParsePub) -> PResult<StructField> {
 
         let attrs = try!(self.parse_outer_attributes());
 
         if try!(self.eat_keyword(keywords::Pub) ){
-            if !allow_pub {
+            if parse_pub == ParsePub::No {
                 let span = self.last_span;
                 self.span_err(span, "`pub` is not allowed here");
             }
@@ -4799,7 +4784,7 @@ impl<'a> Parser<'a> {
     /// Given a termination token, parse all of the items in a module
     fn parse_mod_items(&mut self, term: &token::Token, inner_lo: BytePos) -> PResult<Mod> {
         let mut items = vec![];
-        while let Some(item) = try!(self.parse_item_nopanic()) {
+        while let Some(item) = try!(self.parse_item()) {
             items.push(item);
         }
 
@@ -4825,7 +4810,7 @@ impl<'a> Parser<'a> {
         try!(self.expect(&token::Colon));
         let ty = try!(self.parse_ty_sum());
         try!(self.expect(&token::Eq));
-        let e = try!(self.parse_expr_nopanic());
+        let e = try!(self.parse_expr());
         try!(self.commit_expr_expecting(&*e, token::Semi));
         let item = match m {
             Some(m) => ItemStatic(ty, m, e),
@@ -5133,18 +5118,6 @@ impl<'a> Parser<'a> {
         Ok((ident, ItemTy(ty, tps), None))
     }
 
-    /// Parse a structure-like enum variant definition
-    /// this should probably be renamed or refactored...
-    fn parse_struct_def(&mut self) -> PResult<VariantData> {
-        let mut fields: Vec<StructField> = Vec::new();
-        while self.token != token::CloseDelim(token::Brace) {
-            fields.push(try!(self.parse_struct_decl_field(false)));
-        }
-        try!(self.bump());
-
-        Ok(VariantData::Struct(fields, ast::DUMMY_NODE_ID))
-    }
-
     /// Parse the part of an "enum" decl following the '{'
     fn parse_enum_def(&mut self, _generics: &ast::Generics) -> PResult<EnumDef> {
         let mut variants = Vec::new();
@@ -5157,34 +5130,21 @@ impl<'a> Parser<'a> {
             let struct_def;
             let mut disr_expr = None;
             let ident = try!(self.parse_ident());
-            if try!(self.eat(&token::OpenDelim(token::Brace)) ){
+            if self.check(&token::OpenDelim(token::Brace)) {
                 // Parse a struct variant.
                 all_nullary = false;
-                struct_def = try!(self.parse_struct_def());
+                struct_def = VariantData::Struct(try!(self.parse_record_struct_body(ParsePub::No)),
+                                                 ast::DUMMY_NODE_ID);
             } else if self.check(&token::OpenDelim(token::Paren)) {
                 all_nullary = false;
-                let arg_tys = try!(self.parse_enum_variant_seq(
-                    &token::OpenDelim(token::Paren),
-                    &token::CloseDelim(token::Paren),
-                    seq_sep_trailing_allowed(token::Comma),
-                    |p| p.parse_ty_sum()
-                ));
-                let mut fields = Vec::new();
-                for ty in arg_tys {
-                    fields.push(Spanned { span: ty.span, node: ast::StructField_ {
-                        ty: ty,
-                        kind: ast::UnnamedField(ast::Inherited),
-                        attrs: Vec::new(),
-                        id: ast::DUMMY_NODE_ID,
-                    }});
-                }
-                struct_def = ast::VariantData::Tuple(fields, ast::DUMMY_NODE_ID);
+                struct_def = VariantData::Tuple(try!(self.parse_tuple_struct_body(ParsePub::No)),
+                                                ast::DUMMY_NODE_ID);
             } else if try!(self.eat(&token::Eq) ){
-                disr_expr = Some(try!(self.parse_expr_nopanic()));
+                disr_expr = Some(try!(self.parse_expr()));
                 any_disr = disr_expr.as_ref().map(|expr| expr.span);
-                struct_def = ast::VariantData::Unit(ast::DUMMY_NODE_ID);
+                struct_def = VariantData::Unit(ast::DUMMY_NODE_ID);
             } else {
-                struct_def = ast::VariantData::Unit(ast::DUMMY_NODE_ID);
+                struct_def = VariantData::Unit(ast::DUMMY_NODE_ID);
             }
 
             let vr = ast::Variant_ {
@@ -5612,7 +5572,7 @@ impl<'a> Parser<'a> {
         Ok(None)
     }
 
-    pub fn parse_item_nopanic(&mut self) -> PResult<Option<P<Item>>> {
+    pub fn parse_item(&mut self) -> PResult<Option<P<Item>>> {
         let attrs = try!(self.parse_outer_attributes());
         self.parse_item_(attrs, true)
     }

@@ -8,11 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use ast::{self, TokenTree};
+use ast::{self, Arg, Arm, Block, Expr, Item, Pat, Path, Stmt, TokenTree, Ty};
 use codemap::Span;
 use ext::base::ExtCtxt;
 use ext::base;
 use ext::build::AstBuilder;
+use parse::parser::{Parser, PathParsingMode};
 use parse::token::*;
 use parse::token;
 use ptr::P;
@@ -158,6 +159,18 @@ pub mod rt {
         }
     }
 
+    impl ToTokens for ast::Arg {
+        fn to_tokens(&self, _cx: &ExtCtxt) -> Vec<TokenTree> {
+            vec![TokenTree::Token(DUMMY_SP, token::Interpolated(token::NtArg(self.clone())))]
+        }
+    }
+
+    impl ToTokens for P<ast::Block> {
+        fn to_tokens(&self, _cx: &ExtCtxt) -> Vec<TokenTree> {
+            vec![TokenTree::Token(DUMMY_SP, token::Interpolated(token::NtBlock(self.clone())))]
+        }
+    }
+
     macro_rules! impl_to_tokens_slice {
         ($t: ty, $sep: expr) => {
             impl ToTokens for [$t] {
@@ -177,6 +190,7 @@ pub mod rt {
 
     impl_to_tokens_slice! { ast::Ty, [TokenTree::Token(DUMMY_SP, token::Comma)] }
     impl_to_tokens_slice! { P<ast::Item>, [] }
+    impl_to_tokens_slice! { ast::Arg, [TokenTree::Token(DUMMY_SP, token::Comma)] }
 
     impl ToTokens for P<ast::MetaItem> {
         fn to_tokens(&self, _cx: &ExtCtxt) -> Vec<TokenTree> {
@@ -316,6 +330,52 @@ pub mod rt {
     }
 }
 
+// These panicking parsing functions are used by the quote_*!() syntax extensions,
+// but shouldn't be used otherwise.
+pub fn parse_expr_panic(parser: &mut Parser) -> P<Expr> {
+    panictry!(parser.parse_expr())
+}
+
+pub fn parse_item_panic(parser: &mut Parser) -> Option<P<Item>> {
+    panictry!(parser.parse_item())
+}
+
+pub fn parse_pat_panic(parser: &mut Parser) -> P<Pat> {
+    panictry!(parser.parse_pat())
+}
+
+pub fn parse_arm_panic(parser: &mut Parser) -> Arm {
+    panictry!(parser.parse_arm())
+}
+
+pub fn parse_ty_panic(parser: &mut Parser) -> P<Ty> {
+    panictry!(parser.parse_ty())
+}
+
+pub fn parse_stmt_panic(parser: &mut Parser) -> Option<P<Stmt>> {
+    panictry!(parser.parse_stmt())
+}
+
+pub fn parse_attribute_panic(parser: &mut Parser, permit_inner: bool) -> ast::Attribute {
+    panictry!(parser.parse_attribute(permit_inner))
+}
+
+pub fn parse_arg_panic(parser: &mut Parser) -> Arg {
+    panictry!(parser.parse_arg())
+}
+
+pub fn parse_block_panic(parser: &mut Parser) -> P<Block> {
+    panictry!(parser.parse_block())
+}
+
+pub fn parse_meta_item_panic(parser: &mut Parser) -> P<ast::MetaItem> {
+    panictry!(parser.parse_meta_item())
+}
+
+pub fn parse_path_panic(parser: &mut Parser, mode: PathParsingMode) -> ast::Path {
+    panictry!(parser.parse_path(mode))
+}
+
 pub fn expand_quote_tokens<'cx>(cx: &'cx mut ExtCtxt,
                                 sp: Span,
                                 tts: &[TokenTree])
@@ -383,6 +443,39 @@ pub fn expand_quote_attr(cx: &mut ExtCtxt,
     base::MacEager::expr(expanded)
 }
 
+pub fn expand_quote_arg(cx: &mut ExtCtxt,
+                        sp: Span,
+                        tts: &[TokenTree])
+                        -> Box<base::MacResult+'static> {
+    let expanded = expand_parse_call(cx, sp, "parse_arg_panic", vec!(), tts);
+    base::MacEager::expr(expanded)
+}
+
+pub fn expand_quote_block(cx: &mut ExtCtxt,
+                        sp: Span,
+                        tts: &[TokenTree])
+                        -> Box<base::MacResult+'static> {
+    let expanded = expand_parse_call(cx, sp, "parse_block_panic", vec!(), tts);
+    base::MacEager::expr(expanded)
+}
+
+pub fn expand_quote_meta_item(cx: &mut ExtCtxt,
+                        sp: Span,
+                        tts: &[TokenTree])
+                        -> Box<base::MacResult+'static> {
+    let expanded = expand_parse_call(cx, sp, "parse_meta_item_panic", vec!(), tts);
+    base::MacEager::expr(expanded)
+}
+
+pub fn expand_quote_path(cx: &mut ExtCtxt,
+                        sp: Span,
+                        tts: &[TokenTree])
+                        -> Box<base::MacResult+'static> {
+    let mode = mk_parser_path(cx, sp, "LifetimeAndTypesWithoutColons");
+    let expanded = expand_parse_call(cx, sp, "parse_path_panic", vec!(mode), tts);
+    base::MacEager::expr(expanded)
+}
+
 pub fn expand_quote_matcher(cx: &mut ExtCtxt,
                             sp: Span,
                             tts: &[TokenTree])
@@ -437,6 +530,11 @@ fn mk_ast_path(cx: &ExtCtxt, sp: Span, name: &str) -> P<ast::Expr> {
 
 fn mk_token_path(cx: &ExtCtxt, sp: Span, name: &str) -> P<ast::Expr> {
     let idents = vec!(id_ext("syntax"), id_ext("parse"), id_ext("token"), id_ext(name));
+    cx.expr_path(cx.path_global(sp, idents))
+}
+
+fn mk_parser_path(cx: &ExtCtxt, sp: Span, name: &str) -> P<ast::Expr> {
+    let idents = vec!(id_ext("syntax"), id_ext("parse"), id_ext("parser"), id_ext(name));
     cx.expr_path(cx.path_global(sp, idents))
 }
 
@@ -701,7 +799,7 @@ fn parse_arguments_to_quote(cx: &ExtCtxt, tts: &[TokenTree])
     let mut p = cx.new_parser_from_tts(tts);
     p.quote_depth += 1;
 
-    let cx_expr = panictry!(p.parse_expr_nopanic());
+    let cx_expr = panictry!(p.parse_expr());
     if !panictry!(p.eat(&token::Comma)) {
         panic!(p.fatal("expected token `,`"));
     }
@@ -813,8 +911,10 @@ fn expand_parse_call(cx: &ExtCtxt,
                      cx.expr_ident(sp, id_ext("new_parser_from_tts")),
                      vec!(parse_sess_call(), cfg_call(), tts_expr));
 
-    let expr = cx.expr_method_call(sp, new_parser_call, id_ext(parse_method),
-                                   arg_exprs);
+    let path = vec![id_ext("syntax"), id_ext("ext"), id_ext("quote"), id_ext(parse_method)];
+    let mut args = vec![cx.expr_mut_addr_of(sp, new_parser_call)];
+    args.extend(arg_exprs);
+    let expr = cx.expr_call_global(sp, path, args);
 
     if parse_method == "parse_attribute" {
         expand_wrapper(cx, sp, cx_expr, expr, &[&["syntax", "ext", "quote", "rt"],
