@@ -27,7 +27,7 @@ use util::small_vector::SmallVector;
 use ext::mtwt;
 use fold::Folder;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::default::Default;
 
@@ -858,7 +858,10 @@ pub fn get_exprs_from_tts(cx: &mut ExtCtxt,
 ///
 /// This environment maps Names to SyntaxExtensions.
 pub struct SyntaxEnv {
-    chain: Vec<MapChainFrame> ,
+    chain: Vec<MapChainFrame>,
+    /// All bang-style macro/extension names
+    /// encountered so far; to be used for diagnostics in resolve
+    pub names: HashSet<Name>,
 }
 
 // impl question: how to implement it? Initially, the
@@ -878,7 +881,7 @@ struct MapChainFrame {
 
 impl SyntaxEnv {
     fn new() -> SyntaxEnv {
-        let mut map = SyntaxEnv { chain: Vec::new() };
+        let mut map = SyntaxEnv { chain: Vec::new() , names: HashSet::new()};
         map.push_frame();
         map
     }
@@ -915,6 +918,9 @@ impl SyntaxEnv {
     }
 
     pub fn insert(&mut self, k: Name, v: SyntaxExtension) {
+        if let NormalTT(..) = v {
+            self.names.insert(k);
+        }
         self.find_escape_frame().map.insert(k, Rc::new(v));
     }
 

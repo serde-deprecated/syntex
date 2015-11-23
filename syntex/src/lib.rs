@@ -139,7 +139,7 @@ impl Registry {
         let mut ecfg = expand::ExpansionConfig::default(crate_name.to_string());
         ecfg.features = Some(&features);
 
-        let krate = expand::expand_crate(
+        let (krate, _) = expand::expand_crate(
             &sess,
             ecfg,
             self.macros,
