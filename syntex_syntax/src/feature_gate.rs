@@ -132,7 +132,7 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status
     ("unmarked_api", "1.0.0", None, Active),
 
     // Allows using #![no_std]
-    ("no_std", "1.0.0", Some(27701), Active),
+    ("no_std", "1.0.0", None, Accepted),
 
     // Allows using #![no_core]
     ("no_core", "1.3.0", Some(29639), Active),
@@ -179,6 +179,9 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status
     // Allows the definition of `const fn` functions.
     ("const_fn", "1.2.0", Some(24111), Active),
 
+    // Allows indexing into constant arrays.
+    ("const_indexing", "1.4.0", Some(29947), Active),
+
     // Allows using #[prelude_import] on glob `use` items.
     //
     // rustc internal
@@ -224,6 +227,9 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status
 
     // Allows cfg(target_vendor = "...").
     ("cfg_target_vendor", "1.5.0", Some(29718), Active),
+
+    // Allow attributes on expressions and non-item statements
+    ("stmt_expr_attributes", "1.6.0", Some(15701), Active),
 ];
 // (changing above list without updating src/doc/reference.md makes @cmr sad)
 
@@ -277,13 +283,10 @@ pub const KNOWN_ATTRIBUTES: &'static [(&'static str, AttributeType, AttributeGat
     // Not used any more, but we can't feature gate it
     ("no_stack_check", Normal, Ungated),
 
-    ("staged_api", CrateLevel, Gated("staged_api",
-                                     "staged_api is for use by rustc only")),
     ("plugin", CrateLevel, Gated("plugin",
                                  "compiler plugins are experimental \
                                   and possibly buggy")),
-    ("no_std", CrateLevel, Gated("no_std",
-                                 "no_std is experimental")),
+    ("no_std", CrateLevel, Ungated),
     ("no_core", CrateLevel, Gated("no_core",
                                   "no_core is experimental")),
     ("lang", Normal, Gated("lang_items",
@@ -370,7 +373,7 @@ pub const KNOWN_ATTRIBUTES: &'static [(&'static str, AttributeType, AttributeGat
 
     // FIXME: #14407 these are only looked at on-demand so we can't
     // guarantee they'll have already been checked
-    ("deprecated", Whitelisted, Ungated),
+    ("rustc_deprecated", Whitelisted, Ungated),
     ("must_use", Whitelisted, Ungated),
     ("stable", Whitelisted, Ungated),
     ("unstable", Whitelisted, Ungated),
@@ -407,21 +410,53 @@ const GATED_CFGS: &'static [(&'static str, &'static str, fn(&Features) -> bool)]
 ];
 
 #[derive(Debug, Eq, PartialEq)]
+pub enum GatedCfgAttr {
+    GatedCfg(GatedCfg),
+    GatedAttr(Span),
+}
+
+#[derive(Debug, Eq, PartialEq)]
 pub struct GatedCfg {
     span: Span,
     index: usize,
 }
 
-impl Ord for GatedCfg {
-    fn cmp(&self, other: &GatedCfg) -> cmp::Ordering {
-        (self.span.lo.0, self.span.hi.0, self.index)
-            .cmp(&(other.span.lo.0, other.span.hi.0, other.index))
+impl Ord for GatedCfgAttr {
+    fn cmp(&self, other: &GatedCfgAttr) -> cmp::Ordering {
+        let to_tup = |s: &GatedCfgAttr| match *s {
+            GatedCfgAttr::GatedCfg(ref gated_cfg) => {
+                (gated_cfg.span.lo.0, gated_cfg.span.hi.0, gated_cfg.index)
+            }
+            GatedCfgAttr::GatedAttr(ref span) => {
+                (span.lo.0, span.hi.0, GATED_CFGS.len())
+            }
+        };
+        to_tup(self).cmp(&to_tup(other))
     }
 }
 
-impl PartialOrd for GatedCfg {
-    fn partial_cmp(&self, other: &GatedCfg) -> Option<cmp::Ordering> {
+impl PartialOrd for GatedCfgAttr {
+    fn partial_cmp(&self, other: &GatedCfgAttr) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl GatedCfgAttr {
+    pub fn check_and_emit(&self, diagnostic: &SpanHandler, features: &Features) {
+        match *self {
+            GatedCfgAttr::GatedCfg(ref cfg) => {
+                cfg.check_and_emit(diagnostic, features);
+            }
+            GatedCfgAttr::GatedAttr(span) => {
+                if !features.stmt_expr_attributes {
+                    emit_feature_err(diagnostic,
+                                     "stmt_expr_attributes",
+                                     span,
+                                     GateIssue::Language,
+                                     EXPLAIN_STMT_ATTR_SYNTAX);
+                }
+            }
+        }
     }
 }
 
@@ -437,7 +472,7 @@ impl GatedCfg {
                       }
                   })
     }
-    pub fn check_and_emit(&self, diagnostic: &SpanHandler, features: &Features) {
+    fn check_and_emit(&self, diagnostic: &SpanHandler, features: &Features) {
         let (cfg, feature, has_feature) = GATED_CFGS[self.index];
         if !has_feature(features) {
             let explain = format!("`cfg({})` is experimental and subject to change", cfg);
@@ -494,6 +529,7 @@ pub struct Features {
     /// #![feature] attrs for non-language (library) features
     pub declared_lib_features: Vec<(InternedString, Span)>,
     pub const_fn: bool,
+    pub const_indexing: bool,
     pub static_recursion: bool,
     pub default_type_parameter_fallback: bool,
     pub type_macros: bool,
@@ -501,6 +537,8 @@ pub struct Features {
     pub cfg_target_vendor: bool,
     pub augmented_assignments: bool,
     pub braced_empty_structs: bool,
+    pub staged_api: bool,
+    pub stmt_expr_attributes: bool,
 }
 
 impl Features {
@@ -525,6 +563,7 @@ impl Features {
             declared_stable_lang_features: Vec::new(),
             declared_lib_features: Vec::new(),
             const_fn: false,
+            const_indexing: false,
             static_recursion: false,
             default_type_parameter_fallback: false,
             type_macros: false,
@@ -532,6 +571,8 @@ impl Features {
             cfg_target_vendor: false,
             augmented_assignments: false,
             braced_empty_structs: false,
+            staged_api: false,
+            stmt_expr_attributes: false,
         }
     }
 }
@@ -544,6 +585,9 @@ const EXPLAIN_PLACEMENT_IN: &'static str =
 
 const EXPLAIN_PUSHPOP_UNSAFE: &'static str =
     "push/pop_unsafe macros are experimental and subject to change.";
+
+const EXPLAIN_STMT_ATTR_SYNTAX: &'static str =
+    "attributes on non-item statements and expressions are experimental.";
 
 pub fn check_for_box_syntax(f: Option<&Features>, diag: &SpanHandler, span: Span) {
     if let Some(&Features { allow_box: true, .. }) = f {
@@ -1097,6 +1141,7 @@ fn check_crate_inner<F>(cm: &CodeMap, span_handler: &SpanHandler,
         declared_stable_lang_features: accepted_features,
         declared_lib_features: unknown_features,
         const_fn: cx.has_feature("const_fn"),
+        const_indexing: cx.has_feature("const_indexing"),
         static_recursion: cx.has_feature("static_recursion"),
         default_type_parameter_fallback: cx.has_feature("default_type_parameter_fallback"),
         type_macros: cx.has_feature("type_macros"),
@@ -1104,6 +1149,8 @@ fn check_crate_inner<F>(cm: &CodeMap, span_handler: &SpanHandler,
         cfg_target_vendor: cx.has_feature("cfg_target_vendor"),
         augmented_assignments: cx.has_feature("augmented_assignments"),
         braced_empty_structs: cx.has_feature("braced_empty_structs"),
+        staged_api: cx.has_feature("staged_api"),
+        stmt_expr_attributes: cx.has_feature("stmt_expr_attributes"),
     }
 }
 

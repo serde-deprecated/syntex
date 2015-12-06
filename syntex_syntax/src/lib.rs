@@ -18,7 +18,7 @@
 #![cfg_attr(stage0, feature(custom_attribute))]
 #![crate_name = "syntax"]
 #![unstable(feature = "rustc_private", issue = "27812")]
-#![staged_api]
+#![cfg_attr(stage0, staged_api)]
 #![crate_type = "dylib"]
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
@@ -26,8 +26,9 @@
        html_root_url = "https://doc.rust-lang.org/nightly/",
        test(attr(deny(warnings))))]
 
+#![cfg_attr(stage0, feature(rustc_attrs))]
+#![cfg_attr(stage0, allow(unused_attributes))]
 #![feature(associated_consts)]
-#![feature(drain)]
 #![feature(filling_drop)]
 #![feature(libc)]
 #![feature(rustc_private)]
@@ -35,7 +36,6 @@
 #![feature(str_char)]
 #![feature(str_escape)]
 #![feature(unicode)]
-#![feature(vec_push_all)]
 
 extern crate fmt_macros;
 extern crate serialize;
@@ -63,11 +63,13 @@ macro_rules! panictry {
 
 pub mod util {
     pub mod interner;
+    pub mod lev_distance;
     pub mod node_count;
     pub mod parser;
     #[cfg(test)]
     pub mod parser_testing;
     pub mod small_vector;
+    pub mod move_map;
 }
 
 pub mod diagnostics {

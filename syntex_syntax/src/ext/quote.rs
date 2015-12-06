@@ -178,7 +178,7 @@ pub mod rt {
                     let mut v = vec![];
                     for (i, x) in self.iter().enumerate() {
                         if i > 0 {
-                            v.push_all(&$sep);
+                            v.extend_from_slice(&$sep);
                         }
                         v.extend(x.to_tokens(cx));
                     }
@@ -242,6 +242,7 @@ pub mod rt {
                 id: ast::DUMMY_NODE_ID,
                 node: ast::ExprLit(P(self.clone())),
                 span: DUMMY_SP,
+                attrs: None,
             }).to_tokens(cx)
         }
     }
