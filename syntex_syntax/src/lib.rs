@@ -47,11 +47,13 @@ macro_rules! panictry {
 
 pub mod util {
     pub mod interner;
+    pub mod lev_distance;
     pub mod node_count;
     pub mod parser;
     #[cfg(test)]
     pub mod parser_testing;
     pub mod small_vector;
+    pub mod move_map;
 }
 
 pub mod diagnostics {
