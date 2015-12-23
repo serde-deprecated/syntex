@@ -23,7 +23,6 @@ use ast;
 use attr::{ThinAttributes, ThinAttributesExt};
 use ast_util;
 use codemap::{respan, Span, Spanned};
-use owned_slice::OwnedSlice;
 use parse::token;
 use ptr::P;
 use util::small_vector::SmallVector;
@@ -233,7 +232,7 @@ pub trait Folder : Sized {
         noop_fold_ty_param(tp, self)
     }
 
-    fn fold_ty_params(&mut self, tps: OwnedSlice<TyParam>) -> OwnedSlice<TyParam> {
+    fn fold_ty_params(&mut self, tps: P<[TyParam]>) -> P<[TyParam]> {
         noop_fold_ty_params(tps, self)
     }
 
@@ -257,13 +256,13 @@ pub trait Folder : Sized {
         noop_fold_opt_lifetime(o_lt, self)
     }
 
-    fn fold_opt_bounds(&mut self, b: Option<OwnedSlice<TyParamBound>>)
-                       -> Option<OwnedSlice<TyParamBound>> {
+    fn fold_opt_bounds(&mut self, b: Option<TyParamBounds>)
+                       -> Option<TyParamBounds> {
         noop_fold_opt_bounds(b, self)
     }
 
-    fn fold_bounds(&mut self, b: OwnedSlice<TyParamBound>)
-                       -> OwnedSlice<TyParamBound> {
+    fn fold_bounds(&mut self, b: TyParamBounds)
+                       -> TyParamBounds {
         noop_fold_bounds(b, self)
     }
 
@@ -663,7 +662,8 @@ pub fn noop_fold_interpolated<T: Folder>(nt: token::Nonterminal, fld: &mut T)
         token::NtExpr(expr) => token::NtExpr(fld.fold_expr(expr)),
         token::NtTy(ty) => token::NtTy(fld.fold_ty(ty)),
         token::NtIdent(id, is_mod_name) =>
-            token::NtIdent(Box::new(fld.fold_ident(*id)), is_mod_name),
+            token::NtIdent(Box::new(Spanned::<Ident>{node: fld.fold_ident(id.node), .. *id}),
+                           is_mod_name),
         token::NtMeta(meta_item) => token::NtMeta(fld.fold_meta_item(meta_item)),
         token::NtPath(path) => token::NtPath(Box::new(fld.fold_path(*path))),
         token::NtTT(tt) => token::NtTT(P(fld.fold_tt(&tt))),
@@ -713,8 +713,8 @@ pub fn noop_fold_ty_param<T: Folder>(tp: TyParam, fld: &mut T) -> TyParam {
     }
 }
 
-pub fn noop_fold_ty_params<T: Folder>(tps: OwnedSlice<TyParam>, fld: &mut T)
-                                      -> OwnedSlice<TyParam> {
+pub fn noop_fold_ty_params<T: Folder>(tps: P<[TyParam]>, fld: &mut T)
+                                      -> P<[TyParam]> {
     tps.move_map(|tp| fld.fold_ty_param(tp))
 }
 
@@ -870,8 +870,8 @@ pub fn noop_fold_mt<T: Folder>(MutTy {ty, mutbl}: MutTy, folder: &mut T) -> MutT
     }
 }
 
-pub fn noop_fold_opt_bounds<T: Folder>(b: Option<OwnedSlice<TyParamBound>>, folder: &mut T)
-                                       -> Option<OwnedSlice<TyParamBound>> {
+pub fn noop_fold_opt_bounds<T: Folder>(b: Option<TyParamBounds>, folder: &mut T)
+                                       -> Option<TyParamBounds> {
     b.map(|bounds| folder.fold_bounds(bounds))
 }
 
@@ -1203,6 +1203,9 @@ pub fn noop_fold_expr<T: Folder>(Expr {id, node, span, attrs}: Expr, folder: &mu
             ExprCast(expr, ty) => {
                 ExprCast(folder.fold_expr(expr), folder.fold_ty(ty))
             }
+            ExprType(expr, ty) => {
+                ExprType(folder.fold_expr(expr), folder.fold_ty(ty))
+            }
             ExprAddrOf(m, ohs) => ExprAddrOf(m, folder.fold_expr(ohs)),
             ExprIf(cond, tr, fl) => {
                 ExprIf(folder.fold_expr(cond),
@@ -1303,8 +1306,13 @@ pub fn noop_fold_expr<T: Folder>(Expr {id, node, span, attrs}: Expr, folder: &mu
                 inputs: inputs.move_map(|(c, input)| {
                     (c, folder.fold_expr(input))
                 }),
-                outputs: outputs.move_map(|(c, out, is_rw)| {
-                    (c, folder.fold_expr(out), is_rw)
+                outputs: outputs.move_map(|out| {
+                    InlineAsmOutput {
+                        constraint: out.constraint,
+                        expr: folder.fold_expr(out.expr),
+                        is_rw: out.is_rw,
+                        is_indirect: out.is_indirect,
+                    }
                 }),
                 asm: asm,
                 asm_str_style: asm_str_style,
