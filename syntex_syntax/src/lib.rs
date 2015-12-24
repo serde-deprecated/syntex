@@ -37,7 +37,7 @@ extern crate unicode_xid;
 macro_rules! panictry {
     ($e:expr) => ({
         use std::result::Result::{Ok, Err};
-        use diagnostic::FatalError;
+        use errors::FatalError;
         match $e {
             Ok(e) => e,
             Err(FatalError) => panic!(FatalError)
@@ -63,6 +63,8 @@ pub mod diagnostics {
     pub mod metadata;
 }
 
+pub mod errors;
+
 pub mod syntax {
     pub use ext;
     pub use parse;
@@ -75,7 +77,6 @@ pub mod ast_util;
 pub mod attr;
 pub mod codemap;
 pub mod config;
-pub mod diagnostic;
 pub mod entry;
 pub mod feature_gate;
 pub mod fold;
@@ -94,20 +95,12 @@ pub mod print {
 }
 
 pub mod ext {
-    pub mod asm;
     pub mod base;
     pub mod build;
-    pub mod cfg;
-    pub mod concat;
-    pub mod concat_idents;
-    pub mod deriving;
-    pub mod env;
     pub mod expand;
-    pub mod log_syntax;
     pub mod mtwt;
     pub mod quote;
     pub mod source_util;
-    pub mod trace_macros;
 
     pub mod tt {
         pub mod transcribe;

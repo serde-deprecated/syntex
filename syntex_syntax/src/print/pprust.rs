@@ -15,13 +15,11 @@ use ast::{self, TokenTree};
 use ast::{RegionTyParamBound, TraitTyParamBound, TraitBoundModifier};
 use ast::Attribute;
 use attr::ThinAttributesExt;
-use ast_util;
 use util::parser::AssocOp;
 use attr;
-use owned_slice::OwnedSlice;
 use attr::{AttrMetaMethods, AttributeMethods};
 use codemap::{self, CodeMap, BytePos};
-use diagnostic;
+use errors;
 use parse::token::{self, BinOpToken, Token, InternedString};
 use parse::lexer::comments;
 use parse;
@@ -101,7 +99,7 @@ pub const DEFAULT_COLUMNS: usize = 78;
 /// it can scan the input text for comments and literals to
 /// copy forward.
 pub fn print_crate<'a>(cm: &'a CodeMap,
-                       span_diagnostic: &diagnostic::SpanHandler,
+                       span_diagnostic: &errors::Handler,
                        krate: &ast::Crate,
                        filename: String,
                        input: &mut Read,
@@ -141,7 +139,7 @@ pub fn print_crate<'a>(cm: &'a CodeMap,
 
 impl<'a> State<'a> {
     pub fn new_from_input(cm: &'a CodeMap,
-                          span_diagnostic: &diagnostic::SpanHandler,
+                          span_diagnostic: &errors::Handler,
                           filename: String,
                           input: &mut Read,
                           out: Box<Write+'a>,
@@ -297,7 +295,7 @@ pub fn token_to_string(tok: &Token) -> String {
             token::NtBlock(ref e)       => block_to_string(&**e),
             token::NtStmt(ref e)        => stmt_to_string(&**e),
             token::NtPat(ref e)         => pat_to_string(&**e),
-            token::NtIdent(ref e, _)    => ident_to_string(**e),
+            token::NtIdent(ref e, _)    => ident_to_string(e.node),
             token::NtTT(ref e)          => tt_to_string(&**e),
             token::NtArm(ref e)         => arm_to_string(&*e),
             token::NtImplItem(ref e)    => impl_item_to_string(&**e),
@@ -451,7 +449,7 @@ fn needs_parentheses(expr: &ast::Expr) -> bool {
         ast::ExprAssign(..) | ast::ExprBinary(..) |
         ast::ExprClosure(..) |
         ast::ExprAssignOp(..) | ast::ExprCast(..) |
-        ast::ExprInPlace(..) => true,
+        ast::ExprInPlace(..) | ast::ExprType(..) => true,
         _ => false,
     }
 }
@@ -654,15 +652,15 @@ pub trait PrintState<'a> {
                 match t {
                     ast::SignedIntLit(st, ast::Plus) => {
                         word(self.writer(),
-                             &ast_util::int_val_to_string(st, i as i64))
+                             &st.val_to_string(i as i64))
                     }
                     ast::SignedIntLit(st, ast::Minus) => {
-                        let istr = ast_util::int_val_to_string(st, -(i as i64));
+                        let istr = st.val_to_string(-(i as i64));
                         word(self.writer(),
                              &format!("-{}", istr))
                     }
                     ast::UnsignedIntLit(ut) => {
-                        word(self.writer(), &ast_util::uint_val_to_string(ut, i))
+                        word(self.writer(), &ut.val_to_string(i))
                     }
                     ast::UnsuffixedIntLit(ast::Plus) => {
                         word(self.writer(), &format!("{}", i))
@@ -677,7 +675,7 @@ pub trait PrintState<'a> {
                      &format!(
                          "{}{}",
                          &f,
-                         &ast_util::float_ty_to_string(t)))
+                         t.ty_to_string()))
             }
             ast::LitFloatUnsuffixed(ref f) => word(self.writer(), &f[..]),
             ast::LitBool(val) => {
@@ -1007,7 +1005,7 @@ impl<'a> State<'a> {
             ast::TyBareFn(ref f) => {
                 let generics = ast::Generics {
                     lifetimes: f.lifetimes.clone(),
-                    ty_params: OwnedSlice::empty(),
+                    ty_params: P::empty(),
                     where_clause: ast::WhereClause {
                         id: ast::DUMMY_NODE_ID,
                         predicates: Vec::new(),
@@ -1539,7 +1537,7 @@ impl<'a> State<'a> {
 
     pub fn print_variant(&mut self, v: &ast::Variant) -> io::Result<()> {
         try!(self.head(""));
-        let generics = ast_util::empty_generics();
+        let generics = ast::Generics::default();
         try!(self.print_struct(&v.node.data, &generics, v.node.name, v.span, false));
         match v.node.disr_expr {
             Some(ref d) => {
@@ -1959,7 +1957,7 @@ impl<'a> State<'a> {
             try!(self.print_expr(lhs));
         }
         try!(space(&mut self.s));
-        try!(self.word_space(ast_util::binop_to_string(op.node)));
+        try!(self.word_space(op.node.to_string()));
         if self.check_expr_bin_needs_paren(rhs, op) {
             self.print_expr_maybe_paren(rhs)
         } else {
@@ -1970,7 +1968,7 @@ impl<'a> State<'a> {
     fn print_expr_unary(&mut self,
                         op: ast::UnOp,
                         expr: &ast::Expr) -> io::Result<()> {
-        try!(word(&mut self.s, ast_util::unop_to_string(op)));
+        try!(word(&mut self.s, ast::UnOp::to_string(op)));
         self.print_expr_maybe_paren(expr)
     }
 
@@ -2046,6 +2044,11 @@ impl<'a> State<'a> {
                 }
                 try!(space(&mut self.s));
                 try!(self.word_space("as"));
+                try!(self.print_type(&**ty));
+            }
+            ast::ExprType(ref expr, ref ty) => {
+                try!(self.print_expr(&**expr));
+                try!(self.word_space(":"));
                 try!(self.print_type(&**ty));
             }
             ast::ExprIf(ref test, ref blk, ref elseopt) => {
@@ -2162,7 +2165,7 @@ impl<'a> State<'a> {
             ast::ExprAssignOp(op, ref lhs, ref rhs) => {
                 try!(self.print_expr(&**lhs));
                 try!(space(&mut self.s));
-                try!(word(&mut self.s, ast_util::binop_to_string(op.node)));
+                try!(word(&mut self.s, op.node.to_string()));
                 try!(self.word_space("="));
                 try!(self.print_expr(&**rhs));
             }
@@ -2230,16 +2233,16 @@ impl<'a> State<'a> {
                 try!(self.word_space(":"));
 
                 try!(self.commasep(Inconsistent, &a.outputs,
-                                   |s, &(ref co, ref o, is_rw)| {
-                    match slice_shift_char(co) {
-                        Some(('=', operand)) if is_rw => {
+                                   |s, out| {
+                    match slice_shift_char(&out.constraint) {
+                        Some(('=', operand)) if out.is_rw => {
                             try!(s.print_string(&format!("+{}", operand),
                                                 ast::CookedStr))
                         }
-                        _ => try!(s.print_string(&co, ast::CookedStr))
+                        _ => try!(s.print_string(&out.constraint, ast::CookedStr))
                     }
                     try!(s.popen());
-                    try!(s.print_expr(&**o));
+                    try!(s.print_expr(&*out.expr));
                     try!(s.pclose());
                     Ok(())
                 }));
@@ -2479,12 +2482,12 @@ impl<'a> State<'a> {
             ast::PatWild => try!(word(&mut self.s, "_")),
             ast::PatIdent(binding_mode, ref path1, ref sub) => {
                 match binding_mode {
-                    ast::BindByRef(mutbl) => {
+                    ast::BindingMode::ByRef(mutbl) => {
                         try!(self.word_nbsp("ref"));
                         try!(self.print_mutability(mutbl));
                     }
-                    ast::BindByValue(ast::MutImmutable) => {}
-                    ast::BindByValue(ast::MutMutable) => {
+                    ast::BindingMode::ByValue(ast::MutImmutable) => {}
+                    ast::BindingMode::ByValue(ast::MutMutable) => {
                         try!(self.word_nbsp("mut"));
                     }
                 }
@@ -2690,7 +2693,7 @@ impl<'a> State<'a> {
             let m = match *explicit_self {
                 ast::SelfStatic => ast::MutImmutable,
                 _ => match decl.inputs[0].pat.node {
-                    ast::PatIdent(ast::BindByValue(m), _, _) => m,
+                    ast::PatIdent(ast::BindingMode::ByValue(m), _, _) => m,
                     _ => ast::MutImmutable
                 }
             };
@@ -3036,7 +3039,7 @@ impl<'a> State<'a> {
         }
         let generics = ast::Generics {
             lifetimes: Vec::new(),
-            ty_params: OwnedSlice::empty(),
+            ty_params: P::empty(),
             where_clause: ast::WhereClause {
                 id: ast::DUMMY_NODE_ID,
                 predicates: Vec::new(),
@@ -3170,7 +3173,7 @@ mod tests {
             output: ast::DefaultReturn(codemap::DUMMY_SP),
             variadic: false
         };
-        let generics = ast_util::empty_generics();
+        let generics = ast::Generics::default();
         assert_eq!(fun_to_string(&decl, ast::Unsafety::Normal,
                                  ast::Constness::NotConst,
                                  abba_ident,

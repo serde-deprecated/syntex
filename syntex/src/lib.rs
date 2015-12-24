@@ -15,6 +15,7 @@ use syntex_syntax::ext::base::{
     SyntaxExtension,
     TTMacroExpander,
 };
+use syntex_syntax::ext::base::ExtCtxt;
 use syntex_syntax::ext::expand;
 use syntex_syntax::feature_gate;
 use syntex_syntax::parse::{self, token};
@@ -129,7 +130,7 @@ impl Registry {
         krate.attrs.extend(self.attrs);
 
         let features = feature_gate::check_crate_macros(
-            &sess.span_diagnostic.cm,
+            &sess.codemap(),
             &sess.span_diagnostic,
             &krate);
 
@@ -139,13 +140,11 @@ impl Registry {
         let mut ecfg = expand::ExpansionConfig::default(crate_name.to_string());
         ecfg.features = Some(&features);
 
-        let (krate, _) = expand::expand_crate(
-            &sess,
-            ecfg,
-            self.macros,
-            self.syntax_exts,
-            &mut Vec::new(),
-            krate);
+        let cfg = Vec::new();
+        let mut gated_cfgs = Vec::new();
+        let ecx = ExtCtxt::new(&sess, cfg, ecfg, &mut gated_cfgs);
+
+        let (krate, _) = expand::expand_crate(ecx, self.macros, self.syntax_exts, krate);
 
         let krate = self.post_expansion_passes.iter()
             .fold(krate, |krate, f| (f)(krate));

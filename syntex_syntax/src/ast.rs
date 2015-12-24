@@ -10,7 +10,6 @@
 
 // The Rust abstract syntax tree.
 
-pub use self::BindingMode::*;
 pub use self::BinOp_::*;
 pub use self::BlockCheckMode::*;
 pub use self::CaptureClause::*;
@@ -48,11 +47,9 @@ pub use self::PathParameters::*;
 use attr::ThinAttributes;
 use codemap::{Span, Spanned, DUMMY_SP, ExpnId};
 use abi::Abi;
-use ast_util;
 use ext::base;
 use ext::tt::macro_parser;
-use owned_slice::OwnedSlice;
-use parse::token::{InternedString, str_to_ident};
+use parse::token::InternedString;
 use parse::token;
 use parse::lexer;
 use parse::lexer::comments::{doc_comment_style, strip_doc_comment_decoration};
@@ -262,8 +259,8 @@ impl PathParameters {
     pub fn none() -> PathParameters {
         AngleBracketedParameters(AngleBracketedParameterData {
             lifetimes: Vec::new(),
-            types: OwnedSlice::empty(),
-            bindings: OwnedSlice::empty(),
+            types: P::empty(),
+            bindings: P::empty(),
         })
     }
 
@@ -335,10 +332,10 @@ pub struct AngleBracketedParameterData {
     /// The lifetime parameters for this path segment.
     pub lifetimes: Vec<Lifetime>,
     /// The type parameters for this path segment, if present.
-    pub types: OwnedSlice<P<Ty>>,
+    pub types: P<[P<Ty>]>,
     /// Bindings (equality constraints) on associated types, if present.
     /// E.g., `Foo<A=Bar>`.
-    pub bindings: OwnedSlice<P<TypeBinding>>,
+    pub bindings: P<[P<TypeBinding>]>,
 }
 
 impl AngleBracketedParameterData {
@@ -395,7 +392,7 @@ pub enum TraitBoundModifier {
     Maybe,
 }
 
-pub type TyParamBounds = OwnedSlice<TyParamBound>;
+pub type TyParamBounds = P<[TyParamBound]>;
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 pub struct TyParam {
@@ -411,7 +408,7 @@ pub struct TyParam {
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 pub struct Generics {
     pub lifetimes: Vec<LifetimeDef>,
-    pub ty_params: OwnedSlice<TyParam>,
+    pub ty_params: P<[TyParam]>,
     pub where_clause: WhereClause,
 }
 
@@ -424,6 +421,19 @@ impl Generics {
     }
     pub fn is_parameterized(&self) -> bool {
         self.is_lt_parameterized() || self.is_type_parameterized()
+    }
+}
+
+impl Default for Generics {
+    fn default() ->  Generics {
+        Generics {
+            lifetimes: Vec::new(),
+            ty_params: P::empty(),
+            where_clause: WhereClause {
+                id: DUMMY_NODE_ID,
+                predicates: Vec::new(),
+            }
+        }
     }
 }
 
@@ -454,7 +464,7 @@ pub struct WhereBoundPredicate {
     /// The type being bounded
     pub bounded_ty: P<Ty>,
     /// Trait and lifetime bounds (`Clone+Send+'static`)
-    pub bounds: OwnedSlice<TyParamBound>,
+    pub bounds: TyParamBounds,
 }
 
 /// A lifetime predicate, e.g. `'a: 'b+'c`
@@ -563,8 +573,8 @@ pub struct FieldPat {
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
 pub enum BindingMode {
-    BindByRef(Mutability),
-    BindByValue(Mutability),
+    ByRef(Mutability),
+    ByValue(Mutability),
 }
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
@@ -657,6 +667,57 @@ pub enum BinOp_ {
     BiGt,
 }
 
+impl BinOp_ {
+    pub fn to_string(&self) -> &'static str {
+        match *self {
+            BiAdd => "+",
+            BiSub => "-",
+            BiMul => "*",
+            BiDiv => "/",
+            BiRem => "%",
+            BiAnd => "&&",
+            BiOr => "||",
+            BiBitXor => "^",
+            BiBitAnd => "&",
+            BiBitOr => "|",
+            BiShl => "<<",
+            BiShr => ">>",
+            BiEq => "==",
+            BiLt => "<",
+            BiLe => "<=",
+            BiNe => "!=",
+            BiGe => ">=",
+            BiGt => ">"
+        }
+    }
+    pub fn lazy(&self) -> bool {
+        match *self {
+            BiAnd | BiOr => true,
+            _ => false
+        }
+    }
+
+    pub fn is_shift(&self) -> bool {
+        match *self {
+            BiShl | BiShr => true,
+            _ => false
+        }
+    }
+    pub fn is_comparison(&self) -> bool {
+        match *self {
+            BiEq | BiLt | BiLe | BiNe | BiGt | BiGe =>
+            true,
+            BiAnd | BiOr | BiAdd | BiSub | BiMul | BiDiv | BiRem |
+            BiBitXor | BiBitAnd | BiBitOr | BiShl | BiShr =>
+            false,
+        }
+    }
+    /// Returns `true` if the binary operator takes its arguments by value
+    pub fn is_by_value(&self) -> bool {
+        !BinOp_::is_comparison(self)
+    }
+}
+
 pub type BinOp = Spanned<BinOp_>;
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
@@ -669,13 +730,31 @@ pub enum UnOp {
     UnNeg
 }
 
+impl UnOp {
+    /// Returns `true` if the unary operator takes its argument by value
+    pub fn is_by_value(u: UnOp) -> bool {
+        match u {
+            UnNeg | UnNot => true,
+            _ => false,
+        }
+    }
+
+    pub fn to_string(op: UnOp) -> &'static str {
+        match op {
+            UnDeref => "*",
+            UnNot => "!",
+            UnNeg => "-",
+        }
+    }
+}
+
 /// A statement
 pub type Stmt = Spanned<Stmt_>;
 
 impl fmt::Debug for Stmt {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "stmt({}: {})",
-               ast_util::stmt_id(self)
+               self.node.id()
                    .map_or(Cow::Borrowed("<macro>"),|id|Cow::Owned(id.to_string())),
                pprust::stmt_to_string(self))
     }
@@ -697,6 +776,15 @@ pub enum Stmt_ {
 }
 
 impl Stmt_ {
+    pub fn id(&self) -> Option<NodeId> {
+        match *self {
+            StmtDecl(_, id) => Some(id),
+            StmtExpr(_, id) => Some(id),
+            StmtSemi(_, id) => Some(id),
+            StmtMac(..) => None,
+        }
+    }
+
     pub fn attrs(&self) -> &[Attribute] {
         match *self {
             StmtDecl(ref d, _) => d.attrs(),
@@ -853,6 +941,7 @@ pub enum Expr_ {
     ExprLit(P<Lit>),
     /// A cast (`foo as f64`)
     ExprCast(P<Expr>, P<Ty>),
+    ExprType(P<Expr>, P<Ty>),
     /// An `if` block, with an optional else block
     ///
     /// `if expr { block } else { expr }`
@@ -1226,6 +1315,16 @@ pub enum Lit_ {
     LitBool(bool),
 }
 
+impl Lit_ {
+    /// Returns true if this literal is a string and false otherwise.
+    pub fn is_str(&self) -> bool {
+        match *self {
+            LitStr(..) => true,
+            _ => false,
+        }
+    }
+}
+
 // NB: If you change this, you'll probably want to change the corresponding
 // type structure in middle/ty.rs as well.
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
@@ -1301,11 +1400,37 @@ impl fmt::Debug for IntTy {
 
 impl fmt::Display for IntTy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", ast_util::int_ty_to_string(*self))
+        write!(f, "{}", self.ty_to_string())
     }
 }
 
 impl IntTy {
+    pub fn ty_to_string(&self) -> &'static str {
+        match *self {
+            TyIs => "isize",
+            TyI8 => "i8",
+            TyI16 => "i16",
+            TyI32 => "i32",
+            TyI64 => "i64"
+        }
+    }
+
+    pub fn val_to_string(&self, val: i64) -> String {
+        // cast to a u64 so we can correctly print INT64_MIN. All integral types
+        // are parsed as u64, so we wouldn't want to print an extra negative
+        // sign.
+        format!("{}{}", val as u64, self.ty_to_string())
+    }
+
+    pub fn ty_max(&self) -> u64 {
+        match *self {
+            TyI8 => 0x80,
+            TyI16 => 0x8000,
+            TyIs | TyI32 => 0x80000000, // actually ni about TyIs
+            TyI64 => 0x8000000000000000
+        }
+    }
+
     pub fn bit_width(&self) -> Option<usize> {
         Some(match *self {
             TyIs => return None,
@@ -1327,6 +1452,29 @@ pub enum UintTy {
 }
 
 impl UintTy {
+    pub fn ty_to_string(&self) -> &'static str {
+        match *self {
+            TyUs => "usize",
+            TyU8 => "u8",
+            TyU16 => "u16",
+            TyU32 => "u32",
+            TyU64 => "u64"
+        }
+    }
+
+    pub fn val_to_string(&self, val: u64) -> String {
+        format!("{}{}", val, self.ty_to_string())
+    }
+
+    pub fn ty_max(&self) -> u64 {
+        match *self {
+            TyU8 => 0xff,
+            TyU16 => 0xffff,
+            TyUs | TyU32 => 0xffffffff, // actually ni about TyUs
+            TyU64 => 0xffffffffffffffff
+        }
+    }
+
     pub fn bit_width(&self) -> Option<usize> {
         Some(match *self {
             TyUs => return None,
@@ -1346,7 +1494,7 @@ impl fmt::Debug for UintTy {
 
 impl fmt::Display for UintTy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", ast_util::uint_ty_to_string(*self))
+        write!(f, "{}", self.ty_to_string())
     }
 }
 
@@ -1364,11 +1512,18 @@ impl fmt::Debug for FloatTy {
 
 impl fmt::Display for FloatTy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", ast_util::float_ty_to_string(*self))
+        write!(f, "{}", self.ty_to_string())
     }
 }
 
 impl FloatTy {
+    pub fn ty_to_string(&self) -> &'static str {
+        match *self {
+            TyF32 => "f32",
+            TyF64 => "f64",
+        }
+    }
+
     pub fn bit_width(&self) -> usize {
         match *self {
             TyF32 => 32,
@@ -1459,10 +1614,18 @@ pub enum AsmDialect {
 }
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
+pub struct InlineAsmOutput {
+    pub constraint: InternedString,
+    pub expr: P<Expr>,
+    pub is_rw: bool,
+    pub is_indirect: bool,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 pub struct InlineAsm {
     pub asm: InternedString,
     pub asm_str_style: StrStyle,
-    pub outputs: Vec<(InternedString, P<Expr>, bool)>,
+    pub outputs: Vec<InlineAsmOutput>,
     pub inputs: Vec<(InternedString, P<Expr>)>,
     pub clobbers: Vec<InternedString>,
     pub volatile: bool,
@@ -1491,7 +1654,7 @@ impl Arg {
             }),
             pat: P(Pat {
                 id: DUMMY_NODE_ID,
-                node: PatIdent(BindByValue(mutability), path, None),
+                node: PatIdent(BindingMode::ByValue(mutability), path, None),
                 span: span
             }),
             id: DUMMY_NODE_ID
