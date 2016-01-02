@@ -856,8 +856,8 @@ impl<'a> State<'a> {
                    indented: usize) -> io::Result<()> {
         self.bclose_maybe_open(span, indented, true)
     }
-    pub fn bclose_maybe_open (&mut self, span: codemap::Span,
-                              indented: usize, close_box: bool) -> io::Result<()> {
+    pub fn bclose_maybe_open(&mut self, span: codemap::Span,
+                             indented: usize, close_box: bool) -> io::Result<()> {
         try!(self.maybe_print_comment(span.hi));
         try!(self.break_offset_if_not_bol(1, -(indented as isize)));
         try!(word(&mut self.s, "}"));
@@ -2403,7 +2403,7 @@ impl<'a> State<'a> {
         }
 
         match *parameters {
-            ast::AngleBracketedParameters(ref data) => {
+            ast::PathParameters::AngleBracketed(ref data) => {
                 try!(word(&mut self.s, "<"));
 
                 let mut comma = false;
@@ -2440,7 +2440,7 @@ impl<'a> State<'a> {
                 try!(word(&mut self.s, ">"))
             }
 
-            ast::ParenthesizedParameters(ref data) => {
+            ast::PathParameters::Parenthesized(ref data) => {
                 try!(word(&mut self.s, "("));
                 try!(self.commasep(
                     Inconsistent,
