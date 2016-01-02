@@ -30,17 +30,22 @@ extern crate rustc_serialize; // used by deriving
 extern crate rustc_serialize as serialize;
 extern crate unicode_xid;
 
-// A variant of 'try!' that panics on Err(FatalError). This is used as a
-// crutch on the way towards a non-panic!-prone parser. It should be used
-// for fatal parsing errors; eventually we plan to convert all code using
-// panictry to just use normal try
+// A variant of 'try!' that panics on an Err. This is used as a crutch on the
+// way towards a non-panic!-prone parser. It should be used for fatal parsing
+// errors; eventually we plan to convert all code using panictry to just use
+// normal try.
+// Exported for syntax_ext, not meant for general use.
+#[macro_export]
 macro_rules! panictry {
     ($e:expr) => ({
         use std::result::Result::{Ok, Err};
-        use errors::FatalError;
+        use $crate::errors::FatalError;
         match $e {
             Ok(e) => e,
-            Err(FatalError) => panic!(FatalError)
+            Err(mut e) => {
+                e.emit();
+                panic!(FatalError);
+            }
         }
     })
 }
