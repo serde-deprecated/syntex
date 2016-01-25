@@ -103,6 +103,7 @@ pub mod ext {
     pub mod base;
     pub mod build;
     pub mod deriving;
+    pub mod env;
     pub mod expand;
     pub mod mtwt;
     pub mod quote;

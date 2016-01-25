@@ -528,6 +528,14 @@ fn initial_syntax_expander_table<'feat>(_ecfg: &expand::ExpansionConfig<'feat>)
                             builtin_normal_expander(
                                     ext::source_util::expand_stringify));
                                     */
+
+    syntax_expanders.insert(intern("option_env"),
+                            builtin_normal_expander(
+                                    ext::env::expand_option_env));
+    syntax_expanders.insert(intern("env"),
+                            builtin_normal_expander(
+                                    ext::env::expand_env));
+
     syntax_expanders.insert(intern("include"),
                             builtin_normal_expander(
                                     ext::source_util::expand_include));
