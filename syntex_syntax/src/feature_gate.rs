@@ -170,7 +170,7 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status
     ("slice_patterns", "1.0.0", Some(23121), Active),
 
     // Allows use of unary negate on unsigned integers, e.g. -e for e: u8
-    ("negate_unsigned", "1.0.0", Some(29645), Active),
+    ("negate_unsigned", "1.0.0", Some(29645), Removed),
 
     // Allows the definition of associated constants in `trait` or `impl`
     // blocks.
@@ -239,6 +239,9 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status
 
     // Allows cfg(target_thread_local)
     ("cfg_target_thread_local", "1.7.0", Some(29594), Active),
+
+    // rustc internal
+    ("abi_vectorcall", "1.7.0", None, Active)
 ];
 // (changing above list without updating src/doc/reference.md makes @cmr sad)
 
@@ -548,7 +551,6 @@ pub struct Features {
     pub allow_pushpop_unsafe: bool,
     pub simd_ffi: bool,
     pub unmarked_api: bool,
-    pub negate_unsigned: bool,
     /// spans of #![feature] attrs for stable language features. for error reporting
     pub declared_stable_lang_features: Vec<Span>,
     /// #![feature] attrs for non-language (library) features
@@ -585,7 +587,6 @@ impl Features {
             allow_pushpop_unsafe: false,
             simd_ffi: false,
             unmarked_api: false,
-            negate_unsigned: false,
             declared_stable_lang_features: Vec::new(),
             declared_lib_features: Vec::new(),
             const_fn: false,
@@ -814,11 +815,11 @@ impl<'a, 'v> Visitor<'v> for MacroVisitor<'a> {
         // But we keep these checks as a pre-expansion check to catch
         // uses in e.g. conditionalized code.
 
-        if let ast::ExprBox(_) = e.node {
+        if let ast::ExprKind::Box(_) = e.node {
             self.context.gate_feature("box_syntax", e.span, EXPLAIN_BOX_SYNTAX);
         }
 
-        if let ast::ExprInPlace(..) = e.node {
+        if let ast::ExprKind::InPlace(..) = e.node {
             self.context.gate_feature("placement_in_syntax", e.span, EXPLAIN_PLACEMENT_IN);
         }
 
@@ -854,7 +855,7 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
 
     fn visit_item(&mut self, i: &ast::Item) {
         match i.node {
-            ast::ItemExternCrate(_) => {
+            ast::ItemKind::ExternCrate(_) => {
                 if attr::contains_name(&i.attrs[..], "macro_reexport") {
                     self.gate_feature("macro_reexport", i.span,
                                       "macros reexports are experimental \
@@ -862,7 +863,7 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
                 }
             }
 
-            ast::ItemForeignMod(ref foreign_module) => {
+            ast::ItemKind::ForeignMod(ref foreign_module) => {
                 if attr::contains_name(&i.attrs[..], "link_args") {
                     self.gate_feature("link_args", i.span,
                                       "the `link_args` attribute is not portable \
@@ -874,6 +875,11 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
                     Abi::PlatformIntrinsic => {
                         Some(("platform_intrinsics",
                               "platform intrinsics are experimental and possibly buggy"))
+                    },
+                    Abi::Vectorcall => {
+                        Some(("abi_vectorcall",
+                            "vectorcall is experimental and subject to change"
+                        ))
                     }
                     _ => None
                 };
@@ -882,7 +888,7 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
                 }
             }
 
-            ast::ItemFn(..) => {
+            ast::ItemKind::Fn(..) => {
                 if attr::contains_name(&i.attrs[..], "plugin_registrar") {
                     self.gate_feature("plugin_registrar", i.span,
                                       "compiler plugins are experimental and possibly buggy");
@@ -901,7 +907,7 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
                 }
             }
 
-            ast::ItemStruct(..) => {
+            ast::ItemKind::Struct(..) => {
                 if attr::contains_name(&i.attrs[..], "simd") {
                     self.gate_feature("simd", i.span,
                                       "SIMD types are experimental and possibly buggy");
@@ -922,14 +928,14 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
                 }
             }
 
-            ast::ItemDefaultImpl(..) => {
+            ast::ItemKind::DefaultImpl(..) => {
                 self.gate_feature("optin_builtin_traits",
                                   i.span,
                                   "default trait implementations are experimental \
                                    and possibly buggy");
             }
 
-            ast::ItemImpl(_, polarity, _, _, _, _) => {
+            ast::ItemKind::Impl(_, polarity, _, _, _, _) => {
                 match polarity {
                     ast::ImplPolarity::Negative => {
                         self.gate_feature("optin_builtin_traits",
@@ -982,13 +988,13 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
 
     fn visit_expr(&mut self, e: &ast::Expr) {
         match e.node {
-            ast::ExprBox(_) => {
+            ast::ExprKind::Box(_) => {
                 self.gate_feature("box_syntax",
                                   e.span,
                                   "box expression syntax is experimental; \
                                    you can call `Box::new` instead.");
             }
-            ast::ExprType(..) => {
+            ast::ExprKind::Type(..) => {
                 self.gate_feature("type_ascription", e.span,
                                   "type ascription is experimental");
             }
@@ -1047,11 +1053,17 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
                                   "intrinsics are subject to change")
             }
             FnKind::ItemFn(_, _, _, _, abi, _) |
-            FnKind::Method(_, &ast::MethodSig { abi, .. }, _) if abi == Abi::RustCall => {
-                self.gate_feature("unboxed_closures",
-                                  span,
-                                  "rust-call ABI is subject to change")
-            }
+            FnKind::Method(_, &ast::MethodSig { abi, .. }, _) => match abi {
+                Abi::RustCall => {
+                    self.gate_feature("unboxed_closures", span,
+                        "rust-call ABI is subject to change");
+                },
+                Abi::Vectorcall => {
+                    self.gate_feature("abi_vectorcall", span,
+                        "vectorcall is experimental and subject to change");
+                },
+                _ => {}
+            },
             _ => {}
         }
         visit::walk_fn(self, fn_kind, fn_decl, block, span);
@@ -1059,17 +1071,17 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
 
     fn visit_trait_item(&mut self, ti: &'v ast::TraitItem) {
         match ti.node {
-            ast::ConstTraitItem(..) => {
+            ast::TraitItemKind::Const(..) => {
                 self.gate_feature("associated_consts",
                                   ti.span,
                                   "associated constants are experimental")
             }
-            ast::MethodTraitItem(ref sig, _) => {
+            ast::TraitItemKind::Method(ref sig, _) => {
                 if sig.constness == ast::Constness::Const {
                     self.gate_feature("const_fn", ti.span, "const fn is unstable");
                 }
             }
-            ast::TypeTraitItem(_, Some(_)) => {
+            ast::TraitItemKind::Type(_, Some(_)) => {
                 self.gate_feature("associated_type_defaults", ti.span,
                                   "associated type defaults are unstable");
             }
@@ -1126,7 +1138,7 @@ fn check_crate_inner<F>(cm: &CodeMap, span_handler: &Handler,
             Some(list) => {
                 for mi in list {
                     let name = match mi.node {
-                        ast::MetaWord(ref word) => (*word).clone(),
+                        ast::MetaItemKind::Word(ref word) => (*word).clone(),
                         _ => {
                             span_handler.span_err(mi.span,
                                                   "malformed feature, expected just \
@@ -1174,7 +1186,6 @@ fn check_crate_inner<F>(cm: &CodeMap, span_handler: &Handler,
         allow_pushpop_unsafe: cx.has_feature("pushpop_unsafe"),
         simd_ffi: cx.has_feature("simd_ffi"),
         unmarked_api: cx.has_feature("unmarked_api"),
-        negate_unsigned: cx.has_feature("negate_unsigned"),
         declared_stable_lang_features: accepted_features,
         declared_lib_features: unknown_features,
         const_fn: cx.has_feature("const_fn"),
