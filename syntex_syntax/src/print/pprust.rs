@@ -1199,16 +1199,10 @@ impl<'a> State<'a> {
                 try!(self.head(&visibility_qualified(item.vis,
                                                     "mod")));
                 try!(self.print_ident(item.ident));
-                if _mod.items.is_empty() {
-                    try!(word(&mut self.s, ";"));
-                    try!(self.end()); // end inner head-block
-                    try!(self.end()); // end outer head-block
-                } else {
-                    try!(self.nbsp());
-                    try!(self.bopen());
-                    try!(self.print_mod(_mod, &item.attrs));
-                    try!(self.bclose(item.span));
-                }
+                try!(self.nbsp());
+                try!(self.bopen());
+                try!(self.print_mod(_mod, &item.attrs));
+                try!(self.bclose(item.span));
             }
             ast::ItemKind::ForeignMod(ref nmod) => {
                 try!(self.head("extern"));
