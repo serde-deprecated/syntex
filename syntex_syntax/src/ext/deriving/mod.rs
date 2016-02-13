@@ -13,7 +13,7 @@
 //! FIXME (#2810): hygiene. Search for "__" strings (in other files too). We also assume "extra" is
 //! the standard library, and "std" is the core library.
 
-use ast::{MetaItem, MetaWord};
+use ast::{MetaItem, MetaItemKind};
 use attr::AttrMetaMethods;
 use ext::base::{ExtCtxt, SyntaxEnv, MultiModifier, Annotatable};
 use ext::build::AstBuilder;
@@ -39,7 +39,7 @@ fn expand_derive(cx: &mut ExtCtxt,
 
             for titem in traits.iter().rev() {
                 let tname = match titem.node {
-                    MetaWord(ref tname) => tname,
+                    MetaItemKind::Word(ref tname) => tname,
                     _ => {
                         cx.span_err(titem.span, "malformed `derive` entry");
                         continue;

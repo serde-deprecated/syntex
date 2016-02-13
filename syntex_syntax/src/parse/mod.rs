@@ -49,7 +49,7 @@ pub struct ParseSess {
 impl ParseSess {
     pub fn new() -> ParseSess {
         let cm = Rc::new(CodeMap::new());
-        let handler = Handler::new(ColorConfig::Auto, None, true, false, cm.clone());
+        let handler = Handler::with_tty_emitter(ColorConfig::Auto, None, true, false, cm.clone());
         ParseSess::with_span_handler(handler, cm)
     }
 
@@ -98,7 +98,7 @@ pub fn parse_crate_from_source_str(name: String,
                                            cfg,
                                            name,
                                            source);
-    maybe_aborted(panictry!(p.parse_crate_mod()),p)
+    panictry!(p.parse_crate_mod())
 }
 
 pub fn parse_crate_attrs_from_source_str(name: String,
@@ -110,7 +110,7 @@ pub fn parse_crate_attrs_from_source_str(name: String,
                                            cfg,
                                            name,
                                            source);
-    maybe_aborted(panictry!(p.parse_inner_attributes()), p)
+    panictry!(p.parse_inner_attributes())
 }
 
 pub fn parse_expr_from_source_str(name: String,
@@ -119,7 +119,7 @@ pub fn parse_expr_from_source_str(name: String,
                                   sess: &ParseSess)
                                   -> P<ast::Expr> {
     let mut p = new_parser_from_source_str(sess, cfg, name, source);
-    maybe_aborted(panictry!(p.parse_expr()), p)
+    panictry!(p.parse_expr())
 }
 
 pub fn parse_item_from_source_str(name: String,
@@ -128,7 +128,7 @@ pub fn parse_item_from_source_str(name: String,
                                   sess: &ParseSess)
                                   -> Option<P<ast::Item>> {
     let mut p = new_parser_from_source_str(sess, cfg, name, source);
-    maybe_aborted(panictry!(p.parse_item()), p)
+    panictry!(p.parse_item())
 }
 
 pub fn parse_meta_from_source_str(name: String,
@@ -137,7 +137,7 @@ pub fn parse_meta_from_source_str(name: String,
                                   sess: &ParseSess)
                                   -> P<ast::MetaItem> {
     let mut p = new_parser_from_source_str(sess, cfg, name, source);
-    maybe_aborted(panictry!(p.parse_meta_item()), p)
+    panictry!(p.parse_meta_item())
 }
 
 pub fn parse_stmt_from_source_str(name: String,
@@ -151,7 +151,7 @@ pub fn parse_stmt_from_source_str(name: String,
         name,
         source
     );
-    maybe_aborted(panictry!(p.parse_stmt()), p)
+    panictry!(p.parse_stmt())
 }
 
 // Warning: This parses with quote_depth > 0, which is not the default.
@@ -168,7 +168,7 @@ pub fn parse_tts_from_source_str(name: String,
     );
     p.quote_depth += 1;
     // right now this is re-creating the token trees from ... token trees.
-    maybe_aborted(panictry!(p.parse_all_token_trees()),p)
+    panictry!(p.parse_all_token_trees())
 }
 
 // Create a new parser from a source string
@@ -265,16 +265,10 @@ pub fn tts_to_parser<'a>(sess: &'a ParseSess,
     p
 }
 
-/// Abort if necessary
-pub fn maybe_aborted<T>(result: T, p: Parser) -> T {
-    p.abort_if_errors();
-    result
-}
 
 fn abort_if_errors<'a, T>(result: PResult<'a, T>, p: &Parser) -> T {
     match result {
         Ok(c) => {
-            p.abort_if_errors();
             c
         }
         Err(mut e) => {
@@ -457,11 +451,11 @@ fn looks_like_width_suffix(first_chars: &[char], s: &str) -> bool {
 }
 
 fn filtered_float_lit(data: token::InternedString, suffix: Option<&str>,
-                      sd: &Handler, sp: Span) -> ast::Lit_ {
+                      sd: &Handler, sp: Span) -> ast::LitKind {
     debug!("filtered_float_lit: {}, {:?}", data, suffix);
     match suffix.as_ref().map(|s| &**s) {
-        Some("f32") => ast::LitFloat(data, ast::TyF32),
-        Some("f64") => ast::LitFloat(data, ast::TyF64),
+        Some("f32") => ast::LitKind::Float(data, ast::FloatTy::F32),
+        Some("f64") => ast::LitKind::Float(data, ast::FloatTy::F64),
         Some(suf) => {
             if suf.len() >= 2 && looks_like_width_suffix(&['f'], suf) {
                 // if it looks like a width, lets try to be helpful.
@@ -474,13 +468,13 @@ fn filtered_float_lit(data: token::InternedString, suffix: Option<&str>,
                   .emit();
             }
 
-            ast::LitFloatUnsuffixed(data)
+            ast::LitKind::FloatUnsuffixed(data)
         }
-        None => ast::LitFloatUnsuffixed(data)
+        None => ast::LitKind::FloatUnsuffixed(data)
     }
 }
 pub fn float_lit(s: &str, suffix: Option<InternedString>,
-                 sd: &Handler, sp: Span) -> ast::Lit_ {
+                 sd: &Handler, sp: Span) -> ast::LitKind {
     debug!("float_lit: {:?}, {:?}", s, suffix);
     // FIXME #2252: bounds checking float literals is deferred until trans
     let s = s.chars().filter(|&c| c != '_').collect::<String>();
@@ -584,7 +578,7 @@ pub fn integer_lit(s: &str,
                    suffix: Option<InternedString>,
                    sd: &Handler,
                    sp: Span)
-                   -> ast::Lit_ {
+                   -> ast::LitKind {
     // s can only be ascii, byte indexing is fine
 
     let s2 = s.chars().filter(|&c| c != '_').collect::<String>();
@@ -594,7 +588,7 @@ pub fn integer_lit(s: &str,
 
     let mut base = 10;
     let orig = s;
-    let mut ty = ast::UnsuffixedIntLit(ast::Plus);
+    let mut ty = ast::LitIntType::Unsuffixed;
 
     if char_at(s, 0) == '0' && s.len() > 1 {
         match char_at(s, 1) {
@@ -626,16 +620,16 @@ pub fn integer_lit(s: &str,
     if let Some(ref suf) = suffix {
         if suf.is_empty() { sd.span_bug(sp, "found empty literal suffix in Some")}
         ty = match &**suf {
-            "isize" => ast::SignedIntLit(ast::TyIs, ast::Plus),
-            "i8"  => ast::SignedIntLit(ast::TyI8, ast::Plus),
-            "i16" => ast::SignedIntLit(ast::TyI16, ast::Plus),
-            "i32" => ast::SignedIntLit(ast::TyI32, ast::Plus),
-            "i64" => ast::SignedIntLit(ast::TyI64, ast::Plus),
-            "usize" => ast::UnsignedIntLit(ast::TyUs),
-            "u8"  => ast::UnsignedIntLit(ast::TyU8),
-            "u16" => ast::UnsignedIntLit(ast::TyU16),
-            "u32" => ast::UnsignedIntLit(ast::TyU32),
-            "u64" => ast::UnsignedIntLit(ast::TyU64),
+            "isize" => ast::LitIntType::Signed(ast::IntTy::Is),
+            "i8"  => ast::LitIntType::Signed(ast::IntTy::I8),
+            "i16" => ast::LitIntType::Signed(ast::IntTy::I16),
+            "i32" => ast::LitIntType::Signed(ast::IntTy::I32),
+            "i64" => ast::LitIntType::Signed(ast::IntTy::I64),
+            "usize" => ast::LitIntType::Unsigned(ast::UintTy::Us),
+            "u8"  => ast::LitIntType::Unsigned(ast::UintTy::U8),
+            "u16" => ast::LitIntType::Unsigned(ast::UintTy::U16),
+            "u32" => ast::LitIntType::Unsigned(ast::UintTy::U32),
+            "u64" => ast::LitIntType::Unsigned(ast::UintTy::U64),
             _ => {
                 // i<digits> and u<digits> look like widths, so lets
                 // give an error message along those lines
@@ -659,9 +653,9 @@ pub fn integer_lit(s: &str,
     debug!("integer_lit: the type is {:?}, base {:?}, the new string is {:?}, the original \
            string was {:?}, the original suffix was {:?}", ty, base, s, orig, suffix);
 
-    let res = match u64::from_str_radix(s, base).ok() {
-        Some(r) => r,
-        None => {
+    match u64::from_str_radix(s, base) {
+        Ok(r) => ast::LitKind::Int(r, ty),
+        Err(_) => {
             // small bases are lexed as if they were base 10, e.g, the string
             // might be `0b10201`. This will cause the conversion above to fail,
             // but these cases have errors in the lexer: we don't want to emit
@@ -673,16 +667,8 @@ pub fn integer_lit(s: &str,
             if !already_errored {
                 sd.span_err(sp, "int literal is too large");
             }
-            0
+            ast::LitKind::Int(0, ty)
         }
-    };
-
-    // adjust the sign
-    let sign = ast::Sign::new(res);
-    match ty {
-        ast::SignedIntLit(t, _) => ast::LitInt(res, ast::SignedIntLit(t, sign)),
-        ast::UnsuffixedIntLit(_) => ast::LitInt(res, ast::UnsuffixedIntLit(sign)),
-        us@ast::UnsignedIntLit(_) => ast::LitInt(res, us)
     }
 }
 
@@ -692,7 +678,7 @@ mod tests {
     use std::rc::Rc;
     use codemap::{Span, BytePos, Pos, Spanned, NO_EXPANSION};
     use ast::{self, TokenTree};
-    use abi;
+    use abi::Abi;
     use attr::{first_attr_value_str_by_name, AttrMetaMethods};
     use parse;
     use parse::parser::Parser;
@@ -711,7 +697,7 @@ mod tests {
         assert!(string_to_expr("a".to_string()) ==
                    P(ast::Expr{
                     id: ast::DUMMY_NODE_ID,
-                    node: ast::ExprPath(None, ast::Path {
+                    node: ast::ExprKind::Path(None, ast::Path {
                         span: sp(0, 1),
                         global: false,
                         segments: vec!(
@@ -730,7 +716,7 @@ mod tests {
         assert!(string_to_expr("::a::b".to_string()) ==
                    P(ast::Expr {
                     id: ast::DUMMY_NODE_ID,
-                    node: ast::ExprPath(None, ast::Path {
+                    node: ast::ExprKind::Path(None, ast::Path {
                             span: sp(0, 6),
                             global: true,
                             segments: vec!(
@@ -860,9 +846,9 @@ mod tests {
         assert!(string_to_expr("return d".to_string()) ==
                    P(ast::Expr{
                     id: ast::DUMMY_NODE_ID,
-                    node:ast::ExprRet(Some(P(ast::Expr{
+                    node:ast::ExprKind::Ret(Some(P(ast::Expr{
                         id: ast::DUMMY_NODE_ID,
-                        node:ast::ExprPath(None, ast::Path{
+                        node:ast::ExprKind::Path(None, ast::Path{
                             span: sp(7, 8),
                             global: false,
                             segments: vec!(
@@ -883,9 +869,9 @@ mod tests {
     #[test] fn parse_stmt_1 () {
         assert!(string_to_stmt("b;".to_string()) ==
                    Some(P(Spanned{
-                       node: ast::StmtExpr(P(ast::Expr {
+                       node: ast::StmtKind::Expr(P(ast::Expr {
                            id: ast::DUMMY_NODE_ID,
-                           node: ast::ExprPath(None, ast::Path {
+                           node: ast::ExprKind::Path(None, ast::Path {
                                span:sp(0,1),
                                global:false,
                                segments: vec!(
@@ -912,7 +898,7 @@ mod tests {
         assert!(panictry!(parser.parse_pat())
                 == P(ast::Pat{
                 id: ast::DUMMY_NODE_ID,
-                node: ast::PatIdent(ast::BindingMode::ByValue(ast::MutImmutable),
+                node: ast::PatIdent(ast::BindingMode::ByValue(ast::Mutability::Immutable),
                                     Spanned{ span:sp(0, 1),
                                              node: str_to_ident("b")
                     },
@@ -929,10 +915,10 @@ mod tests {
                       P(ast::Item{ident:str_to_ident("a"),
                             attrs:Vec::new(),
                             id: ast::DUMMY_NODE_ID,
-                            node: ast::ItemFn(P(ast::FnDecl {
+                            node: ast::ItemKind::Fn(P(ast::FnDecl {
                                 inputs: vec!(ast::Arg{
                                     ty: P(ast::Ty{id: ast::DUMMY_NODE_ID,
-                                                  node: ast::TyPath(None, ast::Path{
+                                                  node: ast::TyKind::Path(None, ast::Path{
                                         span:sp(10,13),
                                         global:false,
                                         segments: vec!(
@@ -948,7 +934,7 @@ mod tests {
                                     pat: P(ast::Pat {
                                         id: ast::DUMMY_NODE_ID,
                                         node: ast::PatIdent(
-                                            ast::BindingMode::ByValue(ast::MutImmutable),
+                                            ast::BindingMode::ByValue(ast::Mutability::Immutable),
                                                 Spanned{
                                                     span: sp(6,7),
                                                     node: str_to_ident("b")},
@@ -958,12 +944,12 @@ mod tests {
                                     }),
                                         id: ast::DUMMY_NODE_ID
                                     }),
-                                output: ast::DefaultReturn(sp(15, 15)),
+                                output: ast::FunctionRetTy::Default(sp(15, 15)),
                                 variadic: false
                             }),
                                     ast::Unsafety::Normal,
                                     ast::Constness::NotConst,
-                                    abi::Rust,
+                                    Abi::Rust,
                                     ast::Generics{ // no idea on either of these:
                                         lifetimes: Vec::new(),
                                         ty_params: P::empty(),
@@ -974,9 +960,9 @@ mod tests {
                                     },
                                     P(ast::Block {
                                         stmts: vec!(P(Spanned{
-                                            node: ast::StmtSemi(P(ast::Expr{
+                                            node: ast::StmtKind::Semi(P(ast::Expr{
                                                 id: ast::DUMMY_NODE_ID,
-                                                node: ast::ExprPath(None,
+                                                node: ast::ExprKind::Path(None,
                                                       ast::Path{
                                                         span:sp(17,18),
                                                         global:false,
@@ -996,10 +982,10 @@ mod tests {
                                             span: sp(17,19)})),
                                         expr: None,
                                         id: ast::DUMMY_NODE_ID,
-                                        rules: ast::DefaultBlock, // no idea
+                                        rules: ast::BlockCheckMode::Default, // no idea
                                         span: sp(15,21),
                                     })),
-                            vis: ast::Inherited,
+                            vis: ast::Visibility::Inherited,
                             span: sp(0,21)})));
     }
 
@@ -1118,7 +1104,7 @@ mod tests {
             "foo!( fn main() { body } )".to_string(), vec![], &sess);
 
         let tts = match expr.node {
-            ast::ExprMac(ref mac) => mac.node.tts.clone(),
+            ast::ExprKind::Mac(ref mac) => mac.node.tts.clone(),
             _ => panic!("not a macro"),
         };
 
