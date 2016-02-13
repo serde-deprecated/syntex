@@ -144,7 +144,7 @@ pub fn parse_stmt_from_source_str(name: String,
                                   source: String,
                                   cfg: ast::CrateConfig,
                                   sess: &ParseSess)
-                                  -> Option<P<ast::Stmt>> {
+                                  -> Option<ast::Stmt> {
     let mut p = new_parser_from_source_str(
         sess,
         cfg,
@@ -606,8 +606,8 @@ pub fn integer_lit(s: &str,
                 2 => sd.span_err(sp, "binary float literal is not supported"),
                 _ => ()
             }
-            let ident = token::intern_and_get_ident(&*s);
-            return filtered_float_lit(ident, Some(&**suf), sd, sp)
+            let ident = token::intern_and_get_ident(&s);
+            return filtered_float_lit(ident, Some(&suf), sd, sp)
         }
     }
 
@@ -866,7 +866,7 @@ mod tests {
 
     #[test] fn parse_stmt_1 () {
         assert!(string_to_stmt("b;".to_string()) ==
-                   Some(P(Spanned{
+                   Some(Spanned{
                        node: ast::StmtKind::Expr(P(ast::Expr {
                            id: ast::DUMMY_NODE_ID,
                            node: ast::ExprKind::Path(None, ast::Path {
@@ -882,7 +882,7 @@ mod tests {
                            span: sp(0,1),
                            attrs: None}),
                                            ast::DUMMY_NODE_ID),
-                       span: sp(0,1)})))
+                       span: sp(0,1)}))
 
     }
 
@@ -957,7 +957,7 @@ mod tests {
                                         }
                                     },
                                     P(ast::Block {
-                                        stmts: vec!(P(Spanned{
+                                        stmts: vec!(Spanned{
                                             node: ast::StmtKind::Semi(P(ast::Expr{
                                                 id: ast::DUMMY_NODE_ID,
                                                 node: ast::ExprKind::Path(None,
@@ -977,7 +977,7 @@ mod tests {
                                                 span: sp(17,18),
                                                 attrs: None,}),
                                                 ast::DUMMY_NODE_ID),
-                                            span: sp(17,19)})),
+                                            span: sp(17,19)}),
                                         expr: None,
                                         id: ast::DUMMY_NODE_ID,
                                         rules: ast::BlockCheckMode::Default, // no idea
@@ -990,24 +990,24 @@ mod tests {
     #[test] fn parse_use() {
         let use_s = "use foo::bar::baz;";
         let vitem = string_to_item(use_s.to_string()).unwrap();
-        let vitem_s = item_to_string(&*vitem);
+        let vitem_s = item_to_string(&vitem);
         assert_eq!(&vitem_s[..], use_s);
 
         let use_s = "use foo::bar as baz;";
         let vitem = string_to_item(use_s.to_string()).unwrap();
-        let vitem_s = item_to_string(&*vitem);
+        let vitem_s = item_to_string(&vitem);
         assert_eq!(&vitem_s[..], use_s);
     }
 
     #[test] fn parse_extern_crate() {
         let ex_s = "extern crate foo;";
         let vitem = string_to_item(ex_s.to_string()).unwrap();
-        let vitem_s = item_to_string(&*vitem);
+        let vitem_s = item_to_string(&vitem);
         assert_eq!(&vitem_s[..], ex_s);
 
         let ex_s = "extern crate foo as bar;";
         let vitem = string_to_item(ex_s.to_string()).unwrap();
-        let vitem_s = item_to_string(&*vitem);
+        let vitem_s = item_to_string(&vitem);
         assert_eq!(&vitem_s[..], ex_s);
     }
 
@@ -1030,7 +1030,7 @@ mod tests {
             }
         }
         let mut v = PatIdentVisitor { spans: Vec::new() };
-        ::visit::walk_item(&mut v, &*item);
+        ::visit::walk_item(&mut v, &item);
         return v.spans;
     }
 

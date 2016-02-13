@@ -179,6 +179,19 @@ macro_rules! maybe_whole {
             }
         }
     );
+    (no_clone_from_p $p:expr, $constructor:ident) => (
+        {
+            let found = match ($p).token {
+                token::Interpolated(token::$constructor(_)) => {
+                    Some(($p).bump_and_get())
+                }
+                _ => None
+            };
+            if let Some(token::Interpolated(token::$constructor(x))) = found {
+                return Ok(x.unwrap());
+            }
+        }
+    );
     (deref $p:expr, $constructor:ident) => (
         {
             let found = match ($p).token {
@@ -431,7 +444,7 @@ impl<'a> Parser<'a> {
                 } else {
                     b.push_str(", ");
                 }
-                b.push_str(&*a.to_string());
+                b.push_str(&a.to_string());
                 b
             })
         }
@@ -683,7 +696,7 @@ impl<'a> Parser<'a> {
                 if text.is_empty() {
                     self.span_bug(sp, "found empty literal suffix in Some")
                 }
-                self.span_err(sp, &*format!("{} with a suffix is invalid", kind));
+                self.span_err(sp, &format!("{} with a suffix is invalid", kind));
             }
         }
     }
@@ -1174,13 +1187,13 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse the items in a trait declaration
-    pub fn parse_trait_items(&mut self) -> PResult<'a,  Vec<P<TraitItem>>> {
+    pub fn parse_trait_items(&mut self) -> PResult<'a,  Vec<TraitItem>> {
         self.parse_unspanned_seq(
             &token::OpenDelim(token::Brace),
             &token::CloseDelim(token::Brace),
             seq_sep_none(),
-            |p| -> PResult<'a, P<TraitItem>> {
-            maybe_whole!(no_clone p, NtTraitItem);
+            |p| -> PResult<'a, TraitItem> {
+            maybe_whole!(no_clone_from_p p, NtTraitItem);
             let mut attrs = try!(p.parse_outer_attributes());
             let lo = p.span.lo;
 
@@ -1249,13 +1262,13 @@ impl<'a> Parser<'a> {
                 (ident, ast::TraitItemKind::Method(sig, body))
             };
 
-            Ok(P(TraitItem {
+            Ok(TraitItem {
                 id: ast::DUMMY_NODE_ID,
                 ident: name,
                 attrs: attrs,
                 node: node,
                 span: mk_sp(lo, p.last_span.hi),
-            }))
+            })
         })
     }
 
@@ -1561,7 +1574,7 @@ impl<'a> Parser<'a> {
 
                 if suffix_illegal {
                     let sp = self.last_span;
-                    self.expect_no_suffix(sp, &*format!("{} literal", lit.short_name()), suf)
+                    self.expect_no_suffix(sp, &format!("{} literal", lit.short_name()), suf)
                 }
 
                 Ok(out)
@@ -2070,7 +2083,7 @@ impl<'a> Parser<'a> {
                 let mut trailing_comma = false;
                 while self.token != token::CloseDelim(token::Paren) {
                     es.push(try!(self.parse_expr()));
-                    try!(self.commit_expr(&**es.last().unwrap(), &[],
+                    try!(self.commit_expr(&es.last().unwrap(), &[],
                                      &[token::Comma, token::CloseDelim(token::Paren)]));
                     if self.check(&token::Comma) {
                         trailing_comma = true;
@@ -2282,7 +2295,7 @@ impl<'a> Parser<'a> {
                                 }
 
                                 fields.push(try!(self.parse_field()));
-                                try!(self.commit_expr(&*fields.last().unwrap().expr,
+                                try!(self.commit_expr(&fields.last().unwrap().expr,
                                                  &[token::Comma],
                                                  &[token::CloseDelim(token::Brace)]));
                             }
@@ -2495,7 +2508,7 @@ impl<'a> Parser<'a> {
                 }
                 continue;
             }
-            if self.expr_is_complete(&*e) { break; }
+            if self.expr_is_complete(&e) { break; }
             match self.token {
               // expr(...)
               token::OpenDelim(token::Paren) => {
@@ -2517,7 +2530,7 @@ impl<'a> Parser<'a> {
                 self.bump();
                 let ix = try!(self.parse_expr());
                 hi = self.span.hi;
-                try!(self.commit_expr_expecting(&*ix, token::CloseDelim(token::Bracket)));
+                try!(self.commit_expr_expecting(&ix, token::CloseDelim(token::Bracket)));
                 let index = self.mk_index(e, ix);
                 e = self.mk_expr(lo, hi, index, None)
               }
@@ -2807,7 +2820,7 @@ impl<'a> Parser<'a> {
         };
 
 
-        if self.expr_is_complete(&*lhs) {
+        if self.expr_is_complete(&lhs) {
             // Semi-statement forms are odd. See https://github.com/rust-lang/rust/issues/29071
             return Ok(lhs);
         }
@@ -2831,7 +2844,7 @@ impl<'a> Parser<'a> {
             }
             self.bump();
             if op.is_comparison() {
-                self.check_no_chained_comparison(&*lhs, &op);
+                self.check_no_chained_comparison(&lhs, &op);
             }
             // Special cases:
             if op == AssocOp::As {
@@ -3139,7 +3152,7 @@ impl<'a> Parser<'a> {
         let lo = self.last_span.lo;
         let discriminant = try!(self.parse_expr_res(
             Restrictions::RESTRICTION_NO_STRUCT_LITERAL, None));
-        if let Err(mut e) = self.commit_expr_expecting(&*discriminant,
+        if let Err(mut e) = self.commit_expr_expecting(&discriminant,
                                                        token::OpenDelim(token::Brace)) {
             if self.token == token::Token::Semi {
                 e.span_note(match_span, "did you mean to remove this `match` keyword?");
@@ -3170,11 +3183,11 @@ impl<'a> Parser<'a> {
         let expr = try!(self.parse_expr_res(Restrictions::RESTRICTION_STMT_EXPR, None));
 
         let require_comma =
-            !classify::expr_is_simple_block(&*expr)
+            !classify::expr_is_simple_block(&expr)
             && self.token != token::CloseDelim(token::Brace);
 
         if require_comma {
-            try!(self.commit_expr(&*expr, &[token::Comma], &[token::CloseDelim(token::Brace)]));
+            try!(self.commit_expr(&expr, &[token::Comma], &[token::CloseDelim(token::Brace)]));
         } else {
             self.eat(&token::Comma);
         }
@@ -3661,8 +3674,8 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a statement. may include decl.
-    pub fn parse_stmt(&mut self) -> PResult<'a, Option<P<Stmt>>> {
-        Ok(try!(self.parse_stmt_()).map(P))
+    pub fn parse_stmt(&mut self) -> PResult<'a, Option<Stmt>> {
+        Ok(try!(self.parse_stmt_()))
     }
 
     fn parse_stmt_(&mut self) -> PResult<'a, Option<Stmt>> {
@@ -3846,10 +3859,10 @@ impl<'a> Parser<'a> {
                     // expr depending on whether a semicolon follows
                     match self.token {
                         token::Semi => {
-                            stmts.push(P(Spanned {
+                            stmts.push(Spanned {
                                 node: StmtKind::Mac(mac, MacStmtStyle::Semicolon, attrs),
                                 span: mk_sp(span.lo, self.span.hi),
-                            }));
+                            });
                             self.bump();
                         }
                         _ => {
@@ -3871,10 +3884,10 @@ impl<'a> Parser<'a> {
                     // statement macro; might be an expr
                     match self.token {
                         token::Semi => {
-                            stmts.push(P(Spanned {
+                            stmts.push(Spanned {
                                 node: StmtKind::Mac(m, MacStmtStyle::Semicolon, attrs),
                                 span: mk_sp(span.lo, self.span.hi),
-                            }));
+                            });
                             self.bump();
                         }
                         token::CloseDelim(token::Brace) => {
@@ -3885,10 +3898,10 @@ impl<'a> Parser<'a> {
                                                          attrs));
                         }
                         _ => {
-                            stmts.push(P(Spanned {
+                            stmts.push(Spanned {
                                 node: StmtKind::Mac(m, style, attrs),
                                 span: span
-                            }));
+                            });
                         }
                     }
                 }
@@ -3899,10 +3912,10 @@ impl<'a> Parser<'a> {
                         hi = self.last_span.hi;
                     }
 
-                    stmts.push(P(Spanned {
+                    stmts.push(Spanned {
                         node: node,
                         span: mk_sp(span.lo, hi)
-                    }));
+                    });
                 }
             }
         }
@@ -3920,10 +3933,10 @@ impl<'a> Parser<'a> {
             &mut self,
             e: P<Expr>,
             span: Span,
-            stmts: &mut Vec<P<Stmt>>,
+            stmts: &mut Vec<Stmt>,
             last_block_expr: &mut Option<P<Expr>>) -> PResult<'a, ()> {
         // expression without semicolon
-        if classify::expr_requires_semi_to_be_stmt(&*e) {
+        if classify::expr_requires_semi_to_be_stmt(&e) {
             // Just check for errors and recover; do not eat semicolon yet.
             try!(self.commit_stmt(&[],
                              &[token::Semi, token::CloseDelim(token::Brace)]));
@@ -3937,17 +3950,17 @@ impl<'a> Parser<'a> {
                     hi: self.last_span.hi,
                     expn_id: span.expn_id,
                 };
-                stmts.push(P(Spanned {
+                stmts.push(Spanned {
                     node: StmtKind::Semi(e, ast::DUMMY_NODE_ID),
                     span: span_with_semi,
-                }));
+                });
             }
             token::CloseDelim(token::Brace) => *last_block_expr = Some(e),
             _ => {
-                stmts.push(P(Spanned {
+                stmts.push(Spanned {
                     node: StmtKind::Expr(e, ast::DUMMY_NODE_ID),
                     span: span
-                }));
+                });
             }
         }
         Ok(())
@@ -4080,7 +4093,7 @@ impl<'a> Parser<'a> {
 
     fn parse_generic_values_after_lt(&mut self) -> PResult<'a, (Vec<ast::Lifetime>,
                                                             Vec<P<Ty>>,
-                                                            Vec<P<TypeBinding>>)> {
+                                                            Vec<TypeBinding>)> {
         let span_lo = self.span.lo;
         let lifetimes = try!(self.parse_lifetimes(token::Comma));
 
@@ -4146,11 +4159,11 @@ impl<'a> Parser<'a> {
                 let ty = try!(p.parse_ty());
                 let hi = ty.span.hi;
                 let span = mk_sp(lo, hi);
-                return Ok(P(TypeBinding{id: ast::DUMMY_NODE_ID,
+                return Ok(TypeBinding{id: ast::DUMMY_NODE_ID,
                     ident: ident,
                     ty: ty,
                     span: span,
-                }));
+                });
             }
         ));
         Ok((lifetimes, types.into_vec(), bindings.into_vec()))
@@ -4647,8 +4660,8 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse an impl item.
-    pub fn parse_impl_item(&mut self) -> PResult<'a, P<ImplItem>> {
-        maybe_whole!(no_clone self, NtImplItem);
+    pub fn parse_impl_item(&mut self) -> PResult<'a, ImplItem> {
+        maybe_whole!(no_clone_from_p self, NtImplItem);
 
         let mut attrs = try!(self.parse_outer_attributes());
         let lo = self.span.lo;
@@ -4674,14 +4687,14 @@ impl<'a> Parser<'a> {
             (name, node)
         };
 
-        Ok(P(ImplItem {
+        Ok(ImplItem {
             id: ast::DUMMY_NODE_ID,
             span: mk_sp(lo, self.last_span.hi),
             ident: name,
             vis: vis,
             attrs: attrs,
             node: node
-        }))
+        })
     }
 
     fn complain_if_pub_macro(&mut self, visa: Visibility, span: Span) {
@@ -4848,7 +4861,7 @@ impl<'a> Parser<'a> {
                 impl_items.push(try!(self.parse_impl_item()));
             }
 
-            Ok((ast_util::impl_pretty_name(&opt_trait, Some(&*ty)),
+            Ok((ast_util::impl_pretty_name(&opt_trait, Some(&ty)),
              ItemKind::Impl(unsafety, polarity, generics, opt_trait, ty, impl_items),
              Some(attrs)))
         }
@@ -5062,7 +5075,7 @@ impl<'a> Parser<'a> {
         let ty = try!(self.parse_ty_sum());
         try!(self.expect(&token::Eq));
         let e = try!(self.parse_expr());
-        try!(self.commit_expr_expecting(&*e, token::Semi));
+        try!(self.commit_expr_expecting(&e, token::Semi));
         let item = match m {
             Some(m) => ItemKind::Static(ty, m, e),
             None => ItemKind::Const(ty, e),
@@ -5243,7 +5256,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a function declaration from a foreign module
     fn parse_item_foreign_fn(&mut self, vis: ast::Visibility, lo: BytePos,
-                             attrs: Vec<Attribute>) -> PResult<'a, P<ForeignItem>> {
+                             attrs: Vec<Attribute>) -> PResult<'a, ForeignItem> {
         try!(self.expect_keyword(keywords::Fn));
 
         let (ident, mut generics) = try!(self.parse_fn_header());
@@ -5251,19 +5264,19 @@ impl<'a> Parser<'a> {
         generics.where_clause = try!(self.parse_where_clause());
         let hi = self.span.hi;
         try!(self.expect(&token::Semi));
-        Ok(P(ast::ForeignItem {
+        Ok(ast::ForeignItem {
             ident: ident,
             attrs: attrs,
             node: ForeignItemKind::Fn(decl, generics),
             id: ast::DUMMY_NODE_ID,
             span: mk_sp(lo, hi),
             vis: vis
-        }))
+        })
     }
 
     /// Parse a static item from a foreign module
     fn parse_item_foreign_static(&mut self, vis: ast::Visibility, lo: BytePos,
-                                 attrs: Vec<Attribute>) -> PResult<'a, P<ForeignItem>> {
+                                 attrs: Vec<Attribute>) -> PResult<'a, ForeignItem> {
         try!(self.expect_keyword(keywords::Static));
         let mutbl = self.eat_keyword(keywords::Mut);
 
@@ -5272,14 +5285,14 @@ impl<'a> Parser<'a> {
         let ty = try!(self.parse_ty_sum());
         let hi = self.span.hi;
         try!(self.expect(&token::Semi));
-        Ok(P(ForeignItem {
+        Ok(ForeignItem {
             ident: ident,
             attrs: attrs,
             node: ForeignItemKind::Static(ty, mutbl),
             id: ast::DUMMY_NODE_ID,
             span: mk_sp(lo, hi),
             vis: vis
-        }))
+        })
     }
 
     /// Parse extern crate links
@@ -5405,7 +5418,7 @@ impl<'a> Parser<'a> {
                 data: struct_def,
                 disr_expr: disr_expr,
             };
-            variants.push(P(spanned(vlo, self.last_span.hi, vr)));
+            variants.push(spanned(vlo, self.last_span.hi, vr));
 
             if !self.eat(&token::Comma) { break; }
         }
@@ -5729,7 +5742,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a foreign item.
-    fn parse_foreign_item(&mut self) -> PResult<'a, Option<P<ForeignItem>>> {
+    fn parse_foreign_item(&mut self) -> PResult<'a, Option<ForeignItem>> {
         let attrs = try!(self.parse_outer_attributes());
         let lo = self.span.lo;
         let visibility = try!(self.parse_visibility());

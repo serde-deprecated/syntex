@@ -65,6 +65,10 @@ impl<T: 'static> P<T> {
     {
         f(*self.ptr)
     }
+    /// Equivalent to and_then(|x| x)
+    pub fn unwrap(self) -> T {
+        *self.ptr
+    }
 
     /// Transform the inner value, consuming `self` and producing a new `P<T>`.
     pub fn map<F>(mut self, f: F) -> P<T> where
@@ -83,7 +87,7 @@ impl<T> Deref for P<T> {
     type Target = T;
 
     fn deref<'a>(&'a self) -> &'a T {
-        &*self.ptr
+        &self.ptr
     }
 }
 
@@ -149,7 +153,7 @@ impl<T> P<[T]> {
     }
 
     pub fn as_slice<'a>(&'a self) -> &'a [T] {
-        &*self.ptr
+        &self.ptr
     }
 
     pub fn move_iter(self) -> vec::IntoIter<T> {
