@@ -733,11 +733,11 @@ pub trait PrintState<'a> {
         let mut count = 0;
         for attr in attrs {
             if attr.node.style == kind {
-                    try!(self.print_attribute_inline(attr, is_inline));
-                    if is_inline {
-                        try!(self.nbsp());
-                    }
-                    count += 1;
+                try!(self.print_attribute_inline(attr, is_inline));
+                if is_inline {
+                    try!(self.nbsp());
+                }
+                count += 1;
             }
         }
         if count > 0 && trailing_hardbreak && !is_inline {

@@ -278,9 +278,9 @@ pub struct Printer<'a> {
     /// Index of right side of input stream
     right: usize,
     /// Ring-buffer stream goes through
-    token: Vec<Token> ,
+    token: Vec<Token>,
     /// Ring-buffer of calculated sizes
-    size: Vec<isize> ,
+    size: Vec<isize>,
     /// Running size of stream "...left"
     left_total: isize,
     /// Running size of stream "...right"
@@ -291,7 +291,7 @@ pub struct Printer<'a> {
     /// Begin (if there is any) on top of it. Stuff is flushed off the
     /// bottom as it becomes irrelevant due to the primary ring-buffer
     /// advancing.
-    scan_stack: Vec<usize> ,
+    scan_stack: Vec<usize>,
     /// Top==bottom disambiguator
     scan_stack_empty: bool,
     /// Index of top of scan_stack
