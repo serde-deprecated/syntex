@@ -1,7 +1,7 @@
 extern crate syntex_syntax;
 
 use std::fs::File;
-use std::io;
+use std::io::{self, Write};
 use std::path::Path;
 
 use syntex_syntax::ast;
@@ -19,7 +19,7 @@ use syntex_syntax::ext::base::ExtCtxt;
 use syntex_syntax::ext::expand;
 use syntex_syntax::feature_gate;
 use syntex_syntax::parse::{self, token};
-use syntex_syntax::print::{pp, pprust};
+use syntex_syntax::print::pprust;
 use syntex_syntax::ptr::P;
 
 pub type Pass = fn(ast::Crate) -> ast::Crate;
@@ -149,11 +149,35 @@ impl Registry {
         let krate = self.post_expansion_passes.iter()
             .fold(krate, |krate, f| (f)(krate));
 
-        let dst = try!(File::create(dst));
+        let src_name = src.to_str().unwrap().to_string();
+        let src = sess.codemap()
+            .get_filemap(&src_name)
+            .src
+            .as_ref()
+            .unwrap()
+            .as_bytes()
+            .to_vec();
+        let mut rdr = &src[..];
 
-        let mut printer = pprust::rust_printer(Box::new(dst));
-        try!(printer.print_mod(&krate.module, &krate.attrs[..]));
-        try!(printer.print_remaining_comments());
-        pp::eof(&mut printer.s)
+        let mut out = Vec::new();
+        let annotation = pprust::NoAnn;
+
+        {
+            let out: &mut io::Write = &mut out;
+
+            try!(pprust::print_crate(
+                sess.codemap(),
+                &sess.span_diagnostic,
+                &krate,
+                src_name.to_string(),
+                &mut rdr,
+                Box::new(out),
+                &annotation,
+                false)
+            );
+        }
+
+        let mut dst = try!(File::create(dst));
+        dst.write_all(&out)
     }
 }
