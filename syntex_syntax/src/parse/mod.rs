@@ -677,7 +677,7 @@ mod tests {
     use super::*;
     use std::rc::Rc;
     use codemap::{Span, BytePos, Pos, Spanned, NO_EXPANSION};
-    use ast::{self, TokenTree};
+    use ast::{self, TokenTree, PatKind};
     use abi::Abi;
     use attr::{first_attr_value_str_by_name, AttrMetaMethods};
     use parse;
@@ -898,7 +898,7 @@ mod tests {
         assert!(panictry!(parser.parse_pat())
                 == P(ast::Pat{
                 id: ast::DUMMY_NODE_ID,
-                node: ast::PatIdent(ast::BindingMode::ByValue(ast::Mutability::Immutable),
+                node: PatKind::Ident(ast::BindingMode::ByValue(ast::Mutability::Immutable),
                                     Spanned{ span:sp(0, 1),
                                              node: str_to_ident("b")
                     },
@@ -933,7 +933,7 @@ mod tests {
                                     }),
                                     pat: P(ast::Pat {
                                         id: ast::DUMMY_NODE_ID,
-                                        node: ast::PatIdent(
+                                        node: PatKind::Ident(
                                             ast::BindingMode::ByValue(ast::Mutability::Immutable),
                                                 Spanned{
                                                     span: sp(6,7),
@@ -1022,7 +1022,7 @@ mod tests {
         impl<'v> ::visit::Visitor<'v> for PatIdentVisitor {
             fn visit_pat(&mut self, p: &'v ast::Pat) {
                 match p.node {
-                    ast::PatIdent(_ , ref spannedident, _) => {
+                    PatKind::Ident(_ , ref spannedident, _) => {
                         self.spans.push(spannedident.span.clone());
                     }
                     _ => {
