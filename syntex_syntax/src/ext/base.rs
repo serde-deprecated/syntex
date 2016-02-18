@@ -456,7 +456,7 @@ impl BlockInfo {
 
 /// The base map of methods for expanding syntax extension
 /// AST nodes into full ASTs
-fn initial_syntax_expander_table<'feat>(_ecfg: &expand::ExpansionConfig<'feat>)
+fn initial_syntax_expander_table<'feat>(ecfg: &expand::ExpansionConfig<'feat>)
                                         -> SyntaxEnv {
     // utility function to simplify creating NormalTT syntax extensions
     fn builtin_normal_expander(f: MacroExpanderFn) -> SyntaxExtension {
@@ -471,7 +471,6 @@ fn initial_syntax_expander_table<'feat>(_ecfg: &expand::ExpansionConfig<'feat>)
 
     ext::deriving::register_all(&mut syntax_expanders);
 
-    /*
     if ecfg.enable_quotes() {
         // Quasi-quoting expanders
         syntax_expanders.insert(intern("quote_tokens"),
@@ -515,6 +514,7 @@ fn initial_syntax_expander_table<'feat>(_ecfg: &expand::ExpansionConfig<'feat>)
                                 ext::quote::expand_quote_path));
     }
 
+    /*
     syntax_expanders.insert(intern("line"),
                             builtin_normal_expander(
                                     ext::source_util::expand_line));
