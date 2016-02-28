@@ -783,14 +783,16 @@ impl CodeMap {
 
     /// Creates a new filemap without setting its line information. If you don't
     /// intend to set the line information yourself, you should use new_filemap_and_lines.
-    pub fn new_filemap(&self, filename: FileName, mut src: String) -> Rc<FileMap> {
+    pub fn new_filemap(&self, filename: FileName, src: String) -> Rc<FileMap> {
         let start_pos = self.next_start_pos();
         let mut files = self.files.borrow_mut();
 
         // Remove utf-8 BOM if any.
-        if src.starts_with("\u{feff}") {
-            src.drain(..3);
-        }
+        let src = if src.starts_with("\u{feff}") {
+            String::from(&src[3..])
+        } else {
+            src
+        };
 
         let end_pos = start_pos + src.len();
 
