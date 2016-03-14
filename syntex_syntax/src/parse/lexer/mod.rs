@@ -16,7 +16,6 @@ use ext::tt::transcribe::tt_next_token;
 use parse::token::str_to_ident;
 use parse::token;
 use str::char_at;
-use rustc_unicode::property::Pattern_White_Space;
 
 use std::borrow::Cow;
 use std::char;
@@ -1601,7 +1600,12 @@ impl<'a> StringReader<'a> {
 // This tests the character for the unicode property 'PATTERN_WHITE_SPACE' which
 // is guaranteed to be forward compatible. http://unicode.org/reports/tr31/#R3
 pub fn is_pattern_whitespace(c: Option<char>) -> bool {
-    c.map_or(false, Pattern_White_Space)
+    // Please note, the function signature is the one which uses rustc_unicode
+    // but the function body is from the prior version.
+    match c.unwrap_or('\x00') {
+        ' ' | '\n' | '\t' | '\r' => true,
+        _ => false
+    }
 }
 
 fn in_range(c: Option<char>, lo: char, hi: char) -> bool {

@@ -76,6 +76,13 @@ bitflags! {
     }
 }
 
+impl Restrictions {
+    // Hack to work around differences between bitflags built-in and the bitflags crate
+    pub fn no_noninline_mod() -> Self {
+        NO_NONINLINE_MOD
+    }
+}
+
 type ItemInfo = (Ident, ItemKind, Option<Vec<Attribute> >);
 
 /// How to parse a path. There are four different kinds of paths, all of which
