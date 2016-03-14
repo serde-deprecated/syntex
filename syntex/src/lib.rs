@@ -46,21 +46,23 @@ impl Registry {
     }
 
     pub fn add_cfg(&mut self, cfg: &str) {
+        let parse_sess = parse::ParseSess::new();
         let meta_item = parse::parse_meta_from_source_str(
             "cfgspec".to_string(),
             cfg.to_string(),
             Vec::new(),
-            &parse::ParseSess::new());
+            &parse_sess).unwrap();
 
         self.cfg.push(meta_item);
     }
 
     pub fn add_attr(&mut self, attr: &str) {
+        let parse_sess = parse::ParseSess::new();
         let meta_item = parse::parse_meta_from_source_str(
             "attrspec".to_string(),
             attr.to_string(),
             Vec::new(),
-            &parse::ParseSess::new());
+            &parse_sess).unwrap();
 
         self.attrs.push(respan(DUMMY_SP, ast::Attribute_ {
             id: attr::mk_attr_id(),
@@ -125,7 +127,7 @@ impl Registry {
         let mut krate = parse::parse_crate_from_file(
             src,
             self.cfg,
-            &sess);
+            &sess).unwrap();
 
         krate.attrs.extend(self.attrs);
 
