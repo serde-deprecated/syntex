@@ -196,7 +196,7 @@ impl Token {
             BinOp(Or)                   => true, // in lambda syntax
             OrOr                        => true, // in lambda syntax
             AndAnd                      => true, // double borrow
-            DotDot                      => true, // range notation
+            DotDot | DotDotDot          => true, // range notation
             ModSep                      => true,
             Interpolated(NtExpr(..))    => true,
             Interpolated(NtIdent(..))   => true,
@@ -542,7 +542,7 @@ declare_special_idents_and_keywords! {
         // outside of libsyntax
         (7,                          clownshoe_abi,          "__rust_abi");
         (8,                          opaque,                 "<opaque>");
-        (9,                          unnamed_field,          "<unnamed_field>");
+        (9,                          __unused1,              "<__unused1>");
         (super::SELF_TYPE_KEYWORD_NAME_NUM, type_self,       "Self");
         (11,                         prelude_import,         "prelude_import");
     }

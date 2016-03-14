@@ -213,10 +213,10 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status
     ("unwind_attributes", "1.4.0", None, Active),
 
     // allow empty structs and enum variants with braces
-    ("braced_empty_structs", "1.5.0", Some(29720), Active),
+    ("braced_empty_structs", "1.5.0", Some(29720), Accepted),
 
     // allow overloading augmented assignment operations like `a += b`
-    ("augmented_assignments", "1.5.0", Some(28235), Active),
+    ("augmented_assignments", "1.5.0", Some(28235), Accepted),
 
     // allow `#[no_debug]`
     ("no_debug", "1.5.0", Some(29721), Active),
@@ -241,7 +241,13 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status
     ("cfg_target_thread_local", "1.7.0", Some(29594), Active),
 
     // rustc internal
-    ("abi_vectorcall", "1.7.0", None, Active)
+    ("abi_vectorcall", "1.7.0", None, Active),
+
+    // a...b and ...b
+    ("inclusive_range_syntax", "1.7.0", Some(28237), Active),
+
+    // `expr?`
+    ("question_mark", "1.9.0", Some(31436), Active)
 ];
 // (changing above list without updating src/doc/reference.md makes @cmr sad)
 
@@ -549,6 +555,7 @@ pub struct Features {
     pub allow_placement_in: bool,
     pub allow_box: bool,
     pub allow_pushpop_unsafe: bool,
+    pub allow_inclusive_range: bool,
     pub simd_ffi: bool,
     pub unmarked_api: bool,
     /// spans of #![feature] attrs for stable language features. for error reporting
@@ -563,11 +570,10 @@ pub struct Features {
     pub cfg_target_feature: bool,
     pub cfg_target_vendor: bool,
     pub cfg_target_thread_local: bool,
-    pub augmented_assignments: bool,
-    pub braced_empty_structs: bool,
     pub staged_api: bool,
     pub stmt_expr_attributes: bool,
     pub deprecated: bool,
+    pub question_mark: bool,
 }
 
 impl Features {
@@ -585,6 +591,7 @@ impl Features {
             allow_placement_in: false,
             allow_box: false,
             allow_pushpop_unsafe: false,
+            allow_inclusive_range: false,
             simd_ffi: false,
             unmarked_api: false,
             declared_stable_lang_features: Vec::new(),
@@ -597,11 +604,10 @@ impl Features {
             cfg_target_feature: false,
             cfg_target_vendor: false,
             cfg_target_thread_local: false,
-            augmented_assignments: false,
-            braced_empty_structs: false,
             staged_api: false,
             stmt_expr_attributes: false,
             deprecated: false,
+            question_mark: false,
         }
     }
 }
@@ -956,10 +962,7 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
     fn visit_variant_data(&mut self, s: &'v ast::VariantData, _: ast::Ident,
                         _: &'v ast::Generics, _: ast::NodeId, span: Span) {
         if s.fields().is_empty() {
-            if s.is_struct() {
-                self.gate_feature("braced_empty_structs", span,
-                                  "empty structs and enum variants with braces are unstable");
-            } else if s.is_tuple() {
+            if s.is_tuple() {
                 self.context.span_handler.struct_span_err(span, "empty tuple structs and enum \
                                                                  variants are not allowed, use \
                                                                  unit structs and enum variants \
@@ -997,6 +1000,14 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
             ast::ExprKind::Type(..) => {
                 self.gate_feature("type_ascription", e.span,
                                   "type ascription is experimental");
+            }
+            ast::ExprKind::Range(_, _, ast::RangeLimits::Closed) => {
+                self.gate_feature("inclusive_range_syntax",
+                                  e.span,
+                                  "inclusive range syntax is experimental");
+            }
+            ast::ExprKind::Try(..) => {
+                self.gate_feature("question_mark", e.span, "the `?` operator is not stable");
             }
             _ => {}
         }
@@ -1184,6 +1195,7 @@ fn check_crate_inner<F>(cm: &CodeMap, span_handler: &Handler,
         allow_placement_in: cx.has_feature("placement_in_syntax"),
         allow_box: cx.has_feature("box_syntax"),
         allow_pushpop_unsafe: cx.has_feature("pushpop_unsafe"),
+        allow_inclusive_range: cx.has_feature("inclusive_range_syntax"),
         simd_ffi: cx.has_feature("simd_ffi"),
         unmarked_api: cx.has_feature("unmarked_api"),
         declared_stable_lang_features: accepted_features,
@@ -1196,11 +1208,10 @@ fn check_crate_inner<F>(cm: &CodeMap, span_handler: &Handler,
         cfg_target_feature: cx.has_feature("cfg_target_feature"),
         cfg_target_vendor: cx.has_feature("cfg_target_vendor"),
         cfg_target_thread_local: cx.has_feature("cfg_target_thread_local"),
-        augmented_assignments: cx.has_feature("augmented_assignments"),
-        braced_empty_structs: cx.has_feature("braced_empty_structs"),
         staged_api: cx.has_feature("staged_api"),
         stmt_expr_attributes: cx.has_feature("stmt_expr_attributes"),
         deprecated: cx.has_feature("deprecated"),
+        question_mark: cx.has_feature("question_mark"),
     }
 }
 

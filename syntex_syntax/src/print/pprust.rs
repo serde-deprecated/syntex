@@ -2163,11 +2163,15 @@ impl<'a> State<'a> {
                 try!(self.print_expr(&index));
                 try!(word(&mut self.s, "]"));
             }
-            ast::ExprKind::Range(ref start, ref end) => {
+            ast::ExprKind::Range(ref start, ref end, limits) => {
                 if let &Some(ref e) = start {
                     try!(self.print_expr(&e));
                 }
-                try!(word(&mut self.s, ".."));
+                if limits == ast::RangeLimits::HalfOpen {
+                    try!(word(&mut self.s, ".."));
+                } else {
+                    try!(word(&mut self.s, "..."));
+                }
                 if let &Some(ref e) = end {
                     try!(self.print_expr(&e));
                 }
@@ -2273,6 +2277,10 @@ impl<'a> State<'a> {
                 try!(self.print_inner_attributes_inline(attrs));
                 try!(self.print_expr(&e));
                 try!(self.pclose());
+            },
+            ast::ExprKind::Try(ref e) => {
+                try!(self.print_expr(e));
+                try!(word(&mut self.s, "?"))
             }
         }
         try!(self.ann.post(self, NodeExpr(expr)));
