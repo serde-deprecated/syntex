@@ -570,6 +570,10 @@ pub struct ExtCtxt<'a> {
 
     pub syntax_env: SyntaxEnv,
     pub recursion_count: usize,
+
+    pub filename: Option<String>,
+    pub mod_path_stack: Vec<InternedString>,
+    pub in_block: bool,
 }
 
 impl<'a> ExtCtxt<'a> {
@@ -588,6 +592,10 @@ impl<'a> ExtCtxt<'a> {
             exported_macros: Vec::new(),
             syntax_env: env,
             recursion_count: 0,
+
+            filename: None,
+            mod_path_stack: Vec::new(),
+            in_block: false,
         }
     }
 
@@ -778,7 +786,12 @@ impl<'a> ExtCtxt<'a> {
                               err: &mut DiagnosticBuilder<'a>) {
         let names = &self.syntax_env.names;
         if let Some(suggestion) = find_best_match_for_name(names.iter(), name, None) {
-            err.fileline_help(span, &format!("did you mean `{}!`?", suggestion));
+            if suggestion != name {
+                err.fileline_help(span, &format!("did you mean `{}!`?", suggestion));
+            } else {
+                err.fileline_help(span, &format!("have you added the `#[macro_use]` on the \
+                                                  module/import?"));
+            }
         }
     }
 }
