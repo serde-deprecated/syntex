@@ -7,7 +7,7 @@ description = "Export of libsyntax for code generation"
 repository = "https://github.com/erickt/rust-syntex"
 
 [dependencies]
-bitflags = "^0.3.2"
+bitflags = "^0.5.0"
 libc = "^0.2.2"
 log = "^0.3.3"
 rustc-serialize = "^0.3.16"

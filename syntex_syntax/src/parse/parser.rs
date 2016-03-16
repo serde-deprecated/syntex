@@ -69,7 +69,7 @@ use std::rc::Rc;
 use std::slice;
 
 bitflags! {
-    flags Restrictions: u8 {
+    pub flags Restrictions: u8 {
         const RESTRICTION_STMT_EXPR         = 1 << 0,
         const RESTRICTION_NO_STRUCT_LITERAL = 1 << 1,
         const NO_NONINLINE_MOD  = 1 << 2,

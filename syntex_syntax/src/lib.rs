@@ -25,7 +25,7 @@
 extern crate term;
 extern crate libc;
 #[macro_use] extern crate log;
-#[macro_use] #[no_link] extern crate bitflags as rustc_bitflags;
+#[macro_use] extern crate bitflags;
 
 extern crate rustc_serialize; // used by deriving
 extern crate rustc_serialize as serialize;
