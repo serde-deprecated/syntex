@@ -7,7 +7,7 @@ rust:
 - nightly
 script:
 - (cd hello_world && cargo build --verbose)
-- (cd syntex && cargo doc --no-deps)
+- (cd syntex && cargo test --verbose && cargo doc --no-deps)
 - (cd syntex_syntax && cargo doc --no-deps)
 after_success: |
   [ $TRAVIS_BRANCH = "master" ] &&
