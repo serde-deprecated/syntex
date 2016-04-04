@@ -1,5 +1,7 @@
 extern crate syntex_syntax;
 
+mod squash_derive;
+
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
@@ -147,6 +149,7 @@ impl Registry {
         let ecx = ExtCtxt::new(&sess, cfg, ecfg, &mut gated_cfgs);
 
         let (krate, _) = expand::expand_crate(ecx, self.macros, self.syntax_exts, krate);
+        let krate = squash_derive::squash_derive(krate);
 
         let krate = self.post_expansion_passes.iter()
             .fold(krate, |krate, f| (f)(krate));
