@@ -21,7 +21,6 @@
 use ast::*;
 use ast;
 use attr::{ThinAttributes, ThinAttributesExt};
-use ast_util;
 use codemap::{respan, Span, Spanned};
 use parse::token;
 use ptr::P;
@@ -286,6 +285,10 @@ pub trait Folder : Sized {
     fn fold_where_predicate(&mut self, where_predicate: WherePredicate)
                             -> WherePredicate {
         noop_fold_where_predicate(where_predicate, self)
+    }
+
+    fn fold_vis(&mut self, vis: Visibility) -> Visibility {
+        noop_fold_vis(vis, self)
     }
 
     fn new_id(&mut self, i: NodeId) -> NodeId {
@@ -843,15 +846,13 @@ pub fn noop_fold_poly_trait_ref<T: Folder>(p: PolyTraitRef, fld: &mut T) -> Poly
 }
 
 pub fn noop_fold_struct_field<T: Folder>(f: StructField, fld: &mut T) -> StructField {
-    let StructField {node: StructField_ {id, kind, ty, attrs}, span} = f;
-    Spanned {
-        node: StructField_ {
-            id: fld.new_id(id),
-            kind: kind,
-            ty: fld.fold_ty(ty),
-            attrs: fold_attrs(attrs, fld),
-        },
-        span: fld.new_span(span)
+    StructField {
+        span: fld.new_span(f.span),
+        id: fld.new_id(f.id),
+        ident: f.ident.map(|ident| fld.fold_ident(ident)),
+        vis: f.vis,
+        ty: fld.fold_ty(f.ty),
+        attrs: fold_attrs(f.attrs, fld),
     }
 }
 
@@ -992,7 +993,7 @@ pub fn noop_fold_impl_item<T: Folder>(i: ImplItem, folder: &mut T)
         id: folder.new_id(i.id),
         ident: folder.fold_ident(i.ident),
         attrs: fold_attrs(i.attrs, folder),
-        vis: i.vis,
+        vis: folder.fold_vis(i.vis),
         defaultness: i.defaultness,
         node: match i.node  {
             ast::ImplItemKind::Const(ty, expr) => {
@@ -1069,20 +1070,13 @@ pub fn noop_fold_item_simple<T: Folder>(Item {id, ident, attrs, node, vis, span}
                                         folder: &mut T) -> Item {
     let id = folder.new_id(id);
     let node = folder.fold_item_kind(node);
-    let ident = match node {
-        // The node may have changed, recompute the "pretty" impl name.
-        ItemKind::Impl(_, _, _, ref maybe_trait, ref ty, _) => {
-            ast_util::impl_pretty_name(maybe_trait, Some(&ty))
-        }
-        _ => ident
-    };
 
     Item {
         id: id,
         ident: folder.fold_ident(ident),
         attrs: fold_attrs(attrs, folder),
         node: node,
-        vis: vis,
+        vis: folder.fold_vis(vis),
         span: folder.new_span(span)
     }
 }
@@ -1100,7 +1094,7 @@ pub fn noop_fold_foreign_item<T: Folder>(ni: ForeignItem, folder: &mut T) -> For
                 ForeignItemKind::Static(folder.fold_ty(t), m)
             }
         },
-        vis: ni.vis,
+        vis: folder.fold_vis(ni.vis),
         span: folder.new_span(ni.span)
     }
 }
@@ -1388,6 +1382,16 @@ pub fn noop_fold_stmt<T: Folder>(Spanned {node, span}: Stmt, folder: &mut T)
                                 attrs.map_thin_attrs(|v| fold_attrs(v, folder))),
             span: span
         })
+    }
+}
+
+pub fn noop_fold_vis<T: Folder>(vis: Visibility, folder: &mut T) -> Visibility {
+    match vis {
+        Visibility::Restricted { path, id } => Visibility::Restricted {
+            path: path.map(|path| folder.fold_path(path)),
+            id: folder.new_id(id)
+        },
+        _ => vis,
     }
 }
 

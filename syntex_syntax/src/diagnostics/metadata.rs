@@ -97,5 +97,5 @@ pub fn output_metadata(ecx: &ExtCtxt, prefix: &str, name: &str, err_map: &ErrorM
     if result.is_err() {
         try!(remove_file(&metadata_path));
     }
-    Ok(try!(result))
+    result.map_err(|e| e.into())
 }
