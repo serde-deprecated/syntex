@@ -10,7 +10,6 @@
 
 // The Rust abstract syntax tree.
 
-pub use self::StructFieldKind::*;
 pub use self::TyParamBound::*;
 pub use self::UnsafeSource::*;
 pub use self::ViewPath_::*;
@@ -19,6 +18,7 @@ pub use self::PathParameters::*;
 use attr::ThinAttributes;
 use codemap::{Span, Spanned, DUMMY_SP, ExpnId};
 use abi::Abi;
+use errors;
 use ext::base;
 use ext::tt::macro_parser;
 use parse::token::InternedString;
@@ -83,7 +83,7 @@ impl Encodable for Name {
 
 impl Decodable for Name {
     fn decode<D: Decoder>(d: &mut D) -> Result<Name, D::Error> {
-        Ok(token::intern(&try!(d.read_str())[..]))
+        Ok(token::intern(&d.read_str()?[..]))
     }
 }
 
@@ -152,7 +152,7 @@ impl Encodable for Ident {
 
 impl Decodable for Ident {
     fn decode<D: Decoder>(d: &mut D) -> Result<Ident, D::Error> {
-        Ok(Ident::with_empty_ctxt(try!(Name::decode(d))))
+        Ok(Ident::with_empty_ctxt(Name::decode(d)?))
     }
 }
 
@@ -201,6 +201,23 @@ impl fmt::Debug for Path {
 impl fmt::Display for Path {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", pprust::path_to_string(self))
+    }
+}
+
+impl Path {
+    // convert a span and an identifier to the corresponding
+    // 1-segment path
+    pub fn from_ident(s: Span, identifier: Ident) -> Path {
+        Path {
+            span: s,
+            global: false,
+            segments: vec!(
+                PathSegment {
+                    identifier: identifier,
+                    parameters: PathParameters::none()
+                }
+            ),
+        }
     }
 }
 
@@ -344,6 +361,10 @@ pub const DUMMY_NODE_ID: NodeId = !0;
 pub trait NodeIdAssigner {
     fn next_node_id(&self) -> NodeId;
     fn peek_node_id(&self) -> NodeId;
+
+    fn diagnostic(&self) -> &errors::Handler {
+        panic!("this ID assigner cannot emit diagnostics")
+    }
 }
 
 /// The AST represents all type param bounds as types.
@@ -1863,60 +1884,22 @@ pub struct PolyTraitRef {
     pub span: Span,
 }
 
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 pub enum Visibility {
     Public,
+    Crate,
+    Restricted { path: P<Path>, id: NodeId },
     Inherited,
 }
 
-impl Visibility {
-    pub fn inherit_from(&self, parent_visibility: Visibility) -> Visibility {
-        match *self {
-            Visibility::Inherited => parent_visibility,
-            Visibility::Public => *self
-        }
-    }
-}
-
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
-pub struct StructField_ {
-    pub kind: StructFieldKind,
+pub struct StructField {
+    pub span: Span,
+    pub ident: Option<Ident>,
+    pub vis: Visibility,
     pub id: NodeId,
     pub ty: P<Ty>,
     pub attrs: Vec<Attribute>,
-}
-
-impl StructField_ {
-    pub fn ident(&self) -> Option<Ident> {
-        match self.kind {
-            NamedField(ref ident, _) => Some(ident.clone()),
-            UnnamedField(_) => None
-        }
-    }
-}
-
-pub type StructField = Spanned<StructField_>;
-
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
-pub enum StructFieldKind {
-    NamedField(Ident, Visibility),
-    /// Element of a tuple-like struct
-    UnnamedField(Visibility),
-}
-
-impl StructFieldKind {
-    pub fn is_unnamed(&self) -> bool {
-        match *self {
-            UnnamedField(..) => true,
-            NamedField(..) => false,
-        }
-    }
-
-    pub fn visibility(&self) -> Visibility {
-        match *self {
-            NamedField(_, vis) | UnnamedField(vis) => vis
-        }
-    }
 }
 
 /// Fields and Ids of enum variants and structs
