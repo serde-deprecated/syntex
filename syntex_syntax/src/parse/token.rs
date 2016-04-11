@@ -514,7 +514,7 @@ macro_rules! declare_special_idents_and_keywords {(
 // If the special idents get renumbered, remember to modify these two as appropriate
 pub const SELF_KEYWORD_NAME: ast::Name = ast::Name(SELF_KEYWORD_NAME_NUM);
 const STATIC_KEYWORD_NAME: ast::Name = ast::Name(STATIC_KEYWORD_NAME_NUM);
-const SUPER_KEYWORD_NAME: ast::Name = ast::Name(SUPER_KEYWORD_NAME_NUM);
+pub const SUPER_KEYWORD_NAME: ast::Name = ast::Name(SUPER_KEYWORD_NAME_NUM);
 const SELF_TYPE_KEYWORD_NAME: ast::Name = ast::Name(SELF_TYPE_KEYWORD_NAME_NUM);
 
 pub const SELF_KEYWORD_NAME_NUM: u32 = 1;
@@ -706,7 +706,7 @@ impl<'a> PartialEq<InternedString> for &'a str {
 
 impl Decodable for InternedString {
     fn decode<D: Decoder>(d: &mut D) -> Result<InternedString, D::Error> {
-        Ok(intern(try!(d.read_str()).as_ref()).as_str())
+        Ok(intern(d.read_str()?.as_ref()).as_str())
     }
 }
 

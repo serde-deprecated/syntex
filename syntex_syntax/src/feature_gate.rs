@@ -109,6 +109,8 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status
     // to bootstrap fix for #5723.
     ("issue_5723_bootstrap", "1.0.0", None, Accepted),
 
+    ("structural_match", "1.8.0", Some(31434), Active),
+
     // A way to temporarily opt out of opt in copy. This will *never* be accepted.
     ("opt_out_copy", "1.0.0", None, Removed),
 
@@ -197,7 +199,7 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status
     ("associated_type_defaults", "1.2.0", Some(29661), Active),
 
     // Allows macros to appear in the type position.
-    ("type_macros", "1.3.0", Some(27336), Active),
+    ("type_macros", "1.3.0", Some(27245), Active),
 
     // allow `repr(simd)`, and importing the various simd intrinsics
     ("repr_simd", "1.4.0", Some(27731), Active),
@@ -211,6 +213,9 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status
     // allow `#[unwind]`
     // rust runtime internal
     ("unwind_attributes", "1.4.0", None, Active),
+
+    // allow the use of `#[naked]` on functions.
+    ("naked_functions", "1.9.0", Some(32408), Active),
 
     // allow empty structs and enum variants with braces
     ("braced_empty_structs", "1.5.0", Some(29720), Accepted),
@@ -301,6 +306,11 @@ pub const KNOWN_ATTRIBUTES: &'static [(&'static str, AttributeType, AttributeGat
     ("link_args", Normal, Ungated),
     ("macro_escape", Normal, Ungated),
 
+    // RFC #1445.
+    ("structural_match", Whitelisted, Gated("structural_match",
+                                            "the semantics of constant patterns is \
+                                             not yet settled")),
+
     // Not used any more, but we can't feature gate it
     ("no_stack_check", Normal, Ungated),
 
@@ -346,14 +356,30 @@ pub const KNOWN_ATTRIBUTES: &'static [(&'static str, AttributeType, AttributeGat
                                        "the `#[rustc_if_this_changed]` attribute \
                                         is just used for rustc unit tests \
                                         and will never be stable")),
+    ("rustc_dirty", Whitelisted, Gated("rustc_attrs",
+                                       "the `#[rustc_dirty]` attribute \
+                                        is just used for rustc unit tests \
+                                        and will never be stable")),
+    ("rustc_clean", Whitelisted, Gated("rustc_attrs",
+                                       "the `#[rustc_clean]` attribute \
+                                        is just used for rustc unit tests \
+                                        and will never be stable")),
+    ("rustc_symbol_name", Whitelisted, Gated("rustc_attrs",
+                                       "internal rustc attributes will never be stable")),
+    ("rustc_item_path", Whitelisted, Gated("rustc_attrs",
+                                       "internal rustc attributes will never be stable")),
     ("rustc_move_fragments", Normal, Gated("rustc_attrs",
                                            "the `#[rustc_move_fragments]` attribute \
                                             is just used for rustc unit tests \
                                             and will never be stable")),
-    ("rustc_mir", Normal, Gated("rustc_attrs",
-                                "the `#[rustc_mir]` attribute \
-                                 is just used for rustc unit tests \
-                                 and will never be stable")),
+    ("rustc_mir", Whitelisted, Gated("rustc_attrs",
+                                     "the `#[rustc_mir]` attribute \
+                                      is just used for rustc unit tests \
+                                      and will never be stable")),
+    ("rustc_no_mir", Whitelisted, Gated("rustc_attrs",
+                                        "the `#[rustc_no_mir]` attribute \
+                                         is just used to make tests pass \
+                                         and will never be stable")),
 
     ("allow_internal_unstable", Normal, Gated("allow_internal_unstable",
                                               EXPLAIN_ALLOW_INTERNAL_UNSTABLE)),
@@ -372,6 +398,9 @@ pub const KNOWN_ATTRIBUTES: &'static [(&'static str, AttributeType, AttributeGat
     // FIXME: #14406 these are processed in trans, which happens after the
     // lint pass
     ("cold", Whitelisted, Ungated),
+    ("naked", Whitelisted, Gated("naked_functions",
+                                 "the `#[naked]` attribute \
+                                  is an experimental feature")),
     ("export_name", Whitelisted, Ungated),
     ("inline", Whitelisted, Ungated),
     ("link", Whitelisted, Ungated),
@@ -569,6 +598,7 @@ pub struct Features {
     pub const_indexing: bool,
     pub static_recursion: bool,
     pub default_type_parameter_fallback: bool,
+    pub rustc_attrs: bool,
     pub type_macros: bool,
     pub cfg_target_feature: bool,
     pub cfg_target_vendor: bool,
@@ -604,6 +634,7 @@ impl Features {
             const_indexing: false,
             static_recursion: false,
             default_type_parameter_fallback: false,
+            rustc_attrs: false,
             type_macros: false,
             cfg_target_feature: false,
             cfg_target_vendor: false,
@@ -666,7 +697,7 @@ impl<'a> Context<'a> {
     fn gate_feature(&self, feature: &str, span: Span, explain: &str) {
         let has_feature = self.has_feature(feature);
         debug!("gate_feature(feature = {:?}, span = {:?}); has? {}", feature, span, has_feature);
-        if !has_feature {
+        if !has_feature && !self.cm.span_allows_unstable(span) {
             emit_feature_err(self.span_handler, feature, span, GateIssue::Language, explain);
         }
     }
@@ -1215,6 +1246,7 @@ fn check_crate_inner<F>(cm: &CodeMap, span_handler: &Handler,
         const_indexing: cx.has_feature("const_indexing"),
         static_recursion: cx.has_feature("static_recursion"),
         default_type_parameter_fallback: cx.has_feature("default_type_parameter_fallback"),
+        rustc_attrs: cx.has_feature("rustc_attrs"),
         type_macros: cx.has_feature("type_macros"),
         cfg_target_feature: cx.has_feature("cfg_target_feature"),
         cfg_target_vendor: cx.has_feature("cfg_target_vendor"),
