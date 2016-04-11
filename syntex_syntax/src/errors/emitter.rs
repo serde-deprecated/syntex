@@ -184,20 +184,20 @@ impl EmitterWriter {
             self.cm.span_to_string(bounds)
         };
 
-        print_diagnostic(&mut self.dst, &ss[..], lvl, msg, code)?;
+        try!(print_diagnostic(&mut self.dst, &ss[..], lvl, msg, code));
 
         match *rsp {
             FullSpan(_) => {
-                self.highlight_lines(msp, lvl)?;
-                self.print_macro_backtrace(bounds)?;
+                try!(self.highlight_lines(msp, lvl));
+                try!(self.print_macro_backtrace(bounds));
             }
             EndSpan(_) => {
-                self.end_highlight_lines(msp, lvl)?;
-                self.print_macro_backtrace(bounds)?;
+                try!(self.end_highlight_lines(msp, lvl));
+                try!(self.print_macro_backtrace(bounds));
             }
             Suggestion(ref suggestion) => {
-                self.highlight_suggestion(suggestion)?;
-                self.print_macro_backtrace(bounds)?;
+                try!(self.highlight_suggestion(suggestion));
+                try!(self.print_macro_backtrace(bounds));
             }
             FileLine(..) => {
                 // no source text in this case!
@@ -207,9 +207,9 @@ impl EmitterWriter {
         if let Some(code) = code {
             if let Some(_) = self.registry.as_ref()
                                           .and_then(|registry| registry.find_description(code)) {
-                print_diagnostic(&mut self.dst, &ss[..], Help,
+                try!(print_diagnostic(&mut self.dst, &ss[..], Help,
                                  &format!("run `rustc --explain {}` to see a \
-                                           detailed explanation", code), None)?;
+                                           detailed explanation", code), None));
             }
         }
         Ok(())
@@ -233,14 +233,14 @@ impl EmitterWriter {
         // snippets from the actual error being reported.
         let mut lines = complete.lines();
         for line in lines.by_ref().take(MAX_HIGHLIGHT_LINES) {
-            write!(&mut self.dst, "{0}:{1:2$} {3}\n",
-                   fm.name, "", max_digits, line)?;
+            try!(write!(&mut self.dst, "{0}:{1:2$} {3}\n",
+                   fm.name, "", max_digits, line));
         }
 
         // if we elided some lines, add an ellipsis
         if let Some(_) = lines.next() {
-            write!(&mut self.dst, "{0:1$} {0:2$} ...\n",
-                   "", fm.name.len(), max_digits)?;
+            try!(write!(&mut self.dst, "{0:1$} {0:2$} ...\n",
+                   "", fm.name.len(), max_digits));
         }
 
         Ok(())
@@ -254,7 +254,7 @@ impl EmitterWriter {
         let lines = match self.cm.span_to_lines(msp.to_span_bounds()) {
             Ok(lines) => lines,
             Err(_) => {
-                write!(&mut self.dst, "(internal compiler error: unprintable span)\n")?;
+                try!(write!(&mut self.dst, "(internal compiler error: unprintable span)\n"));
                 return Ok(());
             }
         };
@@ -418,26 +418,26 @@ impl EmitterWriter {
 
             // If we elided something put an ellipsis.
             if prev_line_index != line.line_index.wrapping_sub(1) && !overflowed {
-                write!(&mut self.dst, "{0:1$}...\n", "", skip)?;
+                try!(write!(&mut self.dst, "{0:1$}...\n", "", skip));
             }
 
             // Print offending code-line
             remaining_err_lines -= 1;
-            write!(&mut self.dst, "{}:{:>width$} {}\n",
+            try!(write!(&mut self.dst, "{}:{:>width$} {}\n",
                    fm.name,
                    line.line_index + 1,
                    cur_line_str,
-                   width=digits)?;
+                   width=digits));
 
             if s.len() > skip {
                 // Render the spans we assembled previously (if any).
-                println_maybe_styled!(&mut self.dst, term::Attr::ForegroundColor(lvl.color()),
-                                      "{}", s)?;
+                try!(println_maybe_styled!(&mut self.dst, term::Attr::ForegroundColor(lvl.color()),
+                                      "{}", s));
             }
 
             if !overflowed_buf.is_empty() {
                 // Print code-lines trailing the rendered spans (when a span overflows)
-                write!(&mut self.dst, "{}", &overflowed_buf)?;
+                try!(write!(&mut self.dst, "{}", &overflowed_buf));
                 overflowed_buf.clear();
             } else {
                 prev_line_index = line.line_index;
@@ -446,7 +446,7 @@ impl EmitterWriter {
 
         // If we elided something, put an ellipsis.
         if lines.next().is_some() {
-            write!(&mut self.dst, "{0:1$}...\n", "", skip)?;
+            try!(write!(&mut self.dst, "{0:1$}...\n", "", skip));
         }
         Ok(())
     }
@@ -465,7 +465,7 @@ impl EmitterWriter {
         let lines = match self.cm.span_to_lines(msp.to_span_bounds()) {
             Ok(lines) => lines,
             Err(_) => {
-                write!(&mut self.dst, "(internal compiler error: unprintable span)\n")?;
+                try!(write!(&mut self.dst, "(internal compiler error: unprintable span)\n"));
                 return Ok(());
             }
         };
@@ -556,18 +556,18 @@ impl EmitterWriter {
 
             if prev_line_index != line.line_index.wrapping_sub(1) {
                 // If we elided something, put an ellipsis.
-                write!(&mut self.dst, "{0:1$}...\n", "", skip)?;
+                try!(write!(&mut self.dst, "{0:1$}...\n", "", skip));
             }
 
             // Print offending code-lines
-            write!(&mut self.dst, "{}:{:>width$} {}\n", fm.name,
-                   line.line_index + 1, line_str, width=digits)?;
+            try!(write!(&mut self.dst, "{}:{:>width$} {}\n", fm.name,
+                   line.line_index + 1, line_str, width=digits));
             remaining_err_lines -= 1;
 
             if s.len() > skip {
                 // Render the spans we assembled previously (if any)
-                println_maybe_styled!(&mut self.dst, term::Attr::ForegroundColor(lvl.color()),
-                                      "{}", s)?;
+                try!(println_maybe_styled!(&mut self.dst, term::Attr::ForegroundColor(lvl.color()),
+                                      "{}", s));
             }
             prev_line_index = line.line_index;
         }
@@ -612,7 +612,7 @@ impl EmitterWriter {
                 }
 
                 let snippet = self.cm.span_to_string(span);
-                print_diagnostic(&mut self.dst, &snippet, Note, &diag_string, None)?;
+                try!(print_diagnostic(&mut self.dst, &snippet, Note, &diag_string, None));
             }
             last_span = span;
         }
@@ -638,18 +638,18 @@ fn print_diagnostic(dst: &mut Destination,
                     code: Option<&str>)
                     -> io::Result<()> {
     if !topic.is_empty() {
-        write!(dst, "{} ", topic)?;
+        try!(write!(dst, "{} ", topic));
     }
 
-    print_maybe_styled!(dst, term::Attr::ForegroundColor(lvl.color()),
-                        "{}: ", lvl.to_string())?;
-    print_maybe_styled!(dst, term::Attr::Bold, "{}", msg)?;
+    try!(print_maybe_styled!(dst, term::Attr::ForegroundColor(lvl.color()),
+                        "{}: ", lvl.to_string()));
+    try!(print_maybe_styled!(dst, term::Attr::Bold, "{}", msg));
 
     if let Some(code) = code {
         let style = term::Attr::ForegroundColor(term::color::BRIGHT_MAGENTA);
-        print_maybe_styled!(dst, style, " [{}]", code.clone())?;
+        try!(print_maybe_styled!(dst, style, " [{}]", code.clone()));
     }
-    write!(dst, "\n")?;
+    try!(write!(dst, "\n"));
     Ok(())
 }
 
@@ -696,7 +696,7 @@ impl Destination {
                           -> io::Result<()> {
         match *self {
             Terminal(ref mut t) => {
-                t.attr(color)?;
+                try!(t.attr(color));
                 // If `msg` ends in a newline, we need to reset the color before
                 // the newline. We're making the assumption that we end up writing
                 // to a `LineBufferedWriter`, which means that emitting the reset
@@ -710,8 +710,8 @@ impl Destination {
                 // once, which still leaves the opportunity for interleaved output
                 // to be miscolored. We assume this is rare enough that we don't
                 // have to worry about it.
-                t.write_fmt(args)?;
-                t.reset()?;
+                try!(t.write_fmt(args));
+                try!(t.reset());
                 if print_newline_at_end {
                     t.write_all(b"\n")
                 } else {
@@ -719,7 +719,7 @@ impl Destination {
                 }
             }
             Raw(ref mut w) => {
-                w.write_fmt(args)?;
+                try!(w.write_fmt(args));
                 if print_newline_at_end {
                     w.write_all(b"\n")
                 } else {
