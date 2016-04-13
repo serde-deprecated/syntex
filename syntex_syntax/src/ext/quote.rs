@@ -186,7 +186,7 @@ pub mod rt {
                     let mut v = vec![];
                     for (i, x) in self.iter().enumerate() {
                         if i > 0 {
-                            v.extend($sep.iter().cloned());
+                            v.extend_from_slice(&$sep);
                         }
                         v.extend(x.to_tokens(cx));
                     }

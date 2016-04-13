@@ -464,12 +464,7 @@ fn initial_syntax_expander_table<'feat>(ecfg: &expand::ExpansionConfig<'feat>)
     }
 
     let mut syntax_expanders = SyntaxEnv::new();
-
-    /*
     syntax_expanders.insert(intern("macro_rules"), MacroRulesTT);
-    */
-
-    ext::deriving::register_all(&mut syntax_expanders);
 
     if ecfg.enable_quotes() {
         // Quasi-quoting expanders
@@ -514,7 +509,6 @@ fn initial_syntax_expander_table<'feat>(ecfg: &expand::ExpansionConfig<'feat>)
                                 ext::quote::expand_quote_path));
     }
 
-    /*
     syntax_expanders.insert(intern("line"),
                             builtin_normal_expander(
                                     ext::source_util::expand_line));
@@ -527,15 +521,6 @@ fn initial_syntax_expander_table<'feat>(ecfg: &expand::ExpansionConfig<'feat>)
     syntax_expanders.insert(intern("stringify"),
                             builtin_normal_expander(
                                     ext::source_util::expand_stringify));
-                                    */
-
-    syntax_expanders.insert(intern("option_env"),
-                            builtin_normal_expander(
-                                    ext::env::expand_option_env));
-    syntax_expanders.insert(intern("env"),
-                            builtin_normal_expander(
-                                    ext::env::expand_env));
-
     syntax_expanders.insert(intern("include"),
                             builtin_normal_expander(
                                     ext::source_util::expand_include));
@@ -545,12 +530,9 @@ fn initial_syntax_expander_table<'feat>(ecfg: &expand::ExpansionConfig<'feat>)
     syntax_expanders.insert(intern("include_bytes"),
                             builtin_normal_expander(
                                     ext::source_util::expand_include_bytes));
-    /*
     syntax_expanders.insert(intern("module_path"),
                             builtin_normal_expander(
                                     ext::source_util::expand_mod));
-    */
-
     syntax_expanders
 }
 

@@ -37,7 +37,7 @@ use std::env;
 
 pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
     let expr_span = e.span;
-    return e.clone().and_then(|ast::Expr {id, node, span, attrs}| match node {
+    return e.and_then(|ast::Expr {id, node, span, attrs}| match node {
 
         // expr_mac should really be expr_ext or something; it's the
         // entry-point for all syntax extensions.
@@ -51,9 +51,7 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
                                                        mark_expr, fld) {
                 Some(expr) => expr,
                 None => {
-                    // Ignore unknown macros.
-                    // return DummyResult::raw_expr(span);
-                    return e;
+                    return DummyResult::raw_expr(span);
                 }
             };
 
@@ -202,15 +200,12 @@ fn expand_mac_invoc<T, F, G>(mac: ast::Mac,
     let extname = pth.segments[0].identifier.name;
     match fld.cx.syntax_env.find(extname) {
         None => {
-            // Ignore unknown macros.
-            /*
             let mut err = fld.cx.struct_span_err(
                 pth.span,
                 &format!("macro undefined: '{}!'",
                         &extname));
             fld.cx.suggest_macro_name(&extname.as_str(), pth.span, &mut err);
             err.emit();
-            */
 
             // let compilation continue
             None
@@ -366,7 +361,7 @@ fn contains_macro_use(fld: &mut MacroExpander, attrs: &[ast::Attribute]) -> bool
 // logic as for expression-position macro invocations.
 pub fn expand_item_mac(it: P<ast::Item>,
                        fld: &mut MacroExpander) -> SmallVector<P<ast::Item>> {
-    let (extname, path_span, tts, span, attrs, ident) = it.clone().and_then(|it| match it.node {
+    let (extname, path_span, tts, span, attrs, ident) = it.and_then(|it| match it.node {
         ItemKind::Mac(codemap::Spanned { node: Mac_ { path, tts, .. }, .. }) =>
             (path.segments[0].identifier.name, path.span, tts, it.span, it.attrs, it.ident),
         _ => fld.cx.span_bug(it.span, "invalid item macro invocation")
@@ -376,14 +371,11 @@ pub fn expand_item_mac(it: P<ast::Item>,
     let items = {
         let expanded = match fld.cx.syntax_env.find(extname) {
             None => {
-                // Ignore unknown macros.
-                /*
                 fld.cx.span_err(path_span,
                                 &format!("macro undefined: '{}!'",
                                         extname));
-                */
                 // let compilation continue
-                return SmallVector::one(it);
+                return SmallVector::zero();
             }
 
             Some(rc) => match *rc {
@@ -512,7 +504,7 @@ pub fn expand_item_mac(it: P<ast::Item>,
 
 /// Expand a stmt
 fn expand_stmt(stmt: Stmt, fld: &mut MacroExpander) -> SmallVector<Stmt> {
-    let (mac, style, attrs) = match stmt.clone().node {
+    let (mac, style, attrs) = match stmt.node {
         StmtKind::Mac(mac, style, attrs) => (mac, style, attrs),
         _ => return expand_non_macro_stmt(stmt, fld)
     };
@@ -535,11 +527,7 @@ fn expand_stmt(stmt: Stmt, fld: &mut MacroExpander) -> SmallVector<Stmt> {
             fld.cx.bt_pop();
             new_items
         }
-        None => {
-            // Ignore unknown macros.
-            // SmallVector::zero()
-            SmallVector::one(stmt)
-        }
+        None => SmallVector::zero()
     };
 
     // If this is a macro invocation with a semicolon, then apply that
@@ -761,7 +749,7 @@ fn expand_pat(p: P<ast::Pat>, fld: &mut MacroExpander) -> P<ast::Pat> {
         PatKind::Mac(_) => {}
         _ => return noop_fold_pat(p, fld)
     }
-    p.clone().map(|ast::Pat {node, span, ..}| {
+    p.map(|ast::Pat {node, span, ..}| {
         let (pth, tts) = match node {
             PatKind::Mac(mac) => (mac.node.path, mac.node.tts),
             _ => unreachable!()
@@ -773,14 +761,11 @@ fn expand_pat(p: P<ast::Pat>, fld: &mut MacroExpander) -> P<ast::Pat> {
         let extname = pth.segments[0].identifier.name;
         let marked_after = match fld.cx.syntax_env.find(extname) {
             None => {
-                // Ignore unknown macros.
-                /*
                 fld.cx.span_err(pth.span,
                                 &format!("macro undefined: '{}!'",
                                         extname));
-                */
                 // let compilation continue
-                return p.and_then(|p| p);
+                return DummyResult::raw_pat(span);
             }
 
             Some(rc) => match *rc {
@@ -956,13 +941,14 @@ fn expand_annotatable(a: Annotatable,
         }
     };
 
-    new_items.extend(decorator_items.into_iter());
+    new_items.push_all(decorator_items);
     new_items
 }
 
 // Partition a set of attributes into one kind of attribute, and other kinds.
 macro_rules! partition {
     ($fn_name: ident, $variant: ident) => {
+        #[allow(deprecated)] // The `allow` is needed because the `Modifier` variant might be used.
         fn $fn_name(attrs: &[ast::Attribute],
                     fld: &MacroExpander)
                      -> (Vec<ast::Attribute>, Vec<ast::Attribute>) {
@@ -1086,7 +1072,7 @@ fn expand_impl_item(ii: ast::ImplItem, fld: &mut MacroExpander)
             span: fld.new_span(ii.span)
         }),
         ast::ImplItemKind::Macro(_) => {
-            let (span, mac) = match ii.clone().node {
+            let (span, mac) = match ii.node {
                 ast::ImplItemKind::Macro(mac) => (ii.span, mac),
                 _ => unreachable!()
             };
@@ -1105,11 +1091,7 @@ fn expand_impl_item(ii: ast::ImplItem, fld: &mut MacroExpander)
                     fld.cx.bt_pop();
                     new_items
                 }
-                None => {
-                    // Ignore unknown macros.
-                    // SmallVector::zero()
-                    SmallVector::one(ii)
-                }
+                None => SmallVector::zero()
             }
         }
         _ => fold::noop_fold_impl_item(ii, fld)

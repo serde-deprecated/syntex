@@ -14,6 +14,8 @@
 //!
 //! This API is completely unstable and subject to change.
 
+#![crate_name = "syntax"]
+#![unstable(feature = "rustc_private", issue = "27812")]
 #![crate_type = "dylib"]
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
@@ -22,14 +24,23 @@
        test(attr(deny(warnings))))]
 #![cfg_attr(not(stage0), deny(warnings))]
 
+#![feature(associated_consts)]
+#![feature(filling_drop)]
+#![feature(libc)]
+#![feature(rustc_private)]
+#![feature(staged_api)]
+#![feature(str_escape)]
+#![feature(unicode)]
+#![feature(question_mark)]
+
+extern crate serialize;
 extern crate term;
 extern crate libc;
 #[macro_use] extern crate log;
-#[macro_use] extern crate bitflags;
+#[macro_use] #[no_link] extern crate rustc_bitflags;
+extern crate rustc_unicode;
 
-extern crate rustc_serialize; // used by deriving
-extern crate rustc_serialize as serialize;
-extern crate unicode_xid;
+extern crate serialize as rustc_serialize; // used by deriving
 
 // A variant of 'try!' that panics on an Err. This is used as a crutch on the
 // way towards a non-panic!-prone parser. It should be used for fatal parsing
@@ -102,8 +113,6 @@ pub mod print {
 pub mod ext {
     pub mod base;
     pub mod build;
-    pub mod deriving;
-    pub mod env;
     pub mod expand;
     pub mod mtwt;
     pub mod quote;
