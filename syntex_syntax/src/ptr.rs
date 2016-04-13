@@ -39,7 +39,7 @@
 use std::fmt::{self, Display, Debug};
 use std::iter::FromIterator;
 use std::ops::Deref;
-use std::{slice, vec};
+use std::{ptr, slice, vec};
 
 use serialize::{Encodable, Decodable, Encoder, Decoder};
 
@@ -71,10 +71,15 @@ impl<T: 'static> P<T> {
     }
 
     /// Transform the inner value, consuming `self` and producing a new `P<T>`.
-    pub fn map<F>(self, f: F) -> P<T> where
+    pub fn map<F>(mut self, f: F) -> P<T> where
         F: FnOnce(T) -> T,
     {
-        P(f(*self.ptr))
+        unsafe {
+            let p = &mut *self.ptr;
+            // FIXME(#5016) this shouldn't need to drop-fill to be safe.
+            ptr::write(p, f(ptr::read_and_drop(p)));
+        }
+        self
     }
 }
 

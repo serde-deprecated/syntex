@@ -16,13 +16,12 @@ use ext::tt::transcribe::tt_next_token;
 use parse::token::str_to_ident;
 use parse::token;
 use str::char_at;
+use rustc_unicode::property::Pattern_White_Space;
 
 use std::borrow::Cow;
 use std::char;
 use std::mem::replace;
 use std::rc::Rc;
-
-use unicode_xid::UnicodeXID;
 
 pub use ext::tt::transcribe::{TtReader, new_tt_reader, new_tt_reader_with_doc_flag};
 
@@ -707,8 +706,9 @@ impl<'a> StringReader<'a> {
         // integer literal followed by field/method access or a range pattern
         // (`0..2` and `12.foo()`)
         if self.curr_is('.') && !self.nextch_is('.') &&
-            !UnicodeXID::is_xid_start(self.nextch().unwrap_or('\0'))
-        {
+           !self.nextch()
+                .unwrap_or('\0')
+                .is_xid_start() {
             // might have stuff after the ., and if it does, it needs to start
             // with a number
             self.bump();
@@ -1600,12 +1600,7 @@ impl<'a> StringReader<'a> {
 // This tests the character for the unicode property 'PATTERN_WHITE_SPACE' which
 // is guaranteed to be forward compatible. http://unicode.org/reports/tr31/#R3
 pub fn is_pattern_whitespace(c: Option<char>) -> bool {
-    // Please note, the function signature is the one which uses rustc_unicode
-    // but the function body is from the prior version.
-    match c.unwrap_or('\x00') {
-        ' ' | '\n' | '\t' | '\r' => true,
-        _ => false
-    }
+    c.map_or(false, Pattern_White_Space)
 }
 
 fn in_range(c: Option<char>, lo: char, hi: char) -> bool {
@@ -1640,7 +1635,7 @@ fn ident_start(c: Option<char>) -> bool {
         None => return false,
     };
 
-    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (c > '\x7f' && UnicodeXID::is_xid_start(c))
+    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (c > '\x7f' && c.is_xid_start())
 }
 
 fn ident_continue(c: Option<char>) -> bool {
@@ -1650,7 +1645,7 @@ fn ident_continue(c: Option<char>) -> bool {
     };
 
     (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' ||
-    (c > '\x7f' && UnicodeXID::is_xid_continue(c))
+    (c > '\x7f' && c.is_xid_continue())
 }
 
 #[cfg(test)]
