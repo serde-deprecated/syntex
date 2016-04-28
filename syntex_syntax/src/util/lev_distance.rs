@@ -51,59 +51,16 @@ pub fn find_best_match_for_name<'a, T>(iter_names: T,
                                        dist: Option<usize>) -> Option<InternedString>
     where T: Iterator<Item = &'a Name> {
     let max_dist = dist.map_or_else(|| cmp::max(lookup.len(), 3) / 3, |d| d);
-    let it = iter_names
+    iter_names
     .filter_map(|name| {
         let dist = lev_distance(lookup, &name.as_str());
         match dist <= max_dist {    // filter the unwanted cases
             true => Some((name.as_str(), dist)),
             false => None,
         }
-    });
-    min_by_key(it, |&(_, val)| val) // extract the tuple containing the minimum edit distance
-    .map(|(s, _)| s)                // and return only the string
-}
-
-fn min_by_key<I, B: Ord, F>(it: I, f: F) -> Option<I::Item>
-    where I: Iterator,
-          F: FnMut(&I::Item) -> B,
-{
-    select_fold1(it,
-                 f,
-                 // only switch to y if it is strictly smaller, to
-                 // preserve stability.
-                 |x_p, _, y_p, _| x_p > y_p)
-        .map(|(_, x)| x)
-}
-
-/// Select an element from an iterator based on the given projection
-/// and "comparison" function.
-///
-/// This is an idiosyncratic helper to try to factor out the
-/// commonalities of {max,min}{,_by}. In particular, this avoids
-/// having to implement optimizations several times.
-#[inline]
-fn select_fold1<I,B, FProj, FCmp>(mut it: I,
-                                  mut f_proj: FProj,
-                                  mut f_cmp: FCmp) -> Option<(B, I::Item)>
-    where I: Iterator,
-          FProj: FnMut(&I::Item) -> B,
-          FCmp: FnMut(&B, &I::Item, &B, &I::Item) -> bool
-{
-    // start with the first element as our selection. This avoids
-    // having to use `Option`s inside the loop, translating to a
-    // sizeable performance gain (6x in one case).
-    it.next().map(|mut sel| {
-        let mut sel_p = f_proj(&sel);
-
-        for x in it {
-            let x_p = f_proj(&x);
-            if f_cmp(&sel_p,  &sel, &x_p, &x) {
-                sel = x;
-                sel_p = x_p;
-            }
-        }
-        (sel_p, sel)
     })
+    .min_by_key(|&(_, val)| val)    // extract the tuple containing the minimum edit distance
+    .map(|(s, _)| s)                // and return only the string
 }
 
 #[test]

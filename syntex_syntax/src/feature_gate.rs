@@ -45,8 +45,8 @@ use std::cmp;
 // The version numbers here correspond to the version in which the current status
 // was set. This is most important for knowing when a particular feature became
 // stable (active).
-// NB: The featureck.py script parses this information directly out of the source
-// so take care when modifying it.
+// NB: The tidy tool parses this information directly out of the source so take
+// care when modifying it.
 const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status)] = &[
     ("globs", "1.0.0", None, Accepted),
     ("macro_rules", "1.0.0", None, Accepted),
@@ -218,10 +218,10 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status
     ("naked_functions", "1.9.0", Some(32408), Active),
 
     // allow empty structs and enum variants with braces
-    ("braced_empty_structs", "1.5.0", Some(29720), Accepted),
+    ("braced_empty_structs", "1.8.0", Some(29720), Accepted),
 
     // allow overloading augmented assignment operations like `a += b`
-    ("augmented_assignments", "1.5.0", Some(28235), Accepted),
+    ("augmented_assignments", "1.8.0", Some(28235), Accepted),
 
     // allow `#[no_debug]`
     ("no_debug", "1.5.0", Some(29721), Active),
@@ -237,7 +237,7 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status
     ("stmt_expr_attributes", "1.6.0", Some(15701), Active),
 
     // Allows `#[deprecated]` attribute
-    ("deprecated", "1.6.0", Some(29935), Active),
+    ("deprecated", "1.9.0", Some(29935), Accepted),
 
     // allow using type ascription in expressions
     ("type_ascription", "1.6.0", Some(23416), Active),
@@ -256,6 +256,9 @@ const KNOWN_FEATURES: &'static [(&'static str, &'static str, Option<u32>, Status
 
     // impl specialization (RFC 1210)
     ("specialization", "1.7.0", Some(31844), Active),
+
+    // pub(restricted) visibilities (RFC 1422)
+    ("pub_restricted", "1.9.0", Some(32409), Active),
 ];
 // (changing above list without updating src/doc/reference.md makes @cmr sad)
 
@@ -435,7 +438,7 @@ pub const KNOWN_ATTRIBUTES: &'static [(&'static str, AttributeType, AttributeGat
     ("must_use", Whitelisted, Ungated),
     ("stable", Whitelisted, Ungated),
     ("unstable", Whitelisted, Ungated),
-    ("deprecated", Normal, Gated("deprecated", "`#[deprecated]` attribute is unstable")),
+    ("deprecated", Normal, Ungated),
 
     ("rustc_paren_sugar", Normal, Gated("unboxed_closures",
                                         "unboxed_closures are still evolving")),
@@ -608,6 +611,7 @@ pub struct Features {
     pub deprecated: bool,
     pub question_mark: bool,
     pub specialization: bool,
+    pub pub_restricted: bool,
 }
 
 impl Features {
@@ -644,6 +648,7 @@ impl Features {
             deprecated: false,
             question_mark: false,
             specialization: false,
+            pub_restricted: false,
         }
     }
 }
@@ -1159,6 +1164,27 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
         }
         visit::walk_impl_item(self, ii);
     }
+
+    fn visit_vis(&mut self, vis: &'v ast::Visibility) {
+        let span = match *vis {
+            ast::Visibility::Crate(span) => span,
+            ast::Visibility::Restricted { ref path, .. } => {
+                // Check for type parameters
+                let found_param = path.segments.iter().any(|segment| {
+                    !segment.parameters.types().is_empty() ||
+                    !segment.parameters.lifetimes().is_empty() ||
+                    !segment.parameters.bindings().is_empty()
+                });
+                if found_param {
+                    self.context.span_handler.span_err(path.span, "type or lifetime parameters \
+                                                                   in visibility path");
+                }
+                path.span
+            }
+            _ => return,
+        };
+        self.gate_feature("pub_restricted", span, "`pub(restricted)` syntax is experimental");
+    }
 }
 
 fn check_crate_inner<F>(cm: &CodeMap, span_handler: &Handler,
@@ -1256,6 +1282,7 @@ fn check_crate_inner<F>(cm: &CodeMap, span_handler: &Handler,
         deprecated: cx.has_feature("deprecated"),
         question_mark: cx.has_feature("question_mark"),
         specialization: cx.has_feature("specialization"),
+        pub_restricted: cx.has_feature("pub_restricted"),
     }
 }
 

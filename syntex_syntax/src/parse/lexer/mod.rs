@@ -13,16 +13,14 @@ use codemap::{BytePos, CharPos, CodeMap, Pos, Span};
 use codemap;
 use errors::{FatalError, Handler, DiagnosticBuilder};
 use ext::tt::transcribe::tt_next_token;
-use parse::token::str_to_ident;
-use parse::token;
+use parse::token::{self, keywords, str_to_ident};
 use str::char_at;
+use rustc_unicode::property::Pattern_White_Space;
 
 use std::borrow::Cow;
 use std::char;
 use std::mem::replace;
 use std::rc::Rc;
-
-use unicode_xid::UnicodeXID;
 
 pub use ext::tt::transcribe::{TtReader, new_tt_reader, new_tt_reader_with_doc_flag};
 
@@ -707,8 +705,9 @@ impl<'a> StringReader<'a> {
         // integer literal followed by field/method access or a range pattern
         // (`0..2` and `12.foo()`)
         if self.curr_is('.') && !self.nextch_is('.') &&
-            !UnicodeXID::is_xid_start(self.nextch().unwrap_or('\0'))
-        {
+           !self.nextch()
+                .unwrap_or('\0')
+                .is_xid_start() {
             // might have stuff after the ., and if it does, it needs to start
             // with a number
             self.bump();
@@ -1039,11 +1038,7 @@ impl<'a> StringReader<'a> {
                     token::Underscore
                 } else {
                     // FIXME: perform NFKC normalization here. (Issue #2253)
-                    if self.curr_is(':') && self.nextch_is(':') {
-                        token::Ident(str_to_ident(string), token::ModName)
-                    } else {
-                        token::Ident(str_to_ident(string), token::Plain)
-                    }
+                    token::Ident(str_to_ident(string))
                 }
             });
         }
@@ -1231,17 +1226,11 @@ impl<'a> StringReader<'a> {
                     let keyword_checking_ident = self.with_str_from(start, |lifetime_name| {
                         str_to_ident(lifetime_name)
                     });
-                    let keyword_checking_token = &token::Ident(keyword_checking_ident,
-                                                               token::Plain);
+                    let keyword_checking_token = &token::Ident(keyword_checking_ident);
                     let last_bpos = self.last_pos;
-                    if keyword_checking_token.is_keyword(token::keywords::SelfValue) {
-                        self.err_span_(start,
-                                       last_bpos,
-                                       "invalid lifetime name: 'self is no longer a special \
-                                        lifetime");
-                    } else if keyword_checking_token.is_any_keyword() &&
-                       !keyword_checking_token.is_keyword(token::keywords::Static) {
-                        self.err_span_(start, last_bpos, "invalid lifetime name");
+                    if keyword_checking_token.is_any_keyword() &&
+                       !keyword_checking_token.is_keyword(keywords::Static) {
+                        self.err_span_(start, last_bpos, "lifetimes cannot use keyword names");
                     }
 
                     return token::Lifetime(ident);
@@ -1600,12 +1589,7 @@ impl<'a> StringReader<'a> {
 // This tests the character for the unicode property 'PATTERN_WHITE_SPACE' which
 // is guaranteed to be forward compatible. http://unicode.org/reports/tr31/#R3
 pub fn is_pattern_whitespace(c: Option<char>) -> bool {
-    // Please note, the function signature is the one which uses rustc_unicode
-    // but the function body is from the prior version.
-    match c.unwrap_or('\x00') {
-        ' ' | '\n' | '\t' | '\r' => true,
-        _ => false
-    }
+    c.map_or(false, Pattern_White_Space)
 }
 
 fn in_range(c: Option<char>, lo: char, hi: char) -> bool {
@@ -1640,7 +1624,7 @@ fn ident_start(c: Option<char>) -> bool {
         None => return false,
     };
 
-    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (c > '\x7f' && UnicodeXID::is_xid_start(c))
+    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (c > '\x7f' && c.is_xid_start())
 }
 
 fn ident_continue(c: Option<char>) -> bool {
@@ -1650,7 +1634,7 @@ fn ident_continue(c: Option<char>) -> bool {
     };
 
     (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' ||
-    (c > '\x7f' && UnicodeXID::is_xid_continue(c))
+    (c > '\x7f' && c.is_xid_continue())
 }
 
 #[cfg(test)]
@@ -1692,7 +1676,7 @@ mod tests {
         assert_eq!(string_reader.next_token().tok, token::Whitespace);
         let tok1 = string_reader.next_token();
         let tok2 = TokenAndSpan {
-            tok: token::Ident(id, token::Plain),
+            tok: token::Ident(id),
             sp: Span {
                 lo: BytePos(21),
                 hi: BytePos(23),
@@ -1706,7 +1690,7 @@ mod tests {
         // read another token:
         let tok3 = string_reader.next_token();
         let tok4 = TokenAndSpan {
-            tok: token::Ident(str_to_ident("main"), token::Plain),
+            tok: token::Ident(str_to_ident("main")),
             sp: Span {
                 lo: BytePos(24),
                 hi: BytePos(28),
@@ -1727,8 +1711,8 @@ mod tests {
     }
 
     // make the identifier by looking up the string in the interner
-    fn mk_ident(id: &str, style: token::IdentStyle) -> token::Token {
-        token::Ident(str_to_ident(id), style)
+    fn mk_ident(id: &str) -> token::Token {
+        token::Ident(str_to_ident(id))
     }
 
     #[test]
@@ -1736,9 +1720,7 @@ mod tests {
         let cm = Rc::new(CodeMap::new());
         let sh = mk_sh(cm.clone());
         check_tokenization(setup(&cm, &sh, "a b".to_string()),
-                           vec![mk_ident("a", token::Plain),
-                                token::Whitespace,
-                                mk_ident("b", token::Plain)]);
+                           vec![mk_ident("a"), token::Whitespace, mk_ident("b")]);
     }
 
     #[test]
@@ -1746,9 +1728,7 @@ mod tests {
         let cm = Rc::new(CodeMap::new());
         let sh = mk_sh(cm.clone());
         check_tokenization(setup(&cm, &sh, "a::b".to_string()),
-                           vec![mk_ident("a", token::ModName),
-                                token::ModSep,
-                                mk_ident("b", token::Plain)]);
+                           vec![mk_ident("a"), token::ModSep, mk_ident("b")]);
     }
 
     #[test]
@@ -1756,10 +1736,7 @@ mod tests {
         let cm = Rc::new(CodeMap::new());
         let sh = mk_sh(cm.clone());
         check_tokenization(setup(&cm, &sh, "a ::b".to_string()),
-                           vec![mk_ident("a", token::Plain),
-                                token::Whitespace,
-                                token::ModSep,
-                                mk_ident("b", token::Plain)]);
+                           vec![mk_ident("a"), token::Whitespace, token::ModSep, mk_ident("b")]);
     }
 
     #[test]
@@ -1767,10 +1744,7 @@ mod tests {
         let cm = Rc::new(CodeMap::new());
         let sh = mk_sh(cm.clone());
         check_tokenization(setup(&cm, &sh, "a:: b".to_string()),
-                           vec![mk_ident("a", token::ModName),
-                                token::ModSep,
-                                token::Whitespace,
-                                mk_ident("b", token::Plain)]);
+                           vec![mk_ident("a"), token::ModSep, token::Whitespace, mk_ident("b")]);
     }
 
     #[test]

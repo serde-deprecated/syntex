@@ -19,7 +19,6 @@ use ptr::P;
 use str::char_at;
 
 use std::cell::RefCell;
-use std::io::Read;
 use std::iter;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -328,8 +327,7 @@ pub fn char_lit(lit: &str) -> (char, isize) {
 /// Parse a string representing a string literal into its final form. Does
 /// unescaping.
 pub fn str_lit(lit: &str) -> String {
-    debug!("parse_str_lit: given {}",
-           lit.chars().flat_map(char::escape_default).collect::<String>());
+    debug!("parse_str_lit: given {}", lit.escape_default());
     let mut res = String::with_capacity(lit.len());
 
     // FIXME #8372: This could be a for-loop if it didn't borrow the iterator
@@ -404,8 +402,7 @@ pub fn str_lit(lit: &str) -> String {
 /// Parse a string representing a raw string literal into its final form. The
 /// only operation this does is convert embedded CRLF into a single LF.
 pub fn raw_str_lit(lit: &str) -> String {
-    debug!("raw_str_lit: given {}",
-           lit.chars().flat_map(char::escape_default).collect::<String>());
+    debug!("raw_str_lit: given {}", lit.escape_default());
     let mut res = String::with_capacity(lit.len());
 
     // FIXME #8372: This could be a for-loop if it didn't borrow the iterator
@@ -737,9 +734,9 @@ mod tests {
         match (tts.len(), tts.get(0), tts.get(1), tts.get(2), tts.get(3)) {
             (
                 4,
-                Some(&TokenTree::Token(_, token::Ident(name_macro_rules, token::Plain))),
+                Some(&TokenTree::Token(_, token::Ident(name_macro_rules))),
                 Some(&TokenTree::Token(_, token::Not)),
-                Some(&TokenTree::Token(_, token::Ident(name_zip, token::Plain))),
+                Some(&TokenTree::Token(_, token::Ident(name_zip))),
                 Some(&TokenTree::Delimited(_, ref macro_delimed)),
             )
             if name_macro_rules.name.as_str() == "macro_rules"
@@ -758,7 +755,7 @@ mod tests {
                             (
                                 2,
                                 Some(&TokenTree::Token(_, token::Dollar)),
-                                Some(&TokenTree::Token(_, token::Ident(ident, token::Plain))),
+                                Some(&TokenTree::Token(_, token::Ident(ident))),
                             )
                             if first_delimed.delim == token::Paren
                             && ident.name.as_str() == "a" => {},
@@ -769,7 +766,7 @@ mod tests {
                             (
                                 2,
                                 Some(&TokenTree::Token(_, token::Dollar)),
-                                Some(&TokenTree::Token(_, token::Ident(ident, token::Plain))),
+                                Some(&TokenTree::Token(_, token::Ident(ident))),
                             )
                             if second_delimed.delim == token::Paren
                             && ident.name.as_str() == "a" => {},
@@ -788,26 +785,17 @@ mod tests {
         let tts = string_to_tts("fn a (b : i32) { b; }".to_string());
 
         let expected = vec![
-            TokenTree::Token(sp(0, 2),
-                         token::Ident(str_to_ident("fn"),
-                         token::IdentStyle::Plain)),
-            TokenTree::Token(sp(3, 4),
-                         token::Ident(str_to_ident("a"),
-                         token::IdentStyle::Plain)),
+            TokenTree::Token(sp(0, 2), token::Ident(str_to_ident("fn"))),
+            TokenTree::Token(sp(3, 4), token::Ident(str_to_ident("a"))),
             TokenTree::Delimited(
                 sp(5, 14),
                 Rc::new(ast::Delimited {
                     delim: token::DelimToken::Paren,
                     open_span: sp(5, 6),
                     tts: vec![
-                        TokenTree::Token(sp(6, 7),
-                                     token::Ident(str_to_ident("b"),
-                                     token::IdentStyle::Plain)),
-                        TokenTree::Token(sp(8, 9),
-                                     token::Colon),
-                        TokenTree::Token(sp(10, 13),
-                                     token::Ident(str_to_ident("i32"),
-                                     token::IdentStyle::Plain)),
+                        TokenTree::Token(sp(6, 7), token::Ident(str_to_ident("b"))),
+                        TokenTree::Token(sp(8, 9), token::Colon),
+                        TokenTree::Token(sp(10, 13), token::Ident(str_to_ident("i32"))),
                     ],
                     close_span: sp(13, 14),
                 })),
@@ -817,11 +805,8 @@ mod tests {
                     delim: token::DelimToken::Brace,
                     open_span: sp(15, 16),
                     tts: vec![
-                        TokenTree::Token(sp(17, 18),
-                                     token::Ident(str_to_ident("b"),
-                                     token::IdentStyle::Plain)),
-                        TokenTree::Token(sp(18, 19),
-                                     token::Semi)
+                        TokenTree::Token(sp(17, 18), token::Ident(str_to_ident("b"))),
+                        TokenTree::Token(sp(18, 19), token::Semi),
                     ],
                     close_span: sp(20, 21),
                 }))
@@ -940,7 +925,7 @@ mod tests {
                                     Abi::Rust,
                                     ast::Generics{ // no idea on either of these:
                                         lifetimes: Vec::new(),
-                                        ty_params: P::empty(),
+                                        ty_params: P::new(),
                                         where_clause: ast::WhereClause {
                                             id: ast::DUMMY_NODE_ID,
                                             predicates: Vec::new(),
