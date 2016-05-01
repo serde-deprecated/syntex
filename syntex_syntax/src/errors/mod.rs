@@ -19,7 +19,6 @@ use errors::emitter::{Emitter, EmitterWriter};
 
 use std::cell::{RefCell, Cell};
 use std::{error, fmt};
-use std::io::prelude::*;
 use std::rc::Rc;
 use term;
 
@@ -178,6 +177,7 @@ impl error::Error for ExplicitBug {
 
 /// Used for emitting structured error messages and other diagnostic information.
 #[must_use]
+#[derive(Clone)]
 pub struct DiagnosticBuilder<'a> {
     emitter: &'a RefCell<Box<Emitter>>,
     level: Level,
@@ -188,6 +188,7 @@ pub struct DiagnosticBuilder<'a> {
 }
 
 /// For example a note attached to an error.
+#[derive(Clone)]
 struct SubDiagnostic {
     level: Level,
     message: String,
@@ -653,8 +654,6 @@ pub enum Level {
 
 impl fmt::Display for Level {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use std::fmt::Display;
-
         self.to_str().fmt(f)
     }
 }
