@@ -12,7 +12,7 @@ use self::LockstepIterSize::*;
 use ast;
 use ast::{TokenTree, Ident, Name};
 use codemap::{Span, DUMMY_SP};
-use errors::Handler;
+use errors::{Handler, DiagnosticBuilder};
 use ext::tt::macro_parser::{NamedMatch, MatchedSeq, MatchedNonterminal};
 use parse::token::{DocComment, MatchNt, SubstNt};
 use parse::token::{Token, NtIdent, SpecialMacroVar};
@@ -50,6 +50,7 @@ pub struct TtReader<'a> {
     pub cur_span: Span,
     /// Transform doc comments. Only useful in macro invocations
     pub desugar_doc_comments: bool,
+    pub fatal_errs: Vec<DiagnosticBuilder<'a>>,
 }
 
 /// This can do Macro-By-Example transcription. On the other hand, if
@@ -99,6 +100,7 @@ pub fn new_tt_reader_with_doc_flag(sp_diag: &Handler,
         /* dummy values, never read: */
         cur_tok: token::Eof,
         cur_span: DUMMY_SP,
+        fatal_errs: Vec::new(),
     };
     tt_next_token(&mut r); /* get cur_tok and cur_span set up */
     r
@@ -161,7 +163,7 @@ fn lockstep_iter_size(t: &TokenTree, r: &TtReader) -> LockstepIterSize {
                 size + lockstep_iter_size(tt, r)
             })
         },
-        TokenTree::Token(_, SubstNt(name, _)) | TokenTree::Token(_, MatchNt(name, _, _, _)) =>
+        TokenTree::Token(_, SubstNt(name)) | TokenTree::Token(_, MatchNt(name, _)) =>
             match lookup_cur_matched(r, name) {
                 Some(matched) => match *matched {
                     MatchedNonterminal(_) => LisUnconstrained,
@@ -186,7 +188,7 @@ pub fn tt_next_token(r: &mut TtReader) -> TokenAndSpan {
             None => (),
             Some(sp) => {
                 r.cur_span = sp;
-                r.cur_tok = token::Ident(r.imported_from.unwrap(), token::Plain);
+                r.cur_tok = token::Ident(r.imported_from.unwrap());
                 return ret_val;
             },
         }
@@ -278,12 +280,12 @@ pub fn tt_next_token(r: &mut TtReader) -> TokenAndSpan {
                 }
             }
             // FIXME #2887: think about span stuff here
-            TokenTree::Token(sp, SubstNt(ident, namep)) => {
+            TokenTree::Token(sp, SubstNt(ident)) => {
                 r.stack.last_mut().unwrap().idx += 1;
                 match lookup_cur_matched(r, ident) {
                     None => {
                         r.cur_span = sp;
-                        r.cur_tok = SubstNt(ident, namep);
+                        r.cur_tok = SubstNt(ident);
                         return ret_val;
                         // this can't be 0 length, just like TokenTree::Delimited
                     }
@@ -292,9 +294,9 @@ pub fn tt_next_token(r: &mut TtReader) -> TokenAndSpan {
                             // sidestep the interpolation tricks for ident because
                             // (a) idents can be in lots of places, so it'd be a pain
                             // (b) we actually can, since it's a token.
-                            MatchedNonterminal(NtIdent(ref sn, b)) => {
+                            MatchedNonterminal(NtIdent(ref sn)) => {
                                 r.cur_span = sn.span;
-                                r.cur_tok = token::Ident(sn.node, b);
+                                r.cur_tok = token::Ident(sn.node);
                                 return ret_val;
                             }
                             MatchedNonterminal(ref other_whole_nt) => {

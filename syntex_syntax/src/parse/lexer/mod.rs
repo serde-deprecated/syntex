@@ -13,8 +13,7 @@ use codemap::{BytePos, CharPos, CodeMap, Pos, Span};
 use codemap;
 use errors::{FatalError, Handler, DiagnosticBuilder};
 use ext::tt::transcribe::tt_next_token;
-use parse::token::str_to_ident;
-use parse::token;
+use parse::token::{self, keywords, str_to_ident};
 use str::char_at;
 
 use std::borrow::Cow;
@@ -31,24 +30,42 @@ mod unicode_chars;
 
 pub trait Reader {
     fn is_eof(&self) -> bool;
-    fn next_token(&mut self) -> TokenAndSpan;
+    fn try_next_token(&mut self) -> Result<TokenAndSpan, ()>;
+    fn next_token(&mut self) -> TokenAndSpan where Self: Sized {
+        let res = self.try_next_token();
+        self.unwrap_or_abort(res)
+    }
     /// Report a fatal error with the current span.
     fn fatal(&self, &str) -> FatalError;
     /// Report a non-fatal error with the current span.
     fn err(&self, &str);
+    fn emit_fatal_errors(&mut self);
+    fn unwrap_or_abort(&mut self, res: Result<TokenAndSpan, ()>) -> TokenAndSpan {
+        match res {
+            Ok(tok) => tok,
+            Err(_) => {
+                self.emit_fatal_errors();
+                panic!(FatalError);
+            }
+        }
+    }
     fn peek(&self) -> TokenAndSpan;
     /// Get a token the parser cares about.
-    fn real_token(&mut self) -> TokenAndSpan {
-        let mut t = self.next_token();
+    fn try_real_token(&mut self) -> Result<TokenAndSpan, ()> {
+        let mut t = try!(self.try_next_token());
         loop {
             match t.tok {
                 token::Whitespace | token::Comment | token::Shebang(_) => {
-                    t = self.next_token();
+                    t = try!(self.try_next_token());
                 }
                 _ => break,
             }
         }
-        t
+        Ok(t)
+    }
+    fn real_token(&mut self) -> TokenAndSpan {
+        let res = self.try_real_token();
+        self.unwrap_or_abort(res)
     }
 }
 
@@ -72,7 +89,7 @@ pub struct StringReader<'a> {
     // cached:
     pub peek_tok: token::Token,
     pub peek_span: Span,
-
+    pub fatal_errs: Vec<DiagnosticBuilder<'a>>,
     // cache a direct reference to the source text, so that we don't have to
     // retrieve it via `self.filemap.src.as_ref().unwrap()` all the time.
     source_text: Rc<String>,
@@ -83,19 +100,26 @@ impl<'a> Reader for StringReader<'a> {
         self.curr.is_none()
     }
     /// Return the next token. EFFECT: advances the string_reader.
-    fn next_token(&mut self) -> TokenAndSpan {
+    fn try_next_token(&mut self) -> Result<TokenAndSpan, ()> {
+        assert!(self.fatal_errs.is_empty());
         let ret_val = TokenAndSpan {
             tok: replace(&mut self.peek_tok, token::Underscore),
             sp: self.peek_span,
         };
-        self.advance_token();
-        ret_val
+        try!(self.advance_token());
+        Ok(ret_val)
     }
     fn fatal(&self, m: &str) -> FatalError {
         self.fatal_span(self.peek_span, m)
     }
     fn err(&self, m: &str) {
         self.err_span(self.peek_span, m)
+    }
+    fn emit_fatal_errors(&mut self) {
+        for err in &mut self.fatal_errs {
+            err.emit();
+        }
+        self.fatal_errs.clear();
     }
     fn peek(&self) -> TokenAndSpan {
         // FIXME(pcwalton): Bad copy!
@@ -110,16 +134,23 @@ impl<'a> Reader for TtReader<'a> {
     fn is_eof(&self) -> bool {
         self.cur_tok == token::Eof
     }
-    fn next_token(&mut self) -> TokenAndSpan {
+    fn try_next_token(&mut self) -> Result<TokenAndSpan, ()> {
+        assert!(self.fatal_errs.is_empty());
         let r = tt_next_token(self);
         debug!("TtReader: r={:?}", r);
-        r
+        Ok(r)
     }
     fn fatal(&self, m: &str) -> FatalError {
         self.sp_diag.span_fatal(self.cur_span, m)
     }
     fn err(&self, m: &str) {
         self.sp_diag.span_err(self.cur_span, m);
+    }
+    fn emit_fatal_errors(&mut self) {
+        for err in &mut self.fatal_errs {
+            err.emit();
+        }
+        self.fatal_errs.clear();
     }
     fn peek(&self) -> TokenAndSpan {
         TokenAndSpan {
@@ -153,6 +184,7 @@ impl<'a> StringReader<'a> {
             peek_tok: token::Eof,
             peek_span: codemap::DUMMY_SP,
             source_text: source_text,
+            fatal_errs: Vec::new(),
         };
         sr.bump();
         sr
@@ -162,7 +194,10 @@ impl<'a> StringReader<'a> {
                    filemap: Rc<codemap::FileMap>)
                    -> StringReader<'b> {
         let mut sr = StringReader::new_raw(span_diagnostic, filemap);
-        sr.advance_token();
+        if let Err(_) = sr.advance_token() {
+            sr.emit_fatal_errors();
+            panic!(FatalError);
+        }
         sr
     }
 
@@ -251,7 +286,7 @@ impl<'a> StringReader<'a> {
 
     /// Advance peek_tok and peek_span to refer to the next token, and
     /// possibly update the interner.
-    fn advance_token(&mut self) {
+    fn advance_token(&mut self) -> Result<(), ()> {
         match self.scan_whitespace_or_comment() {
             Some(comment) => {
                 self.peek_span = comment.sp;
@@ -263,11 +298,12 @@ impl<'a> StringReader<'a> {
                     self.peek_span = codemap::mk_sp(self.filemap.end_pos, self.filemap.end_pos);
                 } else {
                     let start_bytepos = self.last_pos;
-                    self.peek_tok = self.next_token_inner();
+                    self.peek_tok = try!(self.next_token_inner());
                     self.peek_span = codemap::mk_sp(start_bytepos, self.last_pos);
                 };
             }
         }
+        Ok(())
     }
 
     fn byte_offset(&self, pos: BytePos) -> BytePos {
@@ -1014,7 +1050,7 @@ impl<'a> StringReader<'a> {
 
     /// Return the next token from the string, advances the input past that
     /// token, and updates the interner
-    fn next_token_inner(&mut self) -> token::Token {
+    fn next_token_inner(&mut self) -> Result<token::Token, ()> {
         let c = self.curr;
         if ident_start(c) &&
            match (c.unwrap(), self.nextch(), self.nextnextch()) {
@@ -1034,36 +1070,32 @@ impl<'a> StringReader<'a> {
                 self.bump();
             }
 
-            return self.with_str_from(start, |string| {
+            return Ok(self.with_str_from(start, |string| {
                 if string == "_" {
                     token::Underscore
                 } else {
                     // FIXME: perform NFKC normalization here. (Issue #2253)
-                    if self.curr_is(':') && self.nextch_is(':') {
-                        token::Ident(str_to_ident(string), token::ModName)
-                    } else {
-                        token::Ident(str_to_ident(string), token::Plain)
-                    }
+                    token::Ident(str_to_ident(string))
                 }
-            });
+            }));
         }
 
         if is_dec_digit(c) {
             let num = self.scan_number(c.unwrap());
             let suffix = self.scan_optional_raw_name();
             debug!("next_token_inner: scanned number {:?}, {:?}", num, suffix);
-            return token::Literal(num, suffix);
+            return Ok(token::Literal(num, suffix));
         }
 
         match c.expect("next_token_inner called at EOF") {
             // One-byte tokens.
             ';' => {
                 self.bump();
-                return token::Semi;
+                return Ok(token::Semi);
             }
             ',' => {
                 self.bump();
-                return token::Comma;
+                return Ok(token::Comma);
             }
             '.' => {
                 self.bump();
@@ -1071,67 +1103,67 @@ impl<'a> StringReader<'a> {
                     self.bump();
                     if self.curr_is('.') {
                         self.bump();
-                        token::DotDotDot
+                        Ok(token::DotDotDot)
                     } else {
-                        token::DotDot
+                        Ok(token::DotDot)
                     }
                 } else {
-                    token::Dot
+                    Ok(token::Dot)
                 };
             }
             '(' => {
                 self.bump();
-                return token::OpenDelim(token::Paren);
+                return Ok(token::OpenDelim(token::Paren));
             }
             ')' => {
                 self.bump();
-                return token::CloseDelim(token::Paren);
+                return Ok(token::CloseDelim(token::Paren));
             }
             '{' => {
                 self.bump();
-                return token::OpenDelim(token::Brace);
+                return Ok(token::OpenDelim(token::Brace));
             }
             '}' => {
                 self.bump();
-                return token::CloseDelim(token::Brace);
+                return Ok(token::CloseDelim(token::Brace));
             }
             '[' => {
                 self.bump();
-                return token::OpenDelim(token::Bracket);
+                return Ok(token::OpenDelim(token::Bracket));
             }
             ']' => {
                 self.bump();
-                return token::CloseDelim(token::Bracket);
+                return Ok(token::CloseDelim(token::Bracket));
             }
             '@' => {
                 self.bump();
-                return token::At;
+                return Ok(token::At);
             }
             '#' => {
                 self.bump();
-                return token::Pound;
+                return Ok(token::Pound);
             }
             '~' => {
                 self.bump();
-                return token::Tilde;
+                return Ok(token::Tilde);
             }
             '?' => {
                 self.bump();
-                return token::Question;
+                return Ok(token::Question);
             }
             ':' => {
                 self.bump();
                 if self.curr_is(':') {
                     self.bump();
-                    return token::ModSep;
+                    return Ok(token::ModSep);
                 } else {
-                    return token::Colon;
+                    return Ok(token::Colon);
                 }
             }
 
             '$' => {
                 self.bump();
-                return token::Dollar;
+                return Ok(token::Dollar);
             }
 
             // Multi-byte tokens.
@@ -1139,21 +1171,21 @@ impl<'a> StringReader<'a> {
                 self.bump();
                 if self.curr_is('=') {
                     self.bump();
-                    return token::EqEq;
+                    return Ok(token::EqEq);
                 } else if self.curr_is('>') {
                     self.bump();
-                    return token::FatArrow;
+                    return Ok(token::FatArrow);
                 } else {
-                    return token::Eq;
+                    return Ok(token::Eq);
                 }
             }
             '!' => {
                 self.bump();
                 if self.curr_is('=') {
                     self.bump();
-                    return token::Ne;
+                    return Ok(token::Ne);
                 } else {
-                    return token::Not;
+                    return Ok(token::Not);
                 }
             }
             '<' => {
@@ -1161,21 +1193,21 @@ impl<'a> StringReader<'a> {
                 match self.curr.unwrap_or('\x00') {
                     '=' => {
                         self.bump();
-                        return token::Le;
+                        return Ok(token::Le);
                     }
                     '<' => {
-                        return self.binop(token::Shl);
+                        return Ok(self.binop(token::Shl));
                     }
                     '-' => {
                         self.bump();
                         match self.curr.unwrap_or('\x00') {
                             _ => {
-                                return token::LArrow;
+                                return Ok(token::LArrow);
                             }
                         }
                     }
                     _ => {
-                        return token::Lt;
+                        return Ok(token::Lt);
                     }
                 }
             }
@@ -1184,13 +1216,13 @@ impl<'a> StringReader<'a> {
                 match self.curr.unwrap_or('\x00') {
                     '=' => {
                         self.bump();
-                        return token::Ge;
+                        return Ok(token::Ge);
                     }
                     '>' => {
-                        return self.binop(token::Shr);
+                        return Ok(self.binop(token::Shr));
                     }
                     _ => {
-                        return token::Gt;
+                        return Ok(token::Gt);
                     }
                 }
             }
@@ -1231,20 +1263,14 @@ impl<'a> StringReader<'a> {
                     let keyword_checking_ident = self.with_str_from(start, |lifetime_name| {
                         str_to_ident(lifetime_name)
                     });
-                    let keyword_checking_token = &token::Ident(keyword_checking_ident,
-                                                               token::Plain);
+                    let keyword_checking_token = &token::Ident(keyword_checking_ident);
                     let last_bpos = self.last_pos;
-                    if keyword_checking_token.is_keyword(token::keywords::SelfValue) {
-                        self.err_span_(start,
-                                       last_bpos,
-                                       "invalid lifetime name: 'self is no longer a special \
-                                        lifetime");
-                    } else if keyword_checking_token.is_any_keyword() &&
-                       !keyword_checking_token.is_keyword(token::keywords::Static) {
-                        self.err_span_(start, last_bpos, "invalid lifetime name");
+                    if keyword_checking_token.is_any_keyword() &&
+                       !keyword_checking_token.is_keyword(keywords::Static) {
+                        self.err_span_(start, last_bpos, "lifetimes cannot use keyword names");
                     }
 
-                    return token::Lifetime(ident);
+                    return Ok(token::Lifetime(ident));
                 }
 
                 let valid = self.scan_char_or_byte(start,
@@ -1266,7 +1292,7 @@ impl<'a> StringReader<'a> {
                 };
                 self.bump(); // advance curr past token
                 let suffix = self.scan_optional_raw_name();
-                return token::Literal(token::Char(id), suffix);
+                return Ok(token::Literal(token::Char(id), suffix));
             }
             'b' => {
                 self.bump();
@@ -1277,7 +1303,7 @@ impl<'a> StringReader<'a> {
                     _ => unreachable!(),  // Should have been a token::Ident above.
                 };
                 let suffix = self.scan_optional_raw_name();
-                return token::Literal(lit, suffix);
+                return Ok(token::Literal(lit, suffix));
             }
             '"' => {
                 let start_bpos = self.last_pos;
@@ -1308,7 +1334,7 @@ impl<'a> StringReader<'a> {
                 };
                 self.bump();
                 let suffix = self.scan_optional_raw_name();
-                return token::Literal(token::Str_(id), suffix);
+                return Ok(token::Literal(token::Str_(id), suffix));
             }
             'r' => {
                 let start_bpos = self.last_pos;
@@ -1379,24 +1405,24 @@ impl<'a> StringReader<'a> {
                     token::intern("??")
                 };
                 let suffix = self.scan_optional_raw_name();
-                return token::Literal(token::StrRaw(id, hash_count), suffix);
+                return Ok(token::Literal(token::StrRaw(id, hash_count), suffix));
             }
             '-' => {
                 if self.nextch_is('>') {
                     self.bump();
                     self.bump();
-                    return token::RArrow;
+                    return Ok(token::RArrow);
                 } else {
-                    return self.binop(token::Minus);
+                    return Ok(self.binop(token::Minus));
                 }
             }
             '&' => {
                 if self.nextch_is('&') {
                     self.bump();
                     self.bump();
-                    return token::AndAnd;
+                    return Ok(token::AndAnd);
                 } else {
-                    return self.binop(token::And);
+                    return Ok(self.binop(token::And));
                 }
             }
             '|' => {
@@ -1404,27 +1430,27 @@ impl<'a> StringReader<'a> {
                     Some('|') => {
                         self.bump();
                         self.bump();
-                        return token::OrOr;
+                        return Ok(token::OrOr);
                     }
                     _ => {
-                        return self.binop(token::Or);
+                        return Ok(self.binop(token::Or));
                     }
                 }
             }
             '+' => {
-                return self.binop(token::Plus);
+                return Ok(self.binop(token::Plus));
             }
             '*' => {
-                return self.binop(token::Star);
+                return Ok(self.binop(token::Star));
             }
             '/' => {
-                return self.binop(token::Slash);
+                return Ok(self.binop(token::Slash));
             }
             '^' => {
-                return self.binop(token::Caret);
+                return Ok(self.binop(token::Caret));
             }
             '%' => {
-                return self.binop(token::Percent);
+                return Ok(self.binop(token::Percent));
             }
             c => {
                 let last_bpos = self.last_pos;
@@ -1434,8 +1460,8 @@ impl<'a> StringReader<'a> {
                                                           "unknown start of token",
                                                           c);
                 unicode_chars::check_for_substitution(&self, c, &mut err);
-                err.emit();
-                panic!(FatalError);
+                self.fatal_errs.push(err);
+                Err(())
             }
         }
     }
@@ -1692,7 +1718,7 @@ mod tests {
         assert_eq!(string_reader.next_token().tok, token::Whitespace);
         let tok1 = string_reader.next_token();
         let tok2 = TokenAndSpan {
-            tok: token::Ident(id, token::Plain),
+            tok: token::Ident(id),
             sp: Span {
                 lo: BytePos(21),
                 hi: BytePos(23),
@@ -1706,7 +1732,7 @@ mod tests {
         // read another token:
         let tok3 = string_reader.next_token();
         let tok4 = TokenAndSpan {
-            tok: token::Ident(str_to_ident("main"), token::Plain),
+            tok: token::Ident(str_to_ident("main")),
             sp: Span {
                 lo: BytePos(24),
                 hi: BytePos(28),
@@ -1727,8 +1753,8 @@ mod tests {
     }
 
     // make the identifier by looking up the string in the interner
-    fn mk_ident(id: &str, style: token::IdentStyle) -> token::Token {
-        token::Ident(str_to_ident(id), style)
+    fn mk_ident(id: &str) -> token::Token {
+        token::Ident(str_to_ident(id))
     }
 
     #[test]
@@ -1736,9 +1762,7 @@ mod tests {
         let cm = Rc::new(CodeMap::new());
         let sh = mk_sh(cm.clone());
         check_tokenization(setup(&cm, &sh, "a b".to_string()),
-                           vec![mk_ident("a", token::Plain),
-                                token::Whitespace,
-                                mk_ident("b", token::Plain)]);
+                           vec![mk_ident("a"), token::Whitespace, mk_ident("b")]);
     }
 
     #[test]
@@ -1746,9 +1770,7 @@ mod tests {
         let cm = Rc::new(CodeMap::new());
         let sh = mk_sh(cm.clone());
         check_tokenization(setup(&cm, &sh, "a::b".to_string()),
-                           vec![mk_ident("a", token::ModName),
-                                token::ModSep,
-                                mk_ident("b", token::Plain)]);
+                           vec![mk_ident("a"), token::ModSep, mk_ident("b")]);
     }
 
     #[test]
@@ -1756,10 +1778,7 @@ mod tests {
         let cm = Rc::new(CodeMap::new());
         let sh = mk_sh(cm.clone());
         check_tokenization(setup(&cm, &sh, "a ::b".to_string()),
-                           vec![mk_ident("a", token::Plain),
-                                token::Whitespace,
-                                token::ModSep,
-                                mk_ident("b", token::Plain)]);
+                           vec![mk_ident("a"), token::Whitespace, token::ModSep, mk_ident("b")]);
     }
 
     #[test]
@@ -1767,10 +1786,7 @@ mod tests {
         let cm = Rc::new(CodeMap::new());
         let sh = mk_sh(cm.clone());
         check_tokenization(setup(&cm, &sh, "a:: b".to_string()),
-                           vec![mk_ident("a", token::ModName),
-                                token::ModSep,
-                                token::Whitespace,
-                                mk_ident("b", token::Plain)]);
+                           vec![mk_ident("a"), token::ModSep, token::Whitespace, mk_ident("b")]);
     }
 
     #[test]
