@@ -133,8 +133,7 @@ impl Registry {
 
         krate.attrs.extend(self.attrs);
 
-        let features = feature_gate::check_crate_macros(
-            &sess.codemap(),
+        let features = feature_gate::get_features(
             &sess.span_diagnostic,
             &krate);
 

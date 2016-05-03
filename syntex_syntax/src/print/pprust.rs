@@ -20,7 +20,7 @@ use attr;
 use attr::{AttrMetaMethods, AttributeMethods};
 use codemap::{self, CodeMap, BytePos};
 use errors;
-use parse::token::{self, BinOpToken, Token, InternedString};
+use parse::token::{self, keywords, BinOpToken, Token, InternedString};
 use parse::lexer::comments;
 use parse;
 use print::pp::{self, break_offset, word, space, zerobreak, hardbreak};
@@ -28,7 +28,6 @@ use print::pp::{Breaks, eof};
 use print::pp::Breaks::{Consistent, Inconsistent};
 use ptr::P;
 use std_inject;
-use str::slice_shift_char;
 
 use std::ascii;
 use std::io::{self, Write, Read};
@@ -271,14 +270,14 @@ pub fn token_to_string(tok: &Token) -> String {
         }
 
         /* Name components */
-        token::Ident(s, _)          => s.to_string(),
+        token::Ident(s)             => s.to_string(),
         token::Lifetime(s)          => s.to_string(),
         token::Underscore           => "_".to_string(),
 
         /* Other */
         token::DocComment(s)        => s.to_string(),
-        token::SubstNt(s, _)        => format!("${}", s),
-        token::MatchNt(s, t, _, _)  => format!("${}:{}", s, t),
+        token::SubstNt(s)           => format!("${}", s),
+        token::MatchNt(s, t)        => format!("${}:{}", s, t),
         token::Eof                  => "<eof>".to_string(),
         token::Whitespace           => " ".to_string(),
         token::Comment              => "/* */".to_string(),
@@ -295,7 +294,7 @@ pub fn token_to_string(tok: &Token) -> String {
             token::NtBlock(ref e)       => block_to_string(&e),
             token::NtStmt(ref e)        => stmt_to_string(&e),
             token::NtPat(ref e)         => pat_to_string(&e),
-            token::NtIdent(ref e, _)    => ident_to_string(e.node),
+            token::NtIdent(ref e)       => ident_to_string(e.node),
             token::NtTT(ref e)          => tt_to_string(&e),
             token::NtArm(ref e)         => arm_to_string(&e),
             token::NtImplItem(ref e)    => impl_item_to_string(&e),
@@ -440,7 +439,7 @@ pub fn mac_to_string(arg: &ast::Mac) -> String {
 pub fn visibility_qualified(vis: &ast::Visibility, s: &str) -> String {
     match *vis {
         ast::Visibility::Public => format!("pub {}", s),
-        ast::Visibility::Crate => format!("pub(crate) {}", s),
+        ast::Visibility::Crate(_) => format!("pub(crate) {}", s),
         ast::Visibility::Restricted { ref path, .. } => format!("pub({}) {}", path, s),
         ast::Visibility::Inherited => s.to_string()
     }
@@ -1000,7 +999,7 @@ impl<'a> State<'a> {
             ast::TyKind::BareFn(ref f) => {
                 let generics = ast::Generics {
                     lifetimes: f.lifetimes.clone(),
-                    ty_params: P::empty(),
+                    ty_params: P::new(),
                     where_clause: ast::WhereClause {
                         id: ast::DUMMY_NODE_ID,
                         predicates: Vec::new(),
@@ -1391,7 +1390,7 @@ impl<'a> State<'a> {
     pub fn print_visibility(&mut self, vis: &ast::Visibility) -> io::Result<()> {
         match *vis {
             ast::Visibility::Public => self.word_nbsp("pub"),
-            ast::Visibility::Crate => self.word_nbsp("pub(crate)"),
+            ast::Visibility::Crate(_) => self.word_nbsp("pub(crate)"),
             ast::Visibility::Restricted { ref path, .. } =>
                 self.word_nbsp(&format!("pub({})", path)),
             ast::Visibility::Inherited => Ok(())
@@ -1493,20 +1492,11 @@ impl<'a> State<'a> {
 
     pub fn print_tts(&mut self, tts: &[ast::TokenTree]) -> io::Result<()> {
         try!(self.ibox(0));
-        let mut suppress_space = false;
         for (i, tt) in tts.iter().enumerate() {
-            if i != 0 && !suppress_space {
+            if i != 0 {
                 try!(space(&mut self.s));
             }
             try!(self.print_tt(tt));
-            // There should be no space between the module name and the following `::` in paths,
-            // otherwise imported macros get re-parsed from crate metadata incorrectly (#20701)
-            suppress_space = match *tt {
-                TokenTree::Token(_, token::Ident(_, token::ModName)) |
-                TokenTree::Token(_, token::MatchNt(_, _, _, token::ModName)) |
-                TokenTree::Token(_, token::SubstNt(_, token::ModName)) => true,
-                _ => false
-            }
         }
         self.end()
     }
@@ -2091,7 +2081,7 @@ impl<'a> State<'a> {
                 }
                 try!(self.bclose_(expr.span, INDENT_UNIT));
             }
-            ast::ExprKind::Closure(capture_clause, ref decl, ref body) => {
+            ast::ExprKind::Closure(capture_clause, ref decl, ref body, _) => {
                 try!(self.print_capture_clause(capture_clause));
 
                 try!(self.print_fn_block_args(&decl));
@@ -2214,12 +2204,14 @@ impl<'a> State<'a> {
 
                 try!(self.commasep(Inconsistent, &a.outputs,
                                    |s, out| {
-                    match slice_shift_char(&out.constraint) {
-                        Some(('=', operand)) if out.is_rw => {
-                            try!(s.print_string(&format!("+{}", operand),
+                    let mut ch = out.constraint.chars();
+                    match ch.next() {
+                        Some('=') if out.is_rw => {
+                            try!(s.print_string(&format!("+{}", ch.as_str()),
                                            ast::StrStyle::Cooked))
                         }
-                        _ => try!(s.print_string(&out.constraint, ast::StrStyle::Cooked))
+                        _ => try!(s.print_string(&out.constraint,
+                                            ast::StrStyle::Cooked))
                     }
                     try!(s.popen());
                     try!(s.print_expr(&out.expr));
@@ -2969,9 +2961,8 @@ impl<'a> State<'a> {
             ast::TyKind::Infer if is_closure => try!(self.print_pat(&input.pat)),
             _ => {
                 match input.pat.node {
-                    PatKind::Ident(_, ref path1, _) if
-                        path1.node.name ==
-                            parse::token::special_idents::invalid.name => {
+                    PatKind::Ident(_, ref path1, _)
+                            if path1.node.name == keywords::Invalid.name() => {
                         // Do nothing.
                     }
                     _ => {
@@ -3024,7 +3015,7 @@ impl<'a> State<'a> {
         }
         let generics = ast::Generics {
             lifetimes: Vec::new(),
-            ty_params: P::empty(),
+            ty_params: P::new(),
             where_clause: ast::WhereClause {
                 id: ast::DUMMY_NODE_ID,
                 predicates: Vec::new(),
