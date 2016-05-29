@@ -12,7 +12,7 @@ pub use self::AnnNode::*;
 
 use abi::{self, Abi};
 use ast::{self, TokenTree, BlockCheckMode, PatKind};
-use ast::{RegionTyParamBound, TraitTyParamBound, TraitBoundModifier};
+use ast::{SelfKind, RegionTyParamBound, TraitTyParamBound, TraitBoundModifier};
 use ast::Attribute;
 use attr::ThinAttributesExt;
 use util::parser::AssocOp;
@@ -386,13 +386,12 @@ pub fn fun_to_string(decl: &ast::FnDecl,
                      unsafety: ast::Unsafety,
                      constness: ast::Constness,
                      name: ast::Ident,
-                     opt_explicit_self: Option<&ast::SelfKind>,
                      generics: &ast::Generics)
                      -> String {
     to_string(|s| {
         try!(s.head(""));
         try!(s.print_fn(decl, unsafety, constness, Abi::Rust, Some(name),
-                   generics, opt_explicit_self, &ast::Visibility::Inherited));
+                   generics, &ast::Visibility::Inherited));
         try!(s.end()); // Close the head box
         s.end() // Close the outer box
     })
@@ -418,10 +417,6 @@ pub fn attribute_to_string(attr: &ast::Attribute) -> String {
 
 pub fn lit_to_string(l: &ast::Lit) -> String {
     to_string(|s| s.print_literal(l))
-}
-
-pub fn explicit_self_to_string(explicit_self: &ast::SelfKind) -> String {
-    to_string(|s| s.print_explicit_self(explicit_self, ast::Mutability::Immutable).map(|_| {}))
 }
 
 pub fn variant_to_string(var: &ast::Variant) -> String {
@@ -1009,8 +1004,7 @@ impl<'a> State<'a> {
                                  f.unsafety,
                                  &f.decl,
                                  None,
-                                 &generics,
-                                 None));
+                                 &generics));
             }
             ast::TyKind::Path(None, ref path) => {
                 try!(self.print_path(path, false, 0));
@@ -1040,6 +1034,9 @@ impl<'a> State<'a> {
             ast::TyKind::Infer => {
                 try!(word(&mut self.s, "_"));
             }
+            ast::TyKind::ImplicitSelf => {
+                unreachable!();
+            }
             ast::TyKind::Mac(ref m) => {
                 try!(self.print_mac(m, token::Paren));
             }
@@ -1058,7 +1055,7 @@ impl<'a> State<'a> {
                 try!(self.print_fn(decl, ast::Unsafety::Normal,
                               ast::Constness::NotConst,
                               Abi::Rust, Some(item.ident),
-                              generics, None, &item.vis));
+                              generics, &item.vis));
                 try!(self.end()); // end head-ibox
                 try!(word(&mut self.s, ";"));
                 self.end() // end the outer fn box
@@ -1186,7 +1183,6 @@ impl<'a> State<'a> {
                     abi,
                     Some(item.ident),
                     typarams,
-                    None,
                     &item.vis
                 ));
                 try!(word(&mut self.s, " "));
@@ -1526,7 +1522,6 @@ impl<'a> State<'a> {
                       m.abi,
                       Some(ident),
                       &m.generics,
-                      Some(&m.explicit_self.node),
                       vis)
     }
 
@@ -2025,7 +2020,7 @@ impl<'a> State<'a> {
             }
             ast::ExprKind::While(ref test, ref blk, opt_ident) => {
                 if let Some(ident) = opt_ident {
-                    try!(self.print_ident(ident));
+                    try!(self.print_ident(ident.node));
                     try!(self.word_space(":"));
                 }
                 try!(self.head("while"));
@@ -2035,7 +2030,7 @@ impl<'a> State<'a> {
             }
             ast::ExprKind::WhileLet(ref pat, ref expr, ref blk, opt_ident) => {
                 if let Some(ident) = opt_ident {
-                    try!(self.print_ident(ident));
+                    try!(self.print_ident(ident.node));
                     try!(self.word_space(":"));
                 }
                 try!(self.head("while let"));
@@ -2048,7 +2043,7 @@ impl<'a> State<'a> {
             }
             ast::ExprKind::ForLoop(ref pat, ref iter, ref blk, opt_ident) => {
                 if let Some(ident) = opt_ident {
-                    try!(self.print_ident(ident));
+                    try!(self.print_ident(ident.node));
                     try!(self.word_space(":"));
                 }
                 try!(self.head("for"));
@@ -2061,7 +2056,7 @@ impl<'a> State<'a> {
             }
             ast::ExprKind::Loop(ref blk, opt_ident) => {
                 if let Some(ident) = opt_ident {
-                    try!(self.print_ident(ident));
+                    try!(self.print_ident(ident.node));
                     try!(self.word_space(":"));
                 }
                 try!(self.head("loop"));
@@ -2476,17 +2471,23 @@ impl<'a> State<'a> {
                     None => ()
                 }
             }
-            PatKind::TupleStruct(ref path, ref args_) => {
+            PatKind::TupleStruct(ref path, ref elts, ddpos) => {
                 try!(self.print_path(path, true, 0));
-                match *args_ {
-                    None => try!(word(&mut self.s, "(..)")),
-                    Some(ref args) => {
-                        try!(self.popen());
-                        try!(self.commasep(Inconsistent, &args[..],
-                                          |s, p| s.print_pat(&p)));
-                        try!(self.pclose());
+                try!(self.popen());
+                if let Some(ddpos) = ddpos {
+                    try!(self.commasep(Inconsistent, &elts[..ddpos], |s, p| s.print_pat(&p)));
+                    if ddpos != 0 {
+                        try!(self.word_space(","));
                     }
+                    try!(word(&mut self.s, ".."));
+                    if ddpos != elts.len() {
+                        try!(word(&mut self.s, ","));
+                        try!(self.commasep(Inconsistent, &elts[ddpos..], |s, p| s.print_pat(&p)));
+                    }
+                } else {
+                    try!(self.commasep(Inconsistent, &elts[..], |s, p| s.print_pat(&p)));
                 }
+                try!(self.pclose());
             }
             PatKind::Path(ref path) => {
                 try!(self.print_path(path, true, 0));
@@ -2517,13 +2518,23 @@ impl<'a> State<'a> {
                 try!(space(&mut self.s));
                 try!(word(&mut self.s, "}"));
             }
-            PatKind::Tup(ref elts) => {
+            PatKind::Tuple(ref elts, ddpos) => {
                 try!(self.popen());
-                try!(self.commasep(Inconsistent,
-                                   &elts[..],
-                                   |s, p| s.print_pat(&p)));
-                if elts.len() == 1 {
-                    try!(word(&mut self.s, ","));
+                if let Some(ddpos) = ddpos {
+                    try!(self.commasep(Inconsistent, &elts[..ddpos], |s, p| s.print_pat(&p)));
+                    if ddpos != 0 {
+                        try!(self.word_space(","));
+                    }
+                    try!(word(&mut self.s, ".."));
+                    if ddpos != elts.len() {
+                        try!(word(&mut self.s, ","));
+                        try!(self.commasep(Inconsistent, &elts[ddpos..], |s, p| s.print_pat(&p)));
+                    }
+                } else {
+                    try!(self.commasep(Inconsistent, &elts[..], |s, p| s.print_pat(&p)));
+                    if elts.len() == 1 {
+                        try!(word(&mut self.s, ","));
+                    }
                 }
                 try!(self.pclose());
             }
@@ -2614,29 +2625,25 @@ impl<'a> State<'a> {
         self.end() // close enclosing cbox
     }
 
-    // Returns whether it printed anything
-    fn print_explicit_self(&mut self,
-                           explicit_self: &ast::SelfKind,
-                           mutbl: ast::Mutability) -> io::Result<bool> {
-        try!(self.print_mutability(mutbl));
-        match *explicit_self {
-            ast::SelfKind::Static => { return Ok(false); }
-            ast::SelfKind::Value(_) => {
-                try!(word(&mut self.s, "self"));
+    fn print_explicit_self(&mut self, explicit_self: &ast::ExplicitSelf) -> io::Result<()> {
+        match explicit_self.node {
+            SelfKind::Value(m) => {
+                try!(self.print_mutability(m));
+                word(&mut self.s, "self")
             }
-            ast::SelfKind::Region(ref lt, m, _) => {
+            SelfKind::Region(ref lt, m) => {
                 try!(word(&mut self.s, "&"));
                 try!(self.print_opt_lifetime(lt));
                 try!(self.print_mutability(m));
-                try!(word(&mut self.s, "self"));
+                word(&mut self.s, "self")
             }
-            ast::SelfKind::Explicit(ref typ, _) => {
+            SelfKind::Explicit(ref typ, m) => {
+                try!(self.print_mutability(m));
                 try!(word(&mut self.s, "self"));
                 try!(self.word_space(":"));
-                try!(self.print_type(&typ));
+                self.print_type(&typ)
             }
         }
-        return Ok(true);
     }
 
     pub fn print_fn(&mut self,
@@ -2646,7 +2653,6 @@ impl<'a> State<'a> {
                     abi: abi::Abi,
                     name: Option<ast::Ident>,
                     generics: &ast::Generics,
-                    opt_explicit_self: Option<&ast::SelfKind>,
                     vis: &ast::Visibility) -> io::Result<()> {
         try!(self.print_fn_header_info(unsafety, constness, abi, vis));
 
@@ -2655,48 +2661,14 @@ impl<'a> State<'a> {
             try!(self.print_ident(name));
         }
         try!(self.print_generics(generics));
-        try!(self.print_fn_args_and_ret(decl, opt_explicit_self));
+        try!(self.print_fn_args_and_ret(decl));
         self.print_where_clause(&generics.where_clause)
     }
 
-    pub fn print_fn_args(&mut self, decl: &ast::FnDecl,
-                         opt_explicit_self: Option<&ast::SelfKind>,
-                         is_closure: bool) -> io::Result<()> {
-        // It is unfortunate to duplicate the commasep logic, but we want the
-        // self type and the args all in the same box.
-        try!(self.rbox(0, Inconsistent));
-        let mut first = true;
-        if let Some(explicit_self) = opt_explicit_self {
-            let m = match *explicit_self {
-                ast::SelfKind::Static => ast::Mutability::Immutable,
-                _ => match decl.inputs[0].pat.node {
-                    PatKind::Ident(ast::BindingMode::ByValue(m), _, _) => m,
-                    _ => ast::Mutability::Immutable
-                }
-            };
-            first = !try!(self.print_explicit_self(explicit_self, m));
-        }
-
-        // HACK(eddyb) ignore the separately printed self argument.
-        let args = if first {
-            &decl.inputs[..]
-        } else {
-            &decl.inputs[1..]
-        };
-
-        for arg in args {
-            if first { first = false; } else { try!(self.word_space(",")); }
-            try!(self.print_arg(arg, is_closure));
-        }
-
-        self.end()
-    }
-
-    pub fn print_fn_args_and_ret(&mut self, decl: &ast::FnDecl,
-                                 opt_explicit_self: Option<&ast::SelfKind>)
+    pub fn print_fn_args_and_ret(&mut self, decl: &ast::FnDecl)
         -> io::Result<()> {
         try!(self.popen());
-        try!(self.print_fn_args(decl, opt_explicit_self, false));
+        try!(self.commasep(Inconsistent, &decl.inputs, |s, arg| s.print_arg(arg, false)));
         if decl.variadic {
             try!(word(&mut self.s, ", ..."));
         }
@@ -2710,7 +2682,7 @@ impl<'a> State<'a> {
             decl: &ast::FnDecl)
             -> io::Result<()> {
         try!(word(&mut self.s, "|"));
-        try!(self.print_fn_args(decl, None, true));
+        try!(self.commasep(Inconsistent, &decl.inputs, |s, arg| s.print_arg(arg, true)));
         try!(word(&mut self.s, "|"));
 
         if let ast::FunctionRetTy::Default(..) = decl.output {
@@ -2960,18 +2932,21 @@ impl<'a> State<'a> {
         match input.ty.node {
             ast::TyKind::Infer if is_closure => try!(self.print_pat(&input.pat)),
             _ => {
-                match input.pat.node {
-                    PatKind::Ident(_, ref path1, _)
-                            if path1.node.name == keywords::Invalid.name() => {
-                        // Do nothing.
-                    }
-                    _ => {
+                if let Some(eself) = input.to_self() {
+                    try!(self.print_explicit_self(&eself));
+                } else {
+                    let invalid = if let PatKind::Ident(_, ident, _) = input.pat.node {
+                        ident.node.name == keywords::Invalid.name()
+                    } else {
+                        false
+                    };
+                    if !invalid {
                         try!(self.print_pat(&input.pat));
                         try!(word(&mut self.s, ":"));
                         try!(space(&mut self.s));
                     }
+                    try!(self.print_type(&input.ty));
                 }
-                try!(self.print_type(&input.ty));
             }
         }
         self.end()
@@ -3005,8 +2980,7 @@ impl<'a> State<'a> {
                        unsafety: ast::Unsafety,
                        decl: &ast::FnDecl,
                        name: Option<ast::Ident>,
-                       generics: &ast::Generics,
-                       opt_explicit_self: Option<&ast::SelfKind>)
+                       generics: &ast::Generics)
                        -> io::Result<()> {
         try!(self.ibox(INDENT_UNIT));
         if !generics.lifetimes.is_empty() || !generics.ty_params.is_empty() {
@@ -3027,7 +3001,6 @@ impl<'a> State<'a> {
                       abi,
                       name,
                       &generics,
-                      opt_explicit_self,
                       &ast::Visibility::Inherited));
         self.end()
     }
@@ -3151,8 +3124,7 @@ mod tests {
         let generics = ast::Generics::default();
         assert_eq!(fun_to_string(&decl, ast::Unsafety::Normal,
                                  ast::Constness::NotConst,
-                                 abba_ident,
-                                 None, &generics),
+                                 abba_ident, &generics),
                    "fn abba()");
     }
 

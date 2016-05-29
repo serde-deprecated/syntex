@@ -156,6 +156,7 @@ impl Registry {
         let src_name = src.to_str().unwrap().to_string();
         let src = sess.codemap()
             .get_filemap(&src_name)
+            .unwrap()
             .src
             .as_ref()
             .unwrap()

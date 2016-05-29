@@ -16,13 +16,12 @@ pub use self::ViewPath_::*;
 pub use self::PathParameters::*;
 
 use attr::ThinAttributes;
-use codemap::{Span, Spanned, DUMMY_SP, ExpnId};
+use codemap::{mk_sp, respan, Span, Spanned, DUMMY_SP, ExpnId};
 use abi::Abi;
 use errors;
 use ext::base;
 use ext::tt::macro_parser;
-use parse::token::InternedString;
-use parse::token;
+use parse::token::{self, keywords, InternedString};
 use parse::lexer;
 use parse::lexer::comments::{doc_comment_style, strip_doc_comment_decoration};
 use print::pprust;
@@ -60,6 +59,10 @@ pub struct Ident {
 impl Name {
     pub fn as_str(self) -> token::InternedString {
         token::InternedString::new_from_name(self)
+    }
+
+    pub fn unhygienize(self) -> Name {
+        token::intern(&self.as_str())
     }
 }
 
@@ -551,6 +554,43 @@ impl fmt::Debug for Pat {
     }
 }
 
+impl Pat {
+    pub fn walk<F>(&self, it: &mut F) -> bool
+        where F: FnMut(&Pat) -> bool
+    {
+        if !it(self) {
+            return false;
+        }
+
+        match self.node {
+            PatKind::Ident(_, _, Some(ref p)) => p.walk(it),
+            PatKind::Struct(_, ref fields, _) => {
+                fields.iter().all(|field| field.node.pat.walk(it))
+            }
+            PatKind::TupleStruct(_, ref s, _) | PatKind::Tuple(ref s, _) => {
+                s.iter().all(|p| p.walk(it))
+            }
+            PatKind::Box(ref s) | PatKind::Ref(ref s, _) => {
+                s.walk(it)
+            }
+            PatKind::Vec(ref before, ref slice, ref after) => {
+                before.iter().all(|p| p.walk(it)) &&
+                slice.iter().all(|p| p.walk(it)) &&
+                after.iter().all(|p| p.walk(it))
+            }
+            PatKind::Wild |
+            PatKind::Lit(_) |
+            PatKind::Range(_, _) |
+            PatKind::Ident(_, _, _) |
+            PatKind::Path(..) |
+            PatKind::QPath(_, _) |
+            PatKind::Mac(_) => {
+                true
+            }
+        }
+    }
+}
+
 /// A single field in a struct pattern
 ///
 /// Patterns like the fields of Foo `{ x, ref y, ref mut z }`
@@ -590,9 +630,10 @@ pub enum PatKind {
     /// The `bool` is `true` in the presence of a `..`.
     Struct(Path, Vec<Spanned<FieldPat>>, bool),
 
-    /// A tuple struct/variant pattern `Variant(x, y, z)`.
-    /// "None" means a `Variant(..)` pattern where we don't bind the fields to names.
-    TupleStruct(Path, Option<Vec<P<Pat>>>),
+    /// A tuple struct/variant pattern `Variant(x, y, .., z)`.
+    /// If the `..` pattern fragment is present, then `Option<usize>` denotes its position.
+    /// 0 <= position <= subpats.len()
+    TupleStruct(Path, Vec<P<Pat>>, Option<usize>),
 
     /// A path pattern.
     /// Such pattern can be resolved to a unit struct/variant or a constant.
@@ -604,8 +645,10 @@ pub enum PatKind {
     /// PatKind::Path, and the resolver will have to sort that out.
     QPath(QSelf, Path),
 
-    /// A tuple pattern `(a, b)`
-    Tup(Vec<P<Pat>>),
+    /// A tuple pattern `(a, b)`.
+    /// If the `..` pattern fragment is present, then `Option<usize>` denotes its position.
+    /// 0 <= position <= subpats.len()
+    Tuple(Vec<P<Pat>>, Option<usize>),
     /// A `box` pattern
     Box(P<Pat>),
     /// A reference pattern, e.g. `&mut (a, b)`
@@ -966,23 +1009,23 @@ pub enum ExprKind {
     /// A while loop, with an optional label
     ///
     /// `'label: while expr { block }`
-    While(P<Expr>, P<Block>, Option<Ident>),
+    While(P<Expr>, P<Block>, Option<SpannedIdent>),
     /// A while-let loop, with an optional label
     ///
     /// `'label: while let pat = expr { block }`
     ///
     /// This is desugared to a combination of `loop` and `match` expressions.
-    WhileLet(P<Pat>, P<Expr>, P<Block>, Option<Ident>),
+    WhileLet(P<Pat>, P<Expr>, P<Block>, Option<SpannedIdent>),
     /// A for loop, with an optional label
     ///
     /// `'label: for pat in expr { block }`
     ///
     /// This is desugared to a combination of `loop` and `match` expressions.
-    ForLoop(P<Pat>, P<Expr>, P<Block>, Option<Ident>),
+    ForLoop(P<Pat>, P<Expr>, P<Block>, Option<SpannedIdent>),
     /// Conditionless loop (can be exited with break, continue, or return)
     ///
     /// `'label: loop { block }`
-    Loop(P<Block>, Option<Ident>),
+    Loop(P<Block>, Option<SpannedIdent>),
     /// A `match` block.
     Match(P<Expr>, Vec<Arm>),
     /// A closure (for example, `move |a, b, c| {a + b + c}`)
@@ -1346,7 +1389,6 @@ pub struct MethodSig {
     pub abi: Abi,
     pub decl: P<FnDecl>,
     pub generics: Generics,
-    pub explicit_self: ExplicitSelf,
 }
 
 /// Represents an item declaration within a trait declaration,
@@ -1597,6 +1639,8 @@ pub enum TyKind {
     /// TyKind::Infer means the type should be inferred instead of it having been
     /// specified. This can appear anywhere in a type.
     Infer,
+    /// Inferred type of a `self` or `&self` argument in a method.
+    ImplicitSelf,
     // A macro in the type position.
     Mac(Mac),
 }
@@ -1636,22 +1680,69 @@ pub struct Arg {
     pub id: NodeId,
 }
 
+/// Alternative representation for `Arg`s describing `self` parameter of methods.
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
+pub enum SelfKind {
+    /// `self`, `mut self`
+    Value(Mutability),
+    /// `&'lt self`, `&'lt mut self`
+    Region(Option<Lifetime>, Mutability),
+    /// `self: TYPE`, `mut self: TYPE`
+    Explicit(P<Ty>, Mutability),
+}
+
+pub type ExplicitSelf = Spanned<SelfKind>;
+
 impl Arg {
-    pub fn new_self(span: Span, mutability: Mutability, self_ident: Ident) -> Arg {
-        let path = Spanned{span:span,node:self_ident};
-        Arg {
-            // HACK(eddyb) fake type for the self argument.
-            ty: P(Ty {
-                id: DUMMY_NODE_ID,
-                node: TyKind::Infer,
-                span: DUMMY_SP,
-            }),
+    pub fn to_self(&self) -> Option<ExplicitSelf> {
+        if let PatKind::Ident(BindingMode::ByValue(mutbl), ident, _) = self.pat.node {
+            if ident.node.name == keywords::SelfValue.name() {
+                return match self.ty.node {
+                    TyKind::ImplicitSelf => Some(respan(self.pat.span, SelfKind::Value(mutbl))),
+                    TyKind::Rptr(lt, MutTy{ref ty, mutbl}) if ty.node == TyKind::ImplicitSelf => {
+                        Some(respan(self.pat.span, SelfKind::Region(lt, mutbl)))
+                    }
+                    _ => Some(respan(mk_sp(self.pat.span.lo, self.ty.span.hi),
+                                     SelfKind::Explicit(self.ty.clone(), mutbl))),
+                }
+            }
+        }
+        None
+    }
+
+    pub fn is_self(&self) -> bool {
+        if let PatKind::Ident(_, ident, _) = self.pat.node {
+            ident.node.name == keywords::SelfValue.name()
+        } else {
+            false
+        }
+    }
+
+    pub fn from_self(eself: ExplicitSelf, eself_ident: SpannedIdent) -> Arg {
+        let infer_ty = P(Ty {
+            id: DUMMY_NODE_ID,
+            node: TyKind::ImplicitSelf,
+            span: DUMMY_SP,
+        });
+        let arg = |mutbl, ty, span| Arg {
             pat: P(Pat {
                 id: DUMMY_NODE_ID,
-                node: PatKind::Ident(BindingMode::ByValue(mutability), path, None),
-                span: span
+                node: PatKind::Ident(BindingMode::ByValue(mutbl), eself_ident, None),
+                span: span,
             }),
-            id: DUMMY_NODE_ID
+            ty: ty,
+            id: DUMMY_NODE_ID,
+        };
+        match eself.node {
+            SelfKind::Explicit(ty, mutbl) => {
+                arg(mutbl, ty, mk_sp(eself.span.lo, eself_ident.span.hi))
+            }
+            SelfKind::Value(mutbl) => arg(mutbl, infer_ty, eself.span),
+            SelfKind::Region(lt, mutbl) => arg(Mutability::Immutable, P(Ty {
+                id: DUMMY_NODE_ID,
+                node: TyKind::Rptr(lt, MutTy { ty: infer_ty, mutbl: mutbl }),
+                span: DUMMY_SP,
+            }), eself.span),
         }
     }
 }
@@ -1662,6 +1753,15 @@ pub struct FnDecl {
     pub inputs: Vec<Arg>,
     pub output: FunctionRetTy,
     pub variadic: bool
+}
+
+impl FnDecl {
+    pub fn get_self(&self) -> Option<ExplicitSelf> {
+        self.inputs.get(0).and_then(Arg::to_self)
+    }
+    pub fn has_self(&self) -> bool {
+        self.inputs.get(0).map(Arg::is_self).unwrap_or(false)
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
@@ -1733,21 +1833,6 @@ impl FunctionRetTy {
         }
     }
 }
-
-/// Represents the kind of 'self' associated with a method
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
-pub enum SelfKind {
-    /// No self
-    Static,
-    /// `self`
-    Value(Ident),
-    /// `&'lt self`, `&'lt mut self`
-    Region(Option<Lifetime>, Mutability, Ident),
-    /// `self: TYPE`
-    Explicit(P<Ty>, Ident),
-}
-
-pub type ExplicitSelf = Spanned<SelfKind>;
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 pub struct Mod {
@@ -1992,10 +2077,7 @@ pub enum ItemKind {
     /// A struct definition, e.g. `struct Foo<A> {x: A}`
     Struct(VariantData, Generics),
     /// Represents a Trait Declaration
-    Trait(Unsafety,
-              Generics,
-              TyParamBounds,
-              Vec<TraitItem>),
+    Trait(Unsafety, Generics, TyParamBounds, Vec<TraitItem>),
 
     // Default trait implementations
     ///

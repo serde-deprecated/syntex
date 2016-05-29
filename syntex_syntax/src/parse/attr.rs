@@ -35,7 +35,10 @@ impl<'a> Parser<'a> {
                     self.span.hi
                 );
                     if attr.node.style != ast::AttrStyle::Outer {
-                        return Err(self.fatal("expected outer comment"));
+                        let mut err = self.fatal("expected outer doc comment");
+                        err.note("inner doc comments like this (starting with \
+                                  `//!` or `/*!`) can only appear before items");
+                        return Err(err);
                     }
                     attrs.push(attr);
                     self.bump();
@@ -69,9 +72,8 @@ impl<'a> Parser<'a> {
                         self.diagnostic()
                             .struct_span_err(span,
                                              "an inner attribute is not permitted in this context")
-                            .fileline_help(span,
-                                           "place inner attribute at the top of the module or \
-                                            block")
+                            .help("place inner attribute at the top of the module or \
+                                   block")
                             .emit()
                     }
                     ast::AttrStyle::Inner

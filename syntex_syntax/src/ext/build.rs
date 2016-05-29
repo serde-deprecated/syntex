@@ -755,7 +755,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
         let expr_file_line_ptr = self.expr_addr_of(span, expr_file_line_tuple);
         self.expr_call_global(
             span,
-            self.std_path(&["rt", "begin_unwind"]),
+            self.std_path(&["rt", "begin_panic"]),
             vec!(
                 self.expr_str(span, msg),
                 expr_file_line_ptr))
@@ -832,7 +832,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
         let pat = if subpats.is_empty() {
             PatKind::Path(path)
         } else {
-            PatKind::TupleStruct(path, Some(subpats))
+            PatKind::TupleStruct(path, subpats, None)
         };
         self.pat(span, pat)
     }
@@ -842,7 +842,7 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
         self.pat(span, pat)
     }
     fn pat_tuple(&self, span: Span, pats: Vec<P<ast::Pat>>) -> P<ast::Pat> {
-        self.pat(span, PatKind::Tup(pats))
+        self.pat(span, PatKind::Tuple(pats, None))
     }
 
     fn pat_some(&self, span: Span, pat: P<ast::Pat>) -> P<ast::Pat> {
