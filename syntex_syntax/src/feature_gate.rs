@@ -141,6 +141,8 @@ declare_features! (
     (active, simd_ffi, "1.0.0", Some(27731)),
     (active, start, "1.0.0", Some(29633)),
     (active, structural_match, "1.8.0", Some(31434)),
+    (active, panic_runtime, "1.10.0", Some(32837)),
+    (active, needs_panic_runtime, "1.10.0", Some(32837)),
 
     // OIBIT specific features
     (active, optin_builtin_traits, "1.0.0", Some(13231)),
@@ -266,7 +268,16 @@ declare_features! (
     (active, specialization, "1.7.0", Some(31844)),
 
     // pub(restricted) visibilities (RFC 1422)
-    (active, pub_restricted, "1.9.0", Some(32409))
+    (active, pub_restricted, "1.9.0", Some(32409)),
+
+    // Allow Drop types in statics/const functions (RFC 1440)
+    (active, drop_types_in_const, "1.9.0", Some(33156)),
+
+    // Allows cfg(target_has_atomic = "...").
+    (active, cfg_target_has_atomic, "1.9.0", Some(32976)),
+
+    // Allows `..` in tuple (struct) patterns
+    (active, dotdot_in_tuple_patterns, "1.10.0", Some(33627))
 );
 
 declare_features! (
@@ -307,7 +318,6 @@ declare_features! (
     // Allows `#[deprecated]` attribute
     (accepted, deprecated, "1.9.0", Some(29935))
 );
-
 // (changing above list without updating src/doc/reference.md makes @cmr sad)
 
 #[derive(PartialEq, Copy, Clone, Debug)]
@@ -432,6 +442,15 @@ pub const KNOWN_ATTRIBUTES: &'static [(&'static str, AttributeType, AttributeGat
                                        attribute is an experimental \
                                        feature",
                                       cfg_fn!(needs_allocator))),
+    ("panic_runtime", Whitelisted, Gated("panic_runtime",
+                                         "the `#[panic_runtime]` attribute is \
+                                          an experimental feature",
+                                         cfg_fn!(panic_runtime))),
+    ("needs_panic_runtime", Whitelisted, Gated("needs_panic_runtime",
+                                               "the `#[needs_panic_runtime]` \
+                                                attribute is an experimental \
+                                                feature",
+                                               cfg_fn!(needs_panic_runtime))),
     ("rustc_variance", Normal, Gated("rustc_attrs",
                                      "the `#[rustc_variance]` attribute \
                                       is just used for rustc unit tests \
@@ -574,6 +593,7 @@ const GATED_CFGS: &'static [(&'static str, &'static str, fn(&Features) -> bool)]
     ("target_feature", "cfg_target_feature", cfg_fn!(cfg_target_feature)),
     ("target_vendor", "cfg_target_vendor", cfg_fn!(cfg_target_vendor)),
     ("target_thread_local", "cfg_target_thread_local", cfg_fn!(cfg_target_thread_local)),
+    ("target_has_atomic", "cfg_target_has_atomic", cfg_fn!(cfg_target_has_atomic)),
 ];
 
 #[derive(Debug, Eq, PartialEq)]
@@ -770,9 +790,9 @@ pub fn emit_feature_err(diag: &Handler, feature: &str, span: Span, issue: GateIs
         err.emit();
         return;
     }
-    err.fileline_help(span, &format!("add #![feature({})] to the \
-                                      crate attributes to enable",
-                                     feature));
+    err.help(&format!("add #![feature({})] to the \
+                       crate attributes to enable",
+                      feature));
     err.emit();
 }
 
@@ -979,6 +999,9 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
             ast::ExprKind::Try(..) => {
                 gate_feature_post!(&self, question_mark, e.span, "the `?` operator is not stable");
             }
+            ast::ExprKind::InPlace(..) => {
+                gate_feature_post!(&self, placement_in_syntax, e.span, EXPLAIN_PLACEMENT_IN);
+            }
             _ => {}
         }
         visit::walk_expr(self, e);
@@ -1002,6 +1025,24 @@ impl<'a, 'v> Visitor<'v> for PostExpansionVisitor<'a> {
                 gate_feature_post!(&self, box_patterns,
                                   pattern.span,
                                   "box pattern syntax is experimental");
+            }
+            PatKind::Tuple(_, ddpos)
+                    if ddpos.is_some() => {
+                gate_feature_post!(&self, dotdot_in_tuple_patterns,
+                                  pattern.span,
+                                  "`..` in tuple patterns is experimental");
+            }
+            PatKind::TupleStruct(_, ref fields, ddpos)
+                    if ddpos.is_some() && !fields.is_empty() => {
+                gate_feature_post!(&self, dotdot_in_tuple_patterns,
+                                  pattern.span,
+                                  "`..` in tuple struct patterns is experimental");
+            }
+            PatKind::TupleStruct(_, ref fields, ddpos)
+                    if ddpos.is_none() && fields.is_empty() => {
+                self.context.span_handler.struct_span_err(pattern.span,
+                                                          "nullary enum variants are written with \
+                                                           no trailing `( )`").emit();
             }
             _ => {}
         }
