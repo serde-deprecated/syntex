@@ -78,12 +78,12 @@ impl_macro_generable! {
 }
 
 pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
-    return e.and_then(|ast::Expr {id, node, span, attrs}| match node {
+    return e.clone().and_then(|ast::Expr {id, node, span, attrs}| match node {
 
         // expr_mac should really be expr_ext or something; it's the
         // entry-point for all syntax extensions.
         ast::ExprKind::Mac(mac) => {
-            expand_mac_invoc(mac, None, attrs.into_attr_vec(), span, fld)
+            expand_mac_invoc(mac, None, attrs.into_attr_vec(), span, fld, e)
         }
 
         ast::ExprKind::While(cond, body, opt_ident) => {
@@ -180,9 +180,19 @@ pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
 
 /// Expand a macro invocation. Returns the result of expansion.
 fn expand_mac_invoc<T>(mac: ast::Mac, ident: Option<Ident>, attrs: Vec<ast::Attribute>, span: Span,
-                       fld: &mut MacroExpander) -> T
+                       fld: &mut MacroExpander,
+                       // FIXME(syntex): ignore unknown results
+                       original_value: T
+                       ) -> T
     where T: MacroGenerable,
 {
+    // FIXME(syntex): Ignore unknown results
+    enum ExpandResult<T> {
+        Some(T),
+        None,
+        UnknownMacro,
+    }
+
     // It would almost certainly be cleaner to pass the whole macro invocation in,
     // rather than pulling it apart and marking the tts and the ctxt separately.
     let Mac_ { path, tts, .. } = mac.node;
@@ -190,7 +200,7 @@ fn expand_mac_invoc<T>(mac: ast::Mac, ident: Option<Ident>, attrs: Vec<ast::Attr
 
     fn mac_result<'a>(path: &ast::Path, ident: Option<Ident>, tts: Vec<TokenTree>, mark: Mrk,
                       attrs: Vec<ast::Attribute>, call_site: Span, fld: &'a mut MacroExpander)
-                      -> Option<Box<MacResult + 'a>> {
+                      -> ExpandResult<Box<MacResult + 'a>> {
         // Detect use of feature-gated or invalid attributes on macro invoations
         // since they will not be detected after macro expansion.
         for attr in attrs.iter() {
@@ -201,18 +211,21 @@ fn expand_mac_invoc<T>(mac: ast::Mac, ident: Option<Ident>, attrs: Vec<ast::Attr
 
         if path.segments.len() > 1 {
             fld.cx.span_err(path.span, "expected macro name without module separators");
-            return None;
+            return ExpandResult::None;
         }
 
         let extname = path.segments[0].identifier.name;
         let extension = if let Some(extension) = fld.cx.syntax_env.find(extname) {
             extension
         } else {
+            // SYNTEX: Ignore unknown macros.
+            /*
             let mut err = fld.cx.struct_span_err(path.span,
                                                  &format!("macro undefined: '{}!'", &extname));
             fld.cx.suggest_macro_name(&extname.as_str(), &mut err);
             err.emit();
-            return None;
+            */
+            return ExpandResult::UnknownMacro;
         };
 
         let ident = ident.unwrap_or(keywords::Invalid.ident());
@@ -222,7 +235,7 @@ fn expand_mac_invoc<T>(mac: ast::Mac, ident: Option<Ident>, attrs: Vec<ast::Attr
                     let msg =
                         format!("macro {}! expects no ident argument, given '{}'", extname, ident);
                     fld.cx.span_err(path.span, &msg);
-                    return None;
+                    return ExpandResult::None;
                 }
 
                 fld.cx.bt_push(ExpnInfo {
@@ -241,14 +254,14 @@ fn expand_mac_invoc<T>(mac: ast::Mac, ident: Option<Ident>, attrs: Vec<ast::Attr
                 let mac_span = fld.cx.original_span();
 
                 let marked_tts = mark_tts(&tts[..], mark);
-                Some(expandfun.expand(fld.cx, mac_span, &marked_tts))
+                ExpandResult::Some(expandfun.expand(fld.cx, mac_span, &marked_tts))
             }
 
             IdentTT(ref expander, tt_span, allow_internal_unstable) => {
                 if ident.name == keywords::Invalid.name() {
                     fld.cx.span_err(path.span,
                                     &format!("macro {}! expects an ident argument", extname));
-                    return None;
+                    return ExpandResult::None;
                 };
 
                 fld.cx.bt_push(ExpnInfo {
@@ -261,14 +274,14 @@ fn expand_mac_invoc<T>(mac: ast::Mac, ident: Option<Ident>, attrs: Vec<ast::Attr
                 });
 
                 let marked_tts = mark_tts(&tts, mark);
-                Some(expander.expand(fld.cx, call_site, ident, marked_tts))
+                ExpandResult::Some(expander.expand(fld.cx, call_site, ident, marked_tts))
             }
 
             MacroRulesTT => {
                 if ident.name == keywords::Invalid.name() {
                     fld.cx.span_err(path.span,
                                     &format!("macro {}! expects an ident argument", extname));
-                    return None;
+                    return ExpandResult::None;
                 };
 
                 fld.cx.bt_push(ExpnInfo {
@@ -297,20 +310,21 @@ fn expand_mac_invoc<T>(mac: ast::Mac, ident: Option<Ident>, attrs: Vec<ast::Attr
 
                 // macro_rules! has a side effect but expands to nothing.
                 fld.cx.bt_pop();
-                None
+                ExpandResult::None
             }
 
             MultiDecorator(..) | MultiModifier(..) => {
                 fld.cx.span_err(path.span,
                                 &format!("`{}` can only be used in attributes", extname));
-                None
+                ExpandResult::None
             }
         }
     }
 
     let opt_expanded = T::make_with(match mac_result(&path, ident, tts, mark, attrs, span, fld) {
-        Some(result) => result,
-        None => return T::dummy(span),
+        ExpandResult::Some(result) => result,
+        ExpandResult::None => return T::dummy(span),
+        ExpandResult::UnknownMacro => return original_value,
     });
 
     let expanded = if let Some(expanded) = opt_expanded {
@@ -439,7 +453,7 @@ fn expand_stmt(stmt: Stmt, fld: &mut MacroExpander) -> SmallVector<Stmt> {
     };
 
     let mut fully_expanded: SmallVector<ast::Stmt> =
-        expand_mac_invoc(mac.unwrap(), None, attrs.into_attr_vec(), stmt.span, fld);
+        expand_mac_invoc(mac.unwrap(), None, attrs.into_attr_vec(), stmt.span, fld, SmallVector::one(stmt));
 
     // If this is a macro invocation with a semicolon, then apply that
     // semicolon to the final statement produced by expansion.
@@ -654,9 +668,9 @@ fn expand_pat(p: P<ast::Pat>, fld: &mut MacroExpander) -> P<ast::Pat> {
         PatKind::Mac(_) => {}
         _ => return noop_fold_pat(p, fld)
     }
-    p.and_then(|ast::Pat {node, span, ..}| {
+    p.clone().and_then(|ast::Pat {node, span, ..}| {
         match node {
-            PatKind::Mac(mac) => expand_mac_invoc(mac, None, Vec::new(), span, fld),
+            PatKind::Mac(mac) => expand_mac_invoc(mac, None, Vec::new(), span, fld, p),
             _ => unreachable!()
         }
     })
@@ -727,9 +741,9 @@ fn expand_annotatable(a: Annotatable,
     let mut new_items: SmallVector<Annotatable> = match a {
         Annotatable::Item(it) => match it.node {
             ast::ItemKind::Mac(..) => {
-                let new_items: SmallVector<P<ast::Item>> = it.and_then(|it| match it.node {
+                let new_items: SmallVector<P<ast::Item>> = it.and_then(|it| match it.clone().node {
                     ItemKind::Mac(mac) =>
-                        expand_mac_invoc(mac, Some(it.ident), it.attrs, it.span, fld),
+                        expand_mac_invoc(mac, Some(it.ident), it.attrs.clone(), it.span, fld, SmallVector::one(P(it))),
                     _ => unreachable!(),
                 });
 
@@ -916,7 +930,7 @@ fn expand_impl_item(ii: ast::ImplItem, fld: &mut MacroExpander)
             span: fld.new_span(ii.span)
         }),
         ast::ImplItemKind::Macro(mac) => {
-            expand_mac_invoc(mac, None, ii.attrs, ii.span, fld)
+            expand_mac_invoc(mac, None, ii.attrs.clone(), ii.span, fld, SmallVector::one(ii))
         }
         _ => fold::noop_fold_impl_item(ii, fld)
     }
@@ -959,7 +973,7 @@ pub fn expand_type(t: P<ast::Ty>, fld: &mut MacroExpander) -> P<ast::Ty> {
     let t = match t.node.clone() {
         ast::TyKind::Mac(mac) => {
             if fld.cx.ecfg.features.unwrap().type_macros {
-                expand_mac_invoc(mac, None, Vec::new(), t.span, fld)
+                expand_mac_invoc(mac, None, Vec::new(), t.span, fld, t)
             } else {
                 feature_gate::emit_feature_err(
                     &fld.cx.parse_sess.span_diagnostic,
