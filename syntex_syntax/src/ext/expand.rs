@@ -51,7 +51,9 @@ trait MacroGenerable: Sized {
 }
 
 macro_rules! impl_macro_generable {
-    ($($ty:ty: $kind_name:expr, .$make:ident, $(.$fold:ident)* $(lift .$fold_elt:ident)*,
+    // FIXME(syntex): The extra parenthesis are needed for Rust 1.6.
+    //($($ty:ty: $kind_name:expr, .$make:ident, $(.$fold:ident)* $(lift .$fold_elt:ident)*,
+    ($($ty:ty: $kind_name:expr, .$make:ident, ($(.$fold:ident)*) $(lift .$fold_elt:ident)*,
                |$span:ident| $dummy:expr;)*) => { $(
         impl MacroGenerable for $ty {
             fn kind_name() -> &'static str { $kind_name }
@@ -66,15 +68,15 @@ macro_rules! impl_macro_generable {
 }
 
 impl_macro_generable! {
-    P<ast::Expr>: "expression", .make_expr, .fold_expr, |span| DummyResult::raw_expr(span);
-    P<ast::Pat>:  "pattern",    .make_pat,  .fold_pat,  |span| P(DummyResult::raw_pat(span));
-    P<ast::Ty>:   "type",       .make_ty,   .fold_ty,   |span| DummyResult::raw_ty(span);
+    P<ast::Expr>: "expression", .make_expr, (.fold_expr), |span| DummyResult::raw_expr(span);
+    P<ast::Pat>:  "pattern",    .make_pat,  (.fold_pat),  |span| P(DummyResult::raw_pat(span));
+    P<ast::Ty>:   "type",       .make_ty,   (.fold_ty),   |span| DummyResult::raw_ty(span);
     SmallVector<ast::ImplItem>:
-        "impl item", .make_impl_items, lift .fold_impl_item, |_span| SmallVector::zero();
+        "impl item", .make_impl_items, () lift .fold_impl_item, |_span| SmallVector::zero();
     SmallVector<P<ast::Item>>:
-        "item",      .make_items,      lift .fold_item,      |_span| SmallVector::zero();
+        "item",      .make_items, ()     lift .fold_item,      |_span| SmallVector::zero();
     SmallVector<ast::Stmt>:
-        "statement", .make_stmts,      lift .fold_stmt,      |_span| SmallVector::zero();
+        "statement", .make_stmts, ()     lift .fold_stmt,      |_span| SmallVector::zero();
 }
 
 pub fn expand_expr(e: P<ast::Expr>, fld: &mut MacroExpander) -> P<ast::Expr> {
