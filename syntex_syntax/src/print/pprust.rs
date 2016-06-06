@@ -310,10 +310,6 @@ pub fn ty_to_string(ty: &ast::Ty) -> String {
     to_string(|s| s.print_type(ty))
 }
 
-pub fn ty_param_to_string(param: &ast::TyParam) -> String {
-    to_string(|s| s.print_ty_param(param))
-}
-
 pub fn bounds_to_string(bounds: &[ast::TyParamBound]) -> String {
     to_string(|s| s.print_bounds("", bounds))
 }
