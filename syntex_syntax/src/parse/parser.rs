@@ -2848,7 +2848,7 @@ impl<'a> Parser<'a> {
             },
             _ => {
                 // invariants: the current token is not a left-delimiter,
-                // not an EOF, and not the desired try!(right-delimiter (if
+                // not an EOF, and not the desired right-delimiter (if
                 // it were, parse_seq_to_before_end would have prevented
                 // reaching this point).
                 maybe_whole!(deref self, NtTT);
@@ -3321,7 +3321,7 @@ impl<'a> Parser<'a> {
         if let Err(mut e) = self.commit_expr_expecting(&discriminant,
                                                        token::OpenDelim(token::Brace)) {
             if self.token == token::Token::Semi {
-                e.span_note(match_span, "did you mean to remove this `match` keyword)");
+                e.span_note(match_span, "did you mean to remove this `match` keyword?");
             }
             return Err(e)
         }
@@ -3777,7 +3777,7 @@ impl<'a> Parser<'a> {
 
         // just to be friendly, if they write something like
         //   ref Some(i)
-        // we end up here try!(with ( as the current token.  This shortly
+        // we end up here with ( as the current token.  This shortly
         // leads to a parse error.  Note that if there is no explicit
         // binding mode then we do not end up here, because the lookahead
         // will direct us over to parse_enum_variant()
@@ -4052,7 +4052,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    /// Is this expression a successfully-parsed statement)
+    /// Is this expression a successfully-parsed statement?
     fn expr_is_complete(&mut self, e: &Expr) -> bool {
         self.restrictions.contains(RESTRICTION_STMT_EXPR) &&
             !classify::expr_requires_semi_to_be_stmt(e)
@@ -4233,9 +4233,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // matches bounds    try!(= ( boundseq ))
+    // matches bounds    = ( boundseq )?
     // where   boundseq  = ( polybound + boundseq ) | polybound
-    // and     polybound try!(= ( 'for' '<' 'region '>' )) bound
+    // and     polybound = ( 'for' '<' 'region '>' )? bound
     // and     bound     = 'region | trait_ref
     fn parse_ty_param_bounds(&mut self,
                              mode: BoundParsingMode)
@@ -4284,7 +4284,7 @@ impl<'a> Parser<'a> {
         return Ok(P::from_vec(result));
     }
 
-    /// Matches typaram = try!(try!(IDENT (`)` unbound)) try!(optbounds ( EQ ty ))
+    /// Matches typaram = IDENT (`?` unbound)? optbounds ( EQ ty )?
     fn parse_ty_param(&mut self) -> PResult<'a, TyParam> {
         let span = self.span;
         let ident = try!(self.parse_ident());
@@ -4311,8 +4311,8 @@ impl<'a> Parser<'a> {
     /// clauses are not parsed here, and must be added later via
     /// `parse_where_clause()`.
     ///
-    /// matches generics = ( ) | ( < > ) | ( < try!(typaramseq ( , )) > ) | ( < try!(lifetimes ( , )) > )
-    ///                  | ( < lifetimes , try!(typaramseq ( , )) > )
+    /// matches generics = ( ) | ( < > ) | ( < typaramseq ( , )? > ) | ( < lifetimes ( , )? > )
+    ///                  | ( < lifetimes , typaramseq ( , )? > )
     /// where   typaramseq = ( typaram ) | ( typaram , typaramseq )
     pub fn parse_generics(&mut self) -> PResult<'a, ast::Generics> {
         maybe_whole!(self, NtGenerics);
