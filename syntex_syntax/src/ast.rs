@@ -15,7 +15,7 @@ pub use self::UnsafeSource::*;
 pub use self::ViewPath_::*;
 pub use self::PathParameters::*;
 
-use attr::ThinAttributes;
+use attr::{ThinAttributes, HasAttrs};
 use codemap::{mk_sp, respan, Span, Spanned, DUMMY_SP, ExpnId};
 use abi::Abi;
 use errors;
@@ -616,14 +616,10 @@ pub enum PatKind {
     /// Represents a wildcard pattern (`_`)
     Wild,
 
-    /// A `PatKind::Ident` may either be a new bound variable,
-    /// or a unit struct/variant pattern, or a const pattern (in the last two cases
-    /// the third field must be `None`).
-    ///
-    /// In the unit or const pattern case, the parser can't determine
-    /// which it is. The resolver determines this, and
-    /// records this pattern's `NodeId` in an auxiliary
-    /// set (of "PatIdents that refer to unit patterns or constants").
+    /// A `PatKind::Ident` may either be a new bound variable (`ref mut binding @ OPT_SUBPATTERN`),
+    /// or a unit struct/variant pattern, or a const pattern (in the last two cases the third
+    /// field must be `None`). Disambiguation cannot be done with parser alone, so it happens
+    /// during name resolution.
     Ident(BindingMode, SpannedIdent, Option<P<Pat>>),
 
     /// A struct or struct variant pattern, e.g. `Variant {x, y, ..}`.
@@ -831,13 +827,7 @@ impl StmtKind {
     }
 
     pub fn attrs(&self) -> &[Attribute] {
-        match *self {
-            StmtKind::Decl(ref d, _) => d.attrs(),
-            StmtKind::Expr(ref e, _) |
-            StmtKind::Semi(ref e, _) => e.attrs(),
-            StmtKind::Mac(_, _, Some(ref b)) => b,
-            StmtKind::Mac(_, _, None) => &[],
-        }
+        HasAttrs::attrs(self)
     }
 }
 
@@ -870,10 +860,7 @@ pub struct Local {
 
 impl Local {
     pub fn attrs(&self) -> &[Attribute] {
-        match self.attrs {
-            Some(ref b) => b,
-            None => &[],
-        }
+        HasAttrs::attrs(self)
     }
 }
 
@@ -889,10 +876,7 @@ pub enum DeclKind {
 
 impl Decl {
     pub fn attrs(&self) -> &[Attribute] {
-        match self.node {
-            DeclKind::Local(ref l) => l.attrs(),
-            DeclKind::Item(ref i) => i.attrs(),
-        }
+        HasAttrs::attrs(self)
     }
 }
 
@@ -937,10 +921,7 @@ pub struct Expr {
 
 impl Expr {
     pub fn attrs(&self) -> &[Attribute] {
-        match self.attrs {
-            Some(ref b) => b,
-            None => &[],
-        }
+        HasAttrs::attrs(self)
     }
 }
 
@@ -1920,6 +1901,16 @@ pub enum ViewPath_ {
 
     /// `foo::bar::{a,b,c}`
     ViewPathList(Path, Vec<PathListItem>)
+}
+
+impl ViewPath_ {
+    pub fn path(&self) -> &Path {
+        match *self {
+            ViewPathSimple(_, ref path) |
+            ViewPathGlob (ref path) |
+            ViewPathList(ref path, _) => path
+        }
+    }
 }
 
 /// Meta-data associated with an item
