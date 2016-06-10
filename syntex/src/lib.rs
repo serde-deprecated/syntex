@@ -123,7 +123,13 @@ impl Registry {
     }
 
 
-    pub fn expand(self, crate_name: &str, src: &Path, dst: &Path) -> io::Result<()> {
+    pub fn expand<S, D>(self, crate_name: &str, src: S, dst: D) -> io::Result<()>
+        where S: AsRef<Path>,
+              D: AsRef<Path>,
+    {
+        let src = src.as_ref();
+        let dst = dst.as_ref();
+
         let sess = parse::ParseSess::new();
 
         let mut krate = parse::parse_crate_from_file(
