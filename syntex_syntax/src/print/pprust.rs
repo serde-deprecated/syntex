@@ -2261,7 +2261,7 @@ impl<'a> State<'a> {
             },
             ast::ExprKind::Try(ref e) => {
                 try!(self.print_expr(e));
-                try!(word(&mut self.s, ")"))
+                try!(word(&mut self.s, "?"))
             }
         }
         try!(self.ann.post(self, NodeExpr(expr)));
