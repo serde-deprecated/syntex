@@ -1,6 +1,6 @@
 [package]
 name = "syntex"
-version = "0.34.0"
+version = "0.35.0"
 authors = [ "erick.tryzelaar@gmail.com" ]
 license = "MIT/Apache-2.0"
 description = "A library that enables compile time syntax extension expansion"
@@ -9,4 +9,4 @@ readme = "../README.md"
 include = ["Cargo.toml", "src/**/*.rs"]
 
 [dependencies]
-syntex_syntax = { version = "^0.34.0", path = "../syntex_syntax" }
+syntex_syntax = { version = "^0.35.0", path = "../syntex_syntax" }
