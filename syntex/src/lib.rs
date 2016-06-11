@@ -11,6 +11,7 @@ use syntex_syntax::attr;
 use syntex_syntax::codemap::{DUMMY_SP, respan};
 use syntex_syntax::ext::base::{
     IdentMacroExpander,
+    MacroLoader,
     MultiItemDecorator,
     MultiItemModifier,
     NamedSyntaxExtension,
@@ -34,6 +35,25 @@ pub struct Registry {
     cfg: Vec<P<ast::MetaItem>>,
     attrs: Vec<ast::Attribute>,
 }
+
+struct SyntexMacroLoader {
+    macros: Vec<ast::MacroDef>,
+}
+
+impl SyntexMacroLoader {
+    fn new(macros: Vec<ast::MacroDef>) -> Self {
+        SyntexMacroLoader {
+            macros: macros
+        }
+    }
+}
+
+impl MacroLoader for SyntexMacroLoader {
+    fn load_crate(&mut self, _extern_crate: &ast::Item, _allows_macros: bool) -> Vec<ast::MacroDef> {
+        self.macros.clone()
+    }
+}
+
 
 impl Registry {
     pub fn new() -> Registry {
@@ -151,9 +171,10 @@ impl Registry {
 
         let cfg = Vec::new();
         let mut gated_cfgs = Vec::new();
-        let ecx = ExtCtxt::new(&sess, cfg, ecfg, &mut gated_cfgs);
+        let mut macro_loader = SyntexMacroLoader::new(self.macros);
+        let ecx = ExtCtxt::new(&sess, cfg, ecfg, &mut gated_cfgs, &mut macro_loader);
 
-        let (krate, _) = expand::expand_crate(ecx, self.macros, self.syntax_exts, krate);
+        let (krate, _) = expand::expand_crate(ecx, self.syntax_exts, krate);
         let krate = squash_derive::squash_derive(krate);
 
         let krate = self.post_expansion_passes.iter()
