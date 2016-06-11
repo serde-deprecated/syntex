@@ -723,20 +723,14 @@ fn expand_annotatable(a: Annotatable,
                       -> SmallVector<Annotatable> {
     let a = expand_item_multi_modifier(a, fld);
 
-    let mut decorator_items = SmallVector::zero();
-    let mut new_attrs = Vec::new();
-    expand_decorators(a.clone(), fld, &mut decorator_items, &mut new_attrs);
-
-    let mut new_items: SmallVector<Annotatable> = match a {
+    let new_items: SmallVector<Annotatable> = match a {
         Annotatable::Item(it) => match it.node {
             ast::ItemKind::Mac(..) => {
-                let new_items: SmallVector<P<ast::Item>> = it.and_then(|it| match it.node {
+                it.and_then(|it| match it.node {
                     ItemKind::Mac(mac) =>
                         expand_mac_invoc(mac, Some(it.ident), it.attrs, it.span, fld),
                     _ => unreachable!(),
-                });
-
-                new_items.into_iter().map(|i| Annotatable::Item(i)).collect()
+                })
             }
             ast::ItemKind::Mod(_) | ast::ItemKind::ForeignMod(_) => {
                 let valid_ident =
@@ -745,23 +739,26 @@ fn expand_annotatable(a: Annotatable,
                 if valid_ident {
                     fld.cx.mod_push(it.ident);
                 }
-                let macro_use = contains_macro_use(fld, &new_attrs[..]);
+                let macro_use = contains_macro_use(fld, &it.attrs);
                 let result = with_exts_frame!(fld.cx.syntax_env,
                                               macro_use,
                                               noop_fold_item(it, fld));
                 if valid_ident {
                     fld.cx.mod_pop();
                 }
-                result.into_iter().map(|i| Annotatable::Item(i)).collect()
+                result
             },
-            _ => {
-                let it = P(ast::Item {
-                    attrs: new_attrs,
-                    ..(*it).clone()
-                });
-                noop_fold_item(it, fld).into_iter().map(|i| Annotatable::Item(i)).collect()
-            }
-        },
+            ast::ItemKind::ExternCrate(_) => {
+                // We need to error on `#[macro_use] extern crate` when it isn't at the
+                // crate root, because `$crate` won't work properly.
+                let allows_macros = fld.cx.syntax_env.is_crate_root();
+                for def in fld.cx.loader.load_crate(&it, allows_macros) {
+                    fld.cx.insert_macro(def);
+                }
+                SmallVector::one(it)
+            },
+            _ => noop_fold_item(it, fld),
+        }.into_iter().map(|i| Annotatable::Item(i)).collect(),
 
         Annotatable::TraitItem(it) => match it.node {
             ast::TraitItemKind::Method(_, Some(_)) => {
@@ -789,6 +786,17 @@ fn expand_annotatable(a: Annotatable,
         }
     };
 
+    new_items.into_iter().flat_map(|a| decorate(a, fld)).collect()
+}
+
+fn decorate(a: Annotatable, fld: &mut MacroExpander) -> SmallVector<Annotatable> {
+    let mut decorator_items = SmallVector::zero();
+    let mut new_attrs = Vec::new();
+    expand_decorators(a.clone(), fld, &mut decorator_items, &mut new_attrs);
+    let decorator_items =
+        decorator_items.into_iter().flat_map(|a| expand_annotatable(a, fld)).collect();
+
+    let mut new_items = SmallVector::one(a.fold_attrs(new_attrs));
     new_items.push_all(decorator_items);
     new_items
 }
@@ -1136,8 +1144,6 @@ impl<'feat> ExpansionConfig<'feat> {
 }
 
 pub fn expand_crate(mut cx: ExtCtxt,
-                    // these are the macros being imported to this crate:
-                    imported_macros: Vec<ast::MacroDef>,
                     user_exts: Vec<NamedSyntaxExtension>,
                     c: Crate) -> (Crate, HashSet<Name>) {
     if std_inject::no_core(&c) {
@@ -1149,10 +1155,6 @@ pub fn expand_crate(mut cx: ExtCtxt,
     }
     let ret = {
         let mut expander = MacroExpander::new(&mut cx);
-
-        for def in imported_macros {
-            expander.cx.insert_macro(def);
-        }
 
         for (name, extension) in user_exts {
             expander.cx.syntax_env.insert(name, extension);
@@ -1219,7 +1221,7 @@ mod tests {
     use ast;
     use ast::Name;
     use codemap;
-    use ext::base::ExtCtxt;
+    use ext::base::{ExtCtxt, DummyMacroLoader};
     use ext::mtwt;
     use fold::Folder;
     use parse;
@@ -1290,9 +1292,9 @@ mod tests {
             src,
             Vec::new(), &sess).unwrap();
         // should fail:
-        let mut gated_cfgs = vec![];
-        let ecx = ExtCtxt::new(&sess, vec![], test_ecfg(), &mut gated_cfgs);
-        expand_crate(ecx, vec![], vec![], crate_ast);
+        let (mut gated_cfgs, mut loader) = (vec![], DummyMacroLoader);
+        let ecx = ExtCtxt::new(&sess, vec![], test_ecfg(), &mut gated_cfgs, &mut loader);
+        expand_crate(ecx, vec![], crate_ast);
     }
 
     // make sure that macros can't escape modules
@@ -1305,9 +1307,9 @@ mod tests {
             "<test>".to_string(),
             src,
             Vec::new(), &sess).unwrap();
-        let mut gated_cfgs = vec![];
-        let ecx = ExtCtxt::new(&sess, vec![], test_ecfg(), &mut gated_cfgs);
-        expand_crate(ecx, vec![], vec![], crate_ast);
+        let (mut gated_cfgs, mut loader) = (vec![], DummyMacroLoader);
+        let ecx = ExtCtxt::new(&sess, vec![], test_ecfg(), &mut gated_cfgs, &mut loader);
+        expand_crate(ecx, vec![], crate_ast);
     }
 
     // macro_use modules should allow macros to escape
@@ -1319,18 +1321,18 @@ mod tests {
             "<test>".to_string(),
             src,
             Vec::new(), &sess).unwrap();
-        let mut gated_cfgs = vec![];
-        let ecx = ExtCtxt::new(&sess, vec![], test_ecfg(), &mut gated_cfgs);
-        expand_crate(ecx, vec![], vec![], crate_ast);
+        let (mut gated_cfgs, mut loader) = (vec![], DummyMacroLoader);
+        let ecx = ExtCtxt::new(&sess, vec![], test_ecfg(), &mut gated_cfgs, &mut loader);
+        expand_crate(ecx, vec![], crate_ast);
     }
 
     fn expand_crate_str(crate_str: String) -> ast::Crate {
         let ps = parse::ParseSess::new();
         let crate_ast = panictry!(string_to_parser(&ps, crate_str).parse_crate_mod());
         // the cfg argument actually does matter, here...
-        let mut gated_cfgs = vec![];
-        let ecx = ExtCtxt::new(&ps, vec![], test_ecfg(), &mut gated_cfgs);
-        expand_crate(ecx, vec![], vec![], crate_ast).0
+        let (mut gated_cfgs, mut loader) = (vec![], DummyMacroLoader);
+        let ecx = ExtCtxt::new(&ps, vec![], test_ecfg(), &mut gated_cfgs, &mut loader);
+        expand_crate(ecx, vec![], crate_ast).0
     }
 
     // find the pat_ident paths in a crate
