@@ -87,9 +87,7 @@ impl CodeSuggestion {
 
         // Assumption: all spans are in the same file, and all spans
         // are disjoint. Sort in ascending order.
-        // FIXME (syntex): Not in Rust 1.6.0
-        //primary_spans.sort_by_key(|sp| sp.lo);
-        primary_spans.sort_by(|lhs, rhs| lhs.lo.cmp(&rhs.lo));
+        primary_spans.sort_by_key(|sp| sp.lo);
 
         // Find the bounding span.
         let lo = primary_spans.iter().map(|sp| sp.lo).min().unwrap();
