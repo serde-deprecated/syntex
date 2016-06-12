@@ -469,8 +469,6 @@ fn initial_syntax_expander_table<'feat>(ecfg: &expand::ExpansionConfig<'feat>)
     syntax_expanders.insert(intern("macro_rules"), MacroRulesTT);
     */
 
-    ext::deriving::register_all(&mut syntax_expanders);
-
     if ecfg.enable_quotes() {
         // Quasi-quoting expanders
         syntax_expanders.insert(intern("quote_tokens"),
