@@ -27,7 +27,7 @@ extern crate libc;
 #[macro_use] extern crate log;
 #[macro_use] extern crate bitflags;
 
-extern crate rustc_serialize; // used by deriving
+extern crate rustc_serialize;
 extern crate rustc_serialize as serialize;
 extern crate unicode_xid;
 
@@ -101,7 +101,7 @@ pub mod print {
 pub mod ext {
     pub mod base;
     pub mod build;
-    pub mod deriving;
+    pub mod decorator;
     pub mod env;
     pub mod expand;
     pub mod mtwt;
