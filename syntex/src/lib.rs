@@ -140,7 +140,6 @@ impl Registry {
         self.post_expansion_passes.push(Box::new(pass))
     }
 
-
     pub fn expand<S, D>(self, crate_name: &str, src: S, dst: D) -> io::Result<()>
         where S: AsRef<Path>,
               D: AsRef<Path>,
@@ -150,12 +149,50 @@ impl Registry {
 
         let sess = parse::ParseSess::new();
 
-        let mut krate = parse::parse_crate_from_file(
+        let krate = parse::parse_crate_from_file(
             src,
-            self.cfg,
+            self.cfg.clone(),
             &sess).unwrap();
 
-        krate.attrs.extend(self.attrs);
+        let src_name = src.to_str().unwrap().to_string();
+
+        let out = try!(self.expand_crate(
+                crate_name,
+                &sess,
+                src_name,
+                krate));
+
+        let mut dst = try!(File::create(dst));
+        dst.write_all(&out)
+    }
+
+    /// This method will expand all macros in the source string `src`, and return the results in a
+    /// string.
+    pub fn expand_str(self,
+                      crate_name: &str,
+                      src_name: &str,
+                      src: &str) -> io::Result<String> {
+        let sess = parse::ParseSess::new();
+
+        let src_name = src_name.to_owned();
+
+        let krate = parse::parse_crate_from_source_str(
+            src_name.clone(),
+            src.to_owned(),
+            self.cfg.clone(),
+            &sess).unwrap();
+
+        let out = try!(self.expand_crate(crate_name, &sess, src_name, krate));
+
+        Ok(String::from_utf8(out).unwrap())
+    }
+
+    fn expand_crate(self,
+                    crate_name: &str,
+                    sess: &parse::ParseSess,
+                    src_name: String,
+                    mut krate: ast::Crate) -> io::Result<Vec<u8>> {
+        krate.attrs.extend(self.attrs.iter().cloned());
 
         let features = feature_gate::get_features(
             &sess.span_diagnostic,
@@ -164,12 +201,12 @@ impl Registry {
         let krate = self.pre_expansion_passes.iter()
             .fold(krate, |krate, f| (f)(krate));
 
-        let mut ecfg = expand::ExpansionConfig::default(crate_name.to_string());
+        let mut ecfg = expand::ExpansionConfig::default(crate_name.to_owned());
         ecfg.features = Some(&features);
 
         let cfg = Vec::new();
         let mut gated_cfgs = Vec::new();
-        let mut macro_loader = SyntexMacroLoader::new(self.macros);
+        let mut macro_loader = SyntexMacroLoader::new(self.macros.clone());
         let ecx = ExtCtxt::new(&sess, cfg, ecfg, &mut gated_cfgs, &mut macro_loader);
 
         let (krate, _) = expand::expand_crate(ecx, self.syntax_exts, krate);
@@ -177,7 +214,6 @@ impl Registry {
         let krate = self.post_expansion_passes.iter()
             .fold(krate, |krate, f| (f)(krate));
 
-        let src_name = src.to_str().unwrap().to_string();
         let src = sess.codemap()
             .get_filemap(&src_name)
             .unwrap()
@@ -186,6 +222,7 @@ impl Registry {
             .unwrap()
             .as_bytes()
             .to_vec();
+
         let mut rdr = &src[..];
 
         let mut out = Vec::new();
@@ -198,7 +235,7 @@ impl Registry {
                 sess.codemap(),
                 &sess.span_diagnostic,
                 &krate,
-                src_name.to_string(),
+                src_name,
                 &mut rdr,
                 Box::new(out),
                 &annotation,
@@ -206,7 +243,6 @@ impl Registry {
             );
         }
 
-        let mut dst = try!(File::create(dst));
-        dst.write_all(&out)
+        Ok(out)
     }
 }
