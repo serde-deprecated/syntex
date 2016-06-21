@@ -157,7 +157,7 @@ impl Registry {
         let src_name = src.to_str().unwrap().to_string();
 
         let out = try!(self.expand_crate(
-                crate_name.to_string(),
+                crate_name,
                 &sess,
                 src_name,
                 krate));
@@ -169,16 +169,16 @@ impl Registry {
     /// This method will expand all macros in the source string `src`, and return the results in a
     /// string.
     pub fn expand_str(self,
-                      crate_name: String,
-                      src_name: String,
-                      src: String) -> io::Result<String> {
+                      crate_name: &str,
+                      src_name: &str,
+                      src: &str) -> io::Result<String> {
         let sess = parse::ParseSess::new();
 
-        let src_name = src_name.to_string();
+        let src_name = src_name.to_owned();
 
         let krate = parse::parse_crate_from_source_str(
             src_name.clone(),
-            src,
+            src.to_owned(),
             self.cfg.clone(),
             &sess).unwrap();
 
@@ -188,7 +188,7 @@ impl Registry {
     }
 
     fn expand_crate(self,
-                    crate_name: String,
+                    crate_name: &str,
                     sess: &parse::ParseSess,
                     src_name: String,
                     mut krate: ast::Crate) -> io::Result<Vec<u8>> {
@@ -201,7 +201,7 @@ impl Registry {
         let krate = self.pre_expansion_passes.iter()
             .fold(krate, |krate, f| (f)(krate));
 
-        let mut ecfg = expand::ExpansionConfig::default(crate_name);
+        let mut ecfg = expand::ExpansionConfig::default(crate_name.to_owned());
         ecfg.features = Some(&features);
 
         let cfg = Vec::new();
