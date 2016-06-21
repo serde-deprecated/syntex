@@ -196,7 +196,7 @@ impl Registry {
 
         let features = feature_gate::get_features(
             &sess.span_diagnostic,
-            &krate);
+            &krate.attrs);
 
         let krate = self.pre_expansion_passes.iter()
             .fold(krate, |krate, f| (f)(krate));
@@ -205,9 +205,8 @@ impl Registry {
         ecfg.features = Some(&features);
 
         let cfg = Vec::new();
-        let mut gated_cfgs = Vec::new();
         let mut macro_loader = SyntexMacroLoader::new(self.macros.clone());
-        let ecx = ExtCtxt::new(&sess, cfg, ecfg, &mut gated_cfgs, &mut macro_loader);
+        let ecx = ExtCtxt::new(&sess, cfg, ecfg, &mut macro_loader);
 
         let (krate, _) = expand::expand_crate(ecx, self.syntax_exts, krate);
 
