@@ -23,6 +23,9 @@ use syntex_syntax::parse::{self, token};
 use syntex_syntax::print::pprust;
 use syntex_syntax::ptr::P;
 
+mod error;
+pub use error::Error;
+
 pub type Pass = fn(ast::Crate) -> ast::Crate;
 
 pub struct Registry {
@@ -140,7 +143,7 @@ impl Registry {
         self.post_expansion_passes.push(Box::new(pass))
     }
 
-    pub fn expand<S, D>(self, crate_name: &str, src: S, dst: D) -> io::Result<()>
+    pub fn expand<S, D>(self, crate_name: &str, src: S, dst: D) -> Result<(), Error>
         where S: AsRef<Path>,
               D: AsRef<Path>,
     {
@@ -149,10 +152,10 @@ impl Registry {
 
         let sess = parse::ParseSess::new();
 
-        let krate = parse::parse_crate_from_file(
+        let krate = try!(parse::parse_crate_from_file(
             src,
             self.cfg.clone(),
-            &sess).unwrap();
+            &sess));
 
         let src_name = src.to_str().unwrap().to_string();
 
@@ -163,7 +166,8 @@ impl Registry {
                 krate));
 
         let mut dst = try!(File::create(dst));
-        dst.write_all(&out)
+        try!(dst.write_all(&out));
+        Ok(())
     }
 
     /// This method will expand all macros in the source string `src`, and return the results in a
@@ -171,16 +175,16 @@ impl Registry {
     pub fn expand_str(self,
                       crate_name: &str,
                       src_name: &str,
-                      src: &str) -> io::Result<String> {
+                      src: &str) -> Result<String, Error> {
         let sess = parse::ParseSess::new();
 
         let src_name = src_name.to_owned();
 
-        let krate = parse::parse_crate_from_source_str(
+        let krate = try!(parse::parse_crate_from_source_str(
             src_name.clone(),
             src.to_owned(),
             self.cfg.clone(),
-            &sess).unwrap();
+            &sess));
 
         let out = try!(self.expand_crate(crate_name, &sess, src_name, krate));
 
@@ -191,7 +195,7 @@ impl Registry {
                     crate_name: &str,
                     sess: &parse::ParseSess,
                     src_name: String,
-                    mut krate: ast::Crate) -> io::Result<Vec<u8>> {
+                    mut krate: ast::Crate) -> Result<Vec<u8>, Error> {
         krate.attrs.extend(self.attrs.iter().cloned());
 
         let features = feature_gate::get_features(
