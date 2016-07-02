@@ -26,7 +26,7 @@ extern crate term;
 extern crate libc;
 #[macro_use] extern crate log;
 #[macro_use] extern crate bitflags;
-pub extern crate syntex_errors as errors;
+extern crate syntex_errors as errors;
 extern crate syntex_pos as syntax_pos;
 
 extern crate rustc_serialize;
