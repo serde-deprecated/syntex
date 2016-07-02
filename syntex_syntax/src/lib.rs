@@ -26,10 +26,13 @@ extern crate term;
 extern crate libc;
 #[macro_use] extern crate log;
 #[macro_use] extern crate bitflags;
+pub extern crate syntex_errors as errors;
+extern crate syntex_pos as syntax_pos;
 
 extern crate rustc_serialize;
 extern crate rustc_serialize as serialize;
 extern crate unicode_xid;
+
 
 // A variant of 'try!' that panics on an Err. This is used as a crutch on the
 // way towards a non-panic!-prone parser. It should be used for fatal parsing
@@ -40,7 +43,7 @@ extern crate unicode_xid;
 macro_rules! panictry {
     ($e:expr) => ({
         use std::result::Result::{Ok, Err};
-        use $crate::errors::FatalError;
+        use errors::FatalError;
         match $e {
             Ok(e) => e,
             Err(mut e) => {
@@ -60,16 +63,18 @@ pub mod util {
     pub mod parser_testing;
     pub mod small_vector;
     pub mod move_map;
+
+    mod thin_vec;
+    pub use self::thin_vec::ThinVec;
 }
 
 pub mod diagnostics {
     pub mod macros;
     pub mod plugin;
-    pub mod registry;
     pub mod metadata;
 }
 
-pub mod errors;
+pub mod json;
 
 pub mod syntax {
     pub use ext;
@@ -91,6 +96,7 @@ pub mod show_span;
 pub mod std_inject;
 pub mod str;
 pub mod test;
+pub mod tokenstream;
 pub mod visit;
 
 pub mod print {
