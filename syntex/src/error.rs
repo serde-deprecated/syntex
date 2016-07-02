@@ -2,7 +2,7 @@ use std::error;
 use std::fmt;
 use std::io;
 
-use syntex_syntax::errors::DiagnosticBuilder;
+use errors::DiagnosticBuilder;
 
 #[derive(Debug)]
 pub enum Error {

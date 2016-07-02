@@ -12,20 +12,19 @@ use ast::{Block, Crate, PatKind};
 use ast::{Local, Ident, Mac_, Name, SpannedIdent};
 use ast::{MacStmtStyle, Mrk, Stmt, StmtKind, ItemKind};
 use ast;
-use attr::HasAttrs;
 use ext::mtwt;
 use attr;
 use attr::AttrMetaMethods;
-use codemap::{Spanned, ExpnInfo, NameAndSpan, MacroBang, MacroAttribute};
+use codemap::{Spanned, ExpnInfo, NameAndSpan, MacroBang};
 use syntax_pos::{self, Span, ExpnId};
 use config::StripUnconfigured;
 use ext::base::*;
-//use ext::decorator::expand_decorators;
+use ext::decorator::expand_annotatable;
 use feature_gate::{self, Features};
 use fold;
 use fold::*;
 use util::move_map::MoveMap;
-use parse::token::{fresh_mark, fresh_name, intern, keywords};
+use parse::token::{fresh_mark, fresh_name, keywords};
 use ptr::P;
 use tokenstream::TokenTree;
 use util::small_vector::SmallVector;
@@ -736,55 +735,6 @@ pub fn expand_multi_modified(a: Annotatable, fld: &mut MacroExpander) -> SmallVe
         Annotatable::ImplItem(ii) => {
             expand_impl_item(ii.unwrap(), fld).into_iter().
                 map(|ii| Annotatable::ImplItem(P(ii))).collect()
-        }
-    }
-}
-
-pub fn expand_annotatable(mut item: Annotatable, fld: &mut MacroExpander) -> SmallVector<Annotatable> {
-    let mut multi_modifier = None;
-    item = item.map_attrs(|mut attrs| {
-        for i in 0..attrs.len() {
-            if let Some(extension) = fld.cx.syntax_env.find(intern(&attrs[i].name())) {
-                match *extension {
-                    MultiModifier(..) | MultiDecorator(..) => {
-                        multi_modifier = Some((attrs.remove(i), extension));
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-        }
-        attrs
-    });
-
-    match multi_modifier {
-        None => expand_multi_modified(item, fld),
-        Some((attr, extension)) => {
-            attr::mark_used(&attr);
-            fld.cx.bt_push(ExpnInfo {
-                call_site: attr.span,
-                callee: NameAndSpan {
-                    format: MacroAttribute(intern(&attr.name())),
-                    span: Some(attr.span),
-                    // attributes can do whatever they like, for now
-                    allow_internal_unstable: true,
-                }
-            });
-
-            let modified = match *extension {
-                MultiModifier(ref mac) => mac.expand(fld.cx, attr.span, &attr.node.value, item),
-                MultiDecorator(ref mac) => {
-                    let mut items = Vec::new();
-                    mac.expand(fld.cx, attr.span, &attr.node.value, &item,
-                               &mut |item| items.push(item));
-                    items.push(item);
-                    items
-                }
-                _ => unreachable!(),
-            };
-
-            fld.cx.bt_pop();
-            modified.into_iter().flat_map(|it| expand_annotatable(it, fld)).collect()
         }
     }
 }

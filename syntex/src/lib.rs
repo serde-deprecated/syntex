@@ -1,4 +1,5 @@
 extern crate syntex_syntax;
+extern crate syntex_errors as errors;
 
 use std::fs::File;
 use std::io::{self, Write};
