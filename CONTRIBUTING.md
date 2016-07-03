@@ -35,12 +35,14 @@ $ cd syntex
 ```
 
 Check out the `rust` branch, which tracks the upstream Rust `libsyntax`. Delete
-the `syntex_syntax/src` and replace it with the rust `libsyntax`.
+the syntex source directories and replace them with the ones from upstream.
 
 ```
 syntex$ git checkout rust
-syntex$ rm -r syntex_syntax/src
+syntex$ rm -r syntex_syntax/src syntex_pos/src syntex_errors/src
 syntex$ cp -r ../rust/src/libsyntax syntex_syntax/src
+syntex$ cp -r ../rust/src/libsyntax_pos syntex_pos/src
+syntex$ cp -r ../rust/src/librustc_errors syntex_errors/src
 syntex$ git commit -a -m "Sync with rust HEAD ($RUST_SHA)"
 ```
 
@@ -70,6 +72,10 @@ the travis builds, tag it, then publish it:
 syntex/hello_world$ cd ..
 syntex$ git tag -s -m "Tagging for release" v0.14.0
 syntex$ git push origin v0.14.0
-syntex$ cd syntex_syntax
+syntex$ cd syntex_pos
+syntex/syntex_pos$ cargo publish
+syntex$ cd ../syntex_errors
+syntex/syntex_errors$ cargo publish
+syntex$ cd ../syntex_syntax
 syntex/syntex_syntax$ cargo publish
 ```
