@@ -43,7 +43,7 @@ syntex$ rm -r syntex_syntax/src syntex_pos/src syntex_errors/src
 syntex$ cp -r ../rust/src/libsyntax syntex_syntax/src
 syntex$ cp -r ../rust/src/libsyntax_pos syntex_pos/src
 syntex$ cp -r ../rust/src/librustc_errors syntex_errors/src
-syntex$ git commit -a -m "Sync with rust HEAD ($RUST_SHA)"
+syntex$ git commit -a -m "Sync with $(rustup run nightly rustc --version)"
 ```
 
 Switch back to the master branch, merge it in, and resolve any conflicts:
@@ -70,12 +70,14 @@ the travis builds, tag it, then publish it:
 
 ```
 syntex/hello_world$ cd ..
-syntex$ git tag -s -m "Tagging for release" v0.14.0
-syntex$ git push origin v0.14.0
+syntex$ GIT_COMMITTER_DATE="$(git show --format=%aD | head -1)" git tag -s -m "Release 0.14.0" v0.14.0
+syntex$ git push origin --tags
 syntex$ cd syntex_pos
 syntex/syntex_pos$ cargo publish
-syntex$ cd ../syntex_errors
+syntex/syntex_pos$ cd ../syntex_errors
 syntex/syntex_errors$ cargo publish
-syntex$ cd ../syntex_syntax
+syntex/syntex_errors$ cd ../syntex_syntax
 syntex/syntex_syntax$ cargo publish
+syntex/syntex_syntax$ cd ../syntex
+syntex/syntex$ cargo publish
 ```
