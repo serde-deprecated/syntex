@@ -250,7 +250,7 @@ fn expand_mac_invoc<T>(mac: ast::Mac, ident: Option<Ident>, attrs: Vec<ast::Attr
                     },
                 });
 
-                let marked_tts = mark_tts(tts, mark);
+                let marked_tts = mark_tts(&tts, mark);
                 ExpandResult::Some(expandfun.expand(fld.cx, call_site, &marked_tts))
             }
 
@@ -270,7 +270,7 @@ fn expand_mac_invoc<T>(mac: ast::Mac, ident: Option<Ident>, attrs: Vec<ast::Attr
                     }
                 });
 
-                let marked_tts = mark_tts(tts, mark);
+                let marked_tts = mark_tts(&tts, mark);
                 ExpandResult::Some(expander.expand(fld.cx, call_site, ident, marked_tts))
             }
 
@@ -1091,7 +1091,7 @@ impl Folder for Marker {
         Spanned {
             node: Mac_ {
                 path: self.fold_path(node.path),
-                tts: self.fold_tts(node.tts),
+                tts: self.fold_tts(&node.tts),
             },
             span: self.new_span(span),
         }
@@ -1106,7 +1106,7 @@ impl Folder for Marker {
 }
 
 // apply a given mark to the given token trees. Used prior to expansion of a macro.
-fn mark_tts(tts: Vec<TokenTree>, m: Mrk) -> Vec<TokenTree> {
+fn mark_tts(tts: &[TokenTree], m: Mrk) -> Vec<TokenTree> {
     noop_fold_tts(tts, &mut Marker{mark:m, expn_id: None})
 }
 

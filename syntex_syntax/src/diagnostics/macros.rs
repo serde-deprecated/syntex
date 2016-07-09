@@ -8,6 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// ==== SYNTEX ====
+macro_rules! __register_diagnostic {
+    ($code:tt, $description:tt) => ();
+    ($code:tt) => ();
+}
+macro_rules! __diagnostic_used {
+    ($code:tt) => ();
+}
+// ==== SYNTEX ====
+
 #[macro_export]
 macro_rules! register_diagnostic {
     ($code:tt, $description:tt) => (__register_diagnostic! { $code, $description });

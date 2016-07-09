@@ -54,6 +54,18 @@ macro_rules! panictry {
     })
 }
 
+#[macro_use]
+pub mod diagnostics {
+    #[macro_use]
+    pub mod macros;
+    pub mod plugin;
+    pub mod metadata;
+}
+
+// NB: This module needs to be declared first so diagnostics are
+// registered before they are used.
+pub mod diagnostic_list;
+
 pub mod util {
     pub mod interner;
     pub mod lev_distance;
@@ -66,12 +78,6 @@ pub mod util {
 
     mod thin_vec;
     pub use self::thin_vec::ThinVec;
-}
-
-pub mod diagnostics {
-    pub mod macros;
-    pub mod plugin;
-    pub mod metadata;
 }
 
 pub mod json;
@@ -120,3 +126,5 @@ pub mod ext {
         pub mod macro_rules;
     }
 }
+
+// __build_diagnostic_array! { libsyntax, DIAGNOSTICS }
