@@ -2688,12 +2688,13 @@ impl<'a> Parser<'a> {
                     )?;
                     let (sep, repeat) = self.parse_sep_and_kleene_op()?;
                     let name_num = macro_parser::count_names(&seq);
-                    return Ok(TokenTree::Sequence(mk_sp(sp.lo, seq_span.hi), SequenceRepetition {
-                        tts: seq,
-                        separator: sep,
-                        op: repeat,
-                        num_captures: name_num
-                    }));
+                    return Ok(TokenTree::Sequence(mk_sp(sp.lo, seq_span.hi),
+                                      Rc::new(SequenceRepetition {
+                                          tts: seq,
+                                          separator: sep,
+                                          op: repeat,
+                                          num_captures: name_num
+                                      })));
                 } else if self.token.is_keyword(keywords::Crate) {
                     self.bump();
                     return Ok(TokenTree::Token(sp, SpecialVarNt(SpecialMacroVar::CrateMacroVar)));
@@ -2752,9 +2753,8 @@ impl<'a> Parser<'a> {
             }
         };
 
-        match parse_kleene_op(self)? {
-            Some(kleene_op) => return Ok((None, kleene_op)),
-            None => {}
+        if let Some(kleene_op) = parse_kleene_op(self)? {
+            return Ok((None, kleene_op));
         }
 
         let separator = self.bump_and_get();
@@ -2849,12 +2849,12 @@ impl<'a> Parser<'a> {
                     _ => {}
                 }
 
-                Ok(TokenTree::Delimited(span, Delimited {
+                Ok(TokenTree::Delimited(span, Rc::new(Delimited {
                     delim: delim,
                     open_span: open_span,
                     tts: tts,
                     close_span: close_span,
-                }))
+                })))
             },
             _ => {
                 // invariants: the current token is not a left-delimiter,
@@ -5297,15 +5297,22 @@ impl<'a> Parser<'a> {
 
     /// Parse a `mod <foo> { ... }` or `mod <foo>;` item
     fn parse_item_mod(&mut self, outer_attrs: &[Attribute]) -> PResult<'a, ItemInfo> {
+        let outer_attrs = ::config::StripUnconfigured {
+            config: &self.cfg,
+            sess: self.sess,
+            should_test: false, // irrelevant
+            features: None, // don't perform gated feature checking
+        }.process_cfg_attrs(outer_attrs.to_owned());
+
         let id_span = self.span;
         let id = self.parse_ident()?;
         if self.check(&token::Semi) {
             self.bump();
             // This mod is in an external file. Let's go get it!
-            let (m, attrs) = self.eval_src_mod(id, outer_attrs, id_span)?;
+            let (m, attrs) = self.eval_src_mod(id, &outer_attrs, id_span)?;
             Ok((id, m, Some(attrs)))
         } else {
-            self.push_mod_path(id, outer_attrs);
+            self.push_mod_path(id, &outer_attrs);
             self.expect(&token::OpenDelim(token::Brace))?;
             let mod_inner_lo = self.span.lo;
             let attrs = self.parse_inner_attributes()?;
@@ -5691,15 +5698,12 @@ impl<'a> Parser<'a> {
             }
             _ => None
         };
-        match nt_item {
-            Some(mut item) => {
-                self.bump();
-                let mut attrs = attrs;
-                mem::swap(&mut item.attrs, &mut attrs);
-                item.attrs.extend(attrs);
-                return Ok(Some(P(item)));
-            }
-            None => {}
+        if let Some(mut item) = nt_item {
+            self.bump();
+            let mut attrs = attrs;
+            mem::swap(&mut item.attrs, &mut attrs);
+            item.attrs.extend(attrs);
+            return Ok(Some(P(item)));
         }
 
         let lo = self.span.lo;
