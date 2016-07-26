@@ -26,7 +26,6 @@ use parse::token::{InternedString, intern, str_to_ident};
 use ptr::P;
 use util::small_vector::SmallVector;
 use util::lev_distance::find_best_match_for_name;
-use ext::mtwt;
 use fold::Folder;
 
 use std::collections::{HashMap, HashSet};
@@ -483,15 +482,12 @@ pub type NamedSyntaxExtension = (Name, SyntaxExtension);
 pub struct BlockInfo {
     /// Should macros escape from this scope?
     pub macros_escape: bool,
-    /// What are the pending renames?
-    pub pending_renames: mtwt::RenameList,
 }
 
 impl BlockInfo {
     pub fn new() -> BlockInfo {
         BlockInfo {
             macros_escape: false,
-            pending_renames: Vec::new(),
         }
     }
 }
@@ -820,6 +816,12 @@ impl<'a> ExtCtxt<'a> {
 /// compilation on error, merely emits a non-fatal error and returns None.
 pub fn expr_to_string(cx: &mut ExtCtxt, expr: P<ast::Expr>, err_msg: &str)
                       -> Option<(InternedString, ast::StrStyle)> {
+    // Update `expr.span`'s expn_id now in case expr is an `include!` macro invocation.
+    let expr = expr.map(|mut expr| {
+        expr.span.expn_id = cx.backtrace;
+        expr
+    });
+
     // we want to be able to handle e.g. concat("foo", "bar")
     let expr = cx.expander().fold_expr(expr);
     match expr.node {
