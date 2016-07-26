@@ -271,8 +271,8 @@ pub struct Parser<'a> {
     pub tokens_consumed: usize,
     pub restrictions: Restrictions,
     pub quote_depth: usize, // not (yet) related to the quasiquoter
+    parsing_token_tree: bool,
     pub reader: Box<Reader+'a>,
-    pub interner: Rc<token::IdentInterner>,
     /// The set of seen errors about obsolete syntax. Used to suppress
     /// extra detail when the same error is seen twice
     pub obsolete_set: HashSet<ObsoleteSyntax>,
@@ -369,7 +369,6 @@ impl<'a> Parser<'a> {
 
         Parser {
             reader: rdr,
-            interner: token::get_ident_interner(),
             sess: sess,
             cfg: cfg,
             token: tok0.tok,
@@ -389,6 +388,7 @@ impl<'a> Parser<'a> {
             tokens_consumed: 0,
             restrictions: Restrictions::empty(),
             quote_depth: 0,
+            parsing_token_tree: false,
             obsolete_set: HashSet::new(),
             mod_path_stack: Vec::new(),
             filename: filename,
@@ -506,64 +506,6 @@ impl<'a> Parser<'a> {
                 })[..]
             ))
         }
-    }
-
-    /// Check for erroneous `ident { }`; if matches, signal error and
-    /// recover (without consuming any expected input token).  Returns
-    /// true if and only if input was consumed for recovery.
-    pub fn check_for_erroneous_unit_struct_expecting(&mut self,
-                                                     expected: &[token::Token])
-                                                     -> bool {
-        if self.token == token::OpenDelim(token::Brace)
-            && expected.iter().all(|t| *t != token::OpenDelim(token::Brace))
-            && self.look_ahead(1, |t| *t == token::CloseDelim(token::Brace)) {
-            // matched; signal non-fatal error and recover.
-            let span = self.span;
-            self.span_err(span, "unit-like struct construction is written with no trailing `{ }`");
-            self.eat(&token::OpenDelim(token::Brace));
-            self.eat(&token::CloseDelim(token::Brace));
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Commit to parsing a complete expression `e` expected to be
-    /// followed by some token from the set edible + inedible.  Recover
-    /// from anticipated input errors, discarding erroneous characters.
-    pub fn commit_expr(&mut self, e: &Expr, edible: &[token::Token],
-                       inedible: &[token::Token]) -> PResult<'a, ()> {
-        debug!("commit_expr {:?}", e);
-        if let ExprKind::Path(..) = e.node {
-            // might be unit-struct construction; check for recoverableinput error.
-            let expected = edible.iter()
-                .cloned()
-                .chain(inedible.iter().cloned())
-                .collect::<Vec<_>>();
-            self.check_for_erroneous_unit_struct_expecting(&expected[..]);
-        }
-        self.expect_one_of(edible, inedible)
-    }
-
-    pub fn commit_expr_expecting(&mut self, e: &Expr, edible: token::Token) -> PResult<'a, ()> {
-        self.commit_expr(e, &[edible], &[])
-    }
-
-    /// Commit to parsing a complete statement `s`, which expects to be
-    /// followed by some token from the set edible + inedible.  Check
-    /// for recoverable input errors, discarding erroneous characters.
-    pub fn commit_stmt(&mut self, edible: &[token::Token],
-                       inedible: &[token::Token]) -> PResult<'a, ()> {
-        if self.last_token
-               .as_ref()
-               .map_or(false, |t| t.is_ident() || t.is_path()) {
-            let expected = edible.iter()
-                .cloned()
-                .chain(inedible.iter().cloned())
-                .collect::<Vec<_>>();
-            self.check_for_erroneous_unit_struct_expecting(&expected);
-        }
-        self.expect_one_of(edible, inedible)
     }
 
     /// returns the span of expr, if it was not interpolated or the span of the interpolated token
@@ -1260,7 +1202,7 @@ impl<'a> Parser<'a> {
             let default = if self.check(&token::Eq) {
                 self.bump();
                 let expr = try!(self.parse_expr());
-                try!(self.commit_expr_expecting(&expr, token::Semi));
+                try!(self.expect(&token::Semi));
                 Some(expr)
             } else {
                 try!(self.expect(&token::Semi));
@@ -2208,8 +2150,7 @@ impl<'a> Parser<'a> {
                 let mut trailing_comma = false;
                 while self.token != token::CloseDelim(token::Paren) {
                     es.push(try!(self.parse_expr()));
-                    try!(self.commit_expr(&es.last().unwrap(), &[],
-                                     &[token::Comma, token::CloseDelim(token::Paren)]));
+                    try!(self.expect_one_of(&[], &[token::Comma, token::CloseDelim(token::Paren)]));
                     if self.check(&token::Comma) {
                         trailing_comma = true;
 
@@ -2420,9 +2361,8 @@ impl<'a> Parser<'a> {
                                     }
                                 }
 
-                                match self.commit_expr(&fields.last().unwrap().expr,
-                                                       &[token::Comma],
-                                                       &[token::CloseDelim(token::Brace)]) {
+                                match self.expect_one_of(&[token::Comma],
+                                                         &[token::CloseDelim(token::Brace)]) {
                                     Ok(()) => {}
                                     Err(mut e) => {
                                         e.emit();
@@ -2675,7 +2615,7 @@ impl<'a> Parser<'a> {
                 self.bump();
                 let ix = try!(self.parse_expr());
                 hi = self.span.hi;
-                try!(self.commit_expr_expecting(&ix, token::CloseDelim(token::Bracket)));
+                try!(self.expect(&token::CloseDelim(token::Bracket)));
                 let index = self.mk_index(e, ix);
                 e = self.mk_expr(lo, hi, index, ThinVec::new())
               }
@@ -2738,7 +2678,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn check_unknown_macro_variable(&mut self) {
-        if self.quote_depth == 0 {
+        if self.quote_depth == 0 && !self.parsing_token_tree {
             match self.token {
                 token::SubstNt(name) =>
                     self.fatal(&format!("unknown macro variable `{}`", name)).emit(),
@@ -2798,6 +2738,7 @@ impl<'a> Parser<'a> {
                 Err(err)
             },
             token::OpenDelim(delim) => {
+                let parsing_token_tree = ::std::mem::replace(&mut self.parsing_token_tree, true);
                 // The span for beginning of the delimited section
                 let pre_span = self.span;
 
@@ -2862,6 +2803,7 @@ impl<'a> Parser<'a> {
                     _ => {}
                 }
 
+                self.parsing_token_tree = parsing_token_tree;
                 Ok(TokenTree::Delimited(span, Rc::new(Delimited {
                     delim: delim,
                     open_span: open_span,
@@ -3340,10 +3282,9 @@ impl<'a> Parser<'a> {
     fn parse_match_expr(&mut self, mut attrs: ThinVec<Attribute>) -> PResult<'a, P<Expr>> {
         let match_span = self.last_span;
         let lo = self.last_span.lo;
-        let discriminant = try!(self.parse_expr_res(RESTRICTION_NO_STRUCT_LITERAL,
-                                                    None));
-        if let Err(mut e) = self.commit_expr_expecting(&discriminant,
-                                                       token::OpenDelim(token::Brace)) {
+        let discriminant = try!(self.parse_expr_res(Restrictions::restriction_no_struct_literal(),
+                                               None));
+        if let Err(mut e) = self.expect(&token::OpenDelim(token::Brace)) {
             if self.token == token::Token::Semi {
                 e.span_note(match_span, "did you mean to remove this `match` keyword?");
             }
@@ -3389,7 +3330,7 @@ impl<'a> Parser<'a> {
             && self.token != token::CloseDelim(token::Brace);
 
         if require_comma {
-            try!(self.commit_expr(&expr, &[token::Comma], &[token::CloseDelim(token::Brace)]));
+            try!(self.expect_one_of(&[token::Comma], &[token::CloseDelim(token::Brace)]));
         } else {
             self.eat(&token::Comma);
         }
@@ -3863,9 +3804,10 @@ impl<'a> Parser<'a> {
         self.span_err(self.last_span, message);
     }
 
-    /// Parse a statement. may include decl.
+    /// Parse a statement. This stops just before trailing semicolons on everything but items.
+    /// e.g. a `StmtKind::Semi` parses to a `StmtKind::Expr`, leaving the trailing `;` unconsumed.
     pub fn parse_stmt(&mut self) -> PResult<'a, Option<Stmt>> {
-        Ok(self.parse_stmt_())
+        Ok(self.parse_stmt_(true))
     }
 
     // Eat tokens until we can be relatively sure we reached the end of the
@@ -3929,15 +3871,15 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_stmt_(&mut self) -> Option<Stmt> {
-        self.parse_stmt_without_recovery().unwrap_or_else(|mut e| {
+    fn parse_stmt_(&mut self, macro_expanded: bool) -> Option<Stmt> {
+        self.parse_stmt_without_recovery(macro_expanded).unwrap_or_else(|mut e| {
             e.emit();
             self.recover_stmt_(SemiColonMode::Break);
             None
         })
     }
 
-    fn parse_stmt_without_recovery(&mut self) -> PResult<'a, Option<Stmt>> {
+    fn parse_stmt_without_recovery(&mut self, macro_expanded: bool) -> PResult<'a, Option<Stmt>> {
         maybe_whole!(Some deref self, NtStmt);
 
         let attrs = try!(self.parse_outer_attributes());
@@ -4000,10 +3942,34 @@ impl<'a> Parser<'a> {
 
             if id.name == keywords::Invalid.name() {
                 let mac = spanned(lo, hi, Mac_ { path: pth, tts: tts });
+                let node = if delim == token::Brace ||
+                              self.token == token::Semi || self.token == token::Eof {
+                    StmtKind::Mac(P((mac, style, attrs.into())))
+                }
+                // We used to incorrectly stop parsing macro-expanded statements here.
+                // If the next token will be an error anyway but could have parsed with the
+                // earlier behavior, stop parsing here and emit a warning to avoid breakage.
+                else if macro_expanded && self.token.can_begin_expr() && match self.token {
+                    // These can continue an expression, so we can't stop parsing and warn.
+                    token::OpenDelim(token::Paren) | token::OpenDelim(token::Bracket) |
+                    token::BinOp(token::Minus) | token::BinOp(token::Star) |
+                    token::BinOp(token::And) | token::BinOp(token::Or) |
+                    token::AndAnd | token::OrOr |
+                    token::DotDot | token::DotDotDot => false,
+                    _ => true,
+                } {
+                    self.warn_missing_semicolon();
+                    StmtKind::Mac(P((mac, style, attrs.into())))
+                } else {
+                    let e = self.mk_mac_expr(lo, hi, mac.node, ThinVec::new());
+                    let e = try!(self.parse_dot_or_call_expr_with(e, lo, attrs.into()));
+                    let e = try!(self.parse_assoc_expr_with(0, LhsExpr::AlreadyParsed(e)));
+                    StmtKind::Expr(e)
+                };
                 Stmt {
                     id: ast::DUMMY_NODE_ID,
-                    node: StmtKind::Mac(P((mac, style, attrs.into()))),
                     span: mk_sp(lo, hi),
+                    node: node,
                 }
             } else {
                 // if it has a special ident, it's definitely an item
@@ -4112,36 +4078,14 @@ impl<'a> Parser<'a> {
         let mut stmts = vec![];
 
         while !self.eat(&token::CloseDelim(token::Brace)) {
-            let Stmt {node, span, ..} = if let Some(s) = self.parse_stmt_() {
-                s
+            if let Some(stmt) = try!(self.parse_full_stmt(false)) {
+                stmts.push(stmt);
             } else if self.token == token::Eof {
                 break;
             } else {
                 // Found only `;` or `}`.
                 continue;
             };
-
-            match node {
-                StmtKind::Expr(e) => {
-                    try!(self.handle_expression_like_statement(e, span, &mut stmts));
-                }
-                StmtKind::Mac(mac) => {
-                    try!(self.handle_macro_in_block(mac.unwrap(), span, &mut stmts));
-                }
-                _ => { // all other kinds of statements:
-                    let mut hi = span.hi;
-                    if classify::stmt_ends_with_semi(&node) {
-                        try!(self.commit_stmt(&[token::Semi], &[]));
-                        hi = self.last_span.hi;
-                    }
-
-                    stmts.push(Stmt {
-                        id: ast::DUMMY_NODE_ID,
-                        node: node,
-                        span: mk_sp(span.lo, hi)
-                    });
-                }
-            }
         }
 
         Ok(P(ast::Block {
@@ -4152,93 +4096,51 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn handle_macro_in_block(&mut self,
-                             (mac, style, attrs): (ast::Mac, MacStmtStyle, ThinVec<Attribute>),
-                             span: Span,
-                             stmts: &mut Vec<Stmt>)
-                             -> PResult<'a, ()> {
-        if style == MacStmtStyle::NoBraces {
-            // statement macro without braces; might be an
-            // expr depending on whether a semicolon follows
-            match self.token {
-                token::Semi => {
-                    stmts.push(Stmt {
-                        id: ast::DUMMY_NODE_ID,
-                        node: StmtKind::Mac(P((mac, MacStmtStyle::Semicolon, attrs))),
-                        span: mk_sp(span.lo, self.span.hi),
-                    });
-                    self.bump();
-                }
-                _ => {
-                    let e = self.mk_mac_expr(span.lo, span.hi, mac.node, ThinVec::new());
-                    let lo = e.span.lo;
-                    let e = try!(self.parse_dot_or_call_expr_with(e, lo, attrs));
-                    let e = try!(self.parse_assoc_expr_with(0, LhsExpr::AlreadyParsed(e)));
-                    try!(self.handle_expression_like_statement(e, span, stmts));
+    /// Parse a statement, including the trailing semicolon.
+    pub fn parse_full_stmt(&mut self, macro_expanded: bool) -> PResult<'a, Option<Stmt>> {
+        let mut stmt = match self.parse_stmt_(macro_expanded) {
+            Some(stmt) => stmt,
+            None => return Ok(None),
+        };
+
+        match stmt.node {
+            StmtKind::Expr(ref expr) if self.token != token::Eof => {
+                // expression without semicolon
+                if classify::expr_requires_semi_to_be_stmt(expr) {
+                    // Just check for errors and recover; do not eat semicolon yet.
+                    if let Err(mut e) =
+                        self.expect_one_of(&[], &[token::Semi, token::CloseDelim(token::Brace)])
+                    {
+                        e.emit();
+                        self.recover_stmt();
+                    }
                 }
             }
-        } else {
-            // statement macro; might be an expr
-            match self.token {
-                token::Semi => {
-                    stmts.push(Stmt {
-                        id: ast::DUMMY_NODE_ID,
-                        node: StmtKind::Mac(P((mac, MacStmtStyle::Semicolon, attrs))),
-                        span: mk_sp(span.lo, self.span.hi),
-                    });
-                    self.bump();
-                }
-                _ => {
-                    stmts.push(Stmt {
-                        id: ast::DUMMY_NODE_ID,
-                        node: StmtKind::Mac(P((mac, style, attrs))),
-                        span: span
-                    });
+            StmtKind::Local(..) => {
+                // We used to incorrectly allow a macro-expanded let statement to lack a semicolon.
+                if macro_expanded && self.token != token::Semi {
+                    self.warn_missing_semicolon();
+                } else {
+                    try!(self.expect_one_of(&[token::Semi], &[]));
                 }
             }
+            _ => {}
         }
-        Ok(())
+
+        if self.eat(&token::Semi) {
+            stmt = stmt.add_trailing_semicolon();
+        }
+
+        stmt.span.hi = self.last_span.hi;
+        Ok(Some(stmt))
     }
 
-    fn handle_expression_like_statement(&mut self,
-                                        e: P<Expr>,
-                                        span: Span,
-                                        stmts: &mut Vec<Stmt>)
-                                        -> PResult<'a, ()> {
-        // expression without semicolon
-        if classify::expr_requires_semi_to_be_stmt(&e) {
-            // Just check for errors and recover; do not eat semicolon yet.
-            if let Err(mut e) =
-                self.commit_stmt(&[], &[token::Semi, token::CloseDelim(token::Brace)])
-            {
-                e.emit();
-                self.recover_stmt();
-            }
-        }
-
-        match self.token {
-            token::Semi => {
-                self.bump();
-                let span_with_semi = Span {
-                    lo: span.lo,
-                    hi: self.last_span.hi,
-                    expn_id: span.expn_id,
-                };
-                stmts.push(Stmt {
-                    id: ast::DUMMY_NODE_ID,
-                    node: StmtKind::Semi(e),
-                    span: span_with_semi,
-                });
-            }
-            _ => {
-                stmts.push(Stmt {
-                    id: ast::DUMMY_NODE_ID,
-                    node: StmtKind::Expr(e),
-                    span: span
-                });
-            }
-        }
-        Ok(())
+    fn warn_missing_semicolon(&self) {
+        self.diagnostic().struct_span_warn(self.span, {
+            &format!("expected `;`, found `{}`", self.this_token_to_string())
+        }).note({
+            "This was erroneously allowed and will become a hard error in a future release"
+        }).emit();
     }
 
     // Parses a sequence of bounds if a `:` is found,
@@ -4876,7 +4778,7 @@ impl<'a> Parser<'a> {
             let typ = try!(self.parse_ty_sum());
             try!(self.expect(&token::Eq));
             let expr = try!(self.parse_expr());
-            try!(self.commit_expr_expecting(&expr, token::Semi));
+            try!(self.expect(&token::Semi));
             (name, ast::ImplItemKind::Const(typ, expr))
         } else {
             let (name, inner_attrs, node) = try!(self.parse_impl_method(&vis));
@@ -5300,7 +5202,7 @@ impl<'a> Parser<'a> {
         let ty = try!(self.parse_ty_sum());
         try!(self.expect(&token::Eq));
         let e = try!(self.parse_expr());
-        try!(self.commit_expr_expecting(&e, token::Semi));
+        try!(self.expect(&token::Semi));
         let item = match m {
             Some(m) => ItemKind::Static(ty, m, e),
             None => ItemKind::Const(ty, e),

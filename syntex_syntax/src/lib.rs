@@ -116,7 +116,7 @@ pub mod ext {
     pub mod decorator;
     pub mod env;
     pub mod expand;
-    pub mod mtwt;
+    pub mod hygiene;
     pub mod quote;
     pub mod source_util;
 
