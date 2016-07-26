@@ -43,7 +43,8 @@ syntex$ rm -r syntex_syntax/src syntex_pos/src syntex_errors/src
 syntex$ cp -r ../rust/src/libsyntax syntex_syntax/src
 syntex$ cp -r ../rust/src/libsyntax_pos syntex_pos/src
 syntex$ cp -r ../rust/src/librustc_errors syntex_errors/src
-syntex$ git commit -a -m "Sync with $(rustup run nightly rustc --version)"
+syntex$ git add .
+syntex$ git commit -m "Sync with $(rustup run nightly rustc --version)"
 ```
 
 Switch back to the master branch, merge it in, and resolve any conflicts:
