@@ -51,7 +51,6 @@ impl ParseSess {
     pub fn new() -> ParseSess {
         let cm = Rc::new(CodeMap::new());
         let handler = Handler::with_tty_emitter(ColorConfig::Auto,
-                                                None,
                                                 true,
                                                 false,
                                                 Some(cm.clone()));
@@ -237,7 +236,7 @@ pub fn new_parser_from_ts<'a>(sess: &'a ParseSess,
                               cfg: ast::CrateConfig,
                               ts: tokenstream::TokenStream)
                               -> Parser<'a> {
-    tts_to_parser(sess, ts.tts, cfg)
+    tts_to_parser(sess, ts.to_tts(), cfg)
 }
 
 
