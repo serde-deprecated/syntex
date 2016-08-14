@@ -211,9 +211,9 @@ impl Registry {
 
         let cfg = Vec::new();
         let mut macro_loader = SyntexMacroLoader::new(self.macros.clone());
-        let ecx = ExtCtxt::new(&sess, cfg, ecfg, &mut macro_loader);
+        let mut ecx = ExtCtxt::new(&sess, cfg, ecfg, &mut macro_loader);
 
-        let (krate, _) = expand::expand_crate(ecx, self.syntax_exts, krate);
+        let krate = expand::expand_crate(&mut ecx, self.syntax_exts, krate);
 
         let krate = self.post_expansion_passes.iter()
             .fold(krate, |krate, f| (f)(krate));
