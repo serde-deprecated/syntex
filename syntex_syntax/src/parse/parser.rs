@@ -1332,11 +1332,7 @@ impl<'a> Parser<'a> {
     /// Parse optional return type [ -> TY ] in function decl
     pub fn parse_ret_ty(&mut self) -> PResult<'a, FunctionRetTy> {
         if self.eat(&token::RArrow) {
-            if self.eat(&token::Not) {
-                Ok(FunctionRetTy::None(self.last_span))
-            } else {
-                Ok(FunctionRetTy::Ty(self.parse_ty()?))
-            }
+            Ok(FunctionRetTy::Ty(self.parse_ty()?))
         } else {
             let pos = self.span.lo;
             Ok(FunctionRetTy::Default(mk_sp(pos, pos)))
@@ -1399,6 +1395,8 @@ impl<'a> Parser<'a> {
             } else {
                 TyKind::Tup(ts)
             }
+        } else if self.eat(&token::Not) {
+            TyKind::Never
         } else if self.check(&token::BinOp(token::Star)) {
             // STAR POINTER (bare pointer?)
             self.bump();
@@ -2009,10 +2007,19 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub fn parse_field_name(&mut self) -> PResult<'a, Ident> {
+        if let token::Literal(token::Integer(name), None) = self.token {
+            self.bump();
+            Ok(Ident::with_empty_ctxt(name))
+        } else {
+            self.parse_ident()
+        }
+    }
+
     /// Parse ident COLON expr
     pub fn parse_field(&mut self) -> PResult<'a, Field> {
         let lo = self.span.lo;
-        let i = self.parse_ident()?;
+        let i = self.parse_field_name()?;
         let hi = self.last_span.hi;
         self.expect(&token::Colon)?;
         let e = self.parse_expr()?;
@@ -3508,7 +3515,7 @@ impl<'a> Parser<'a> {
             // Check if a colon exists one ahead. This means we're parsing a fieldname.
             let (subpat, fieldname, is_shorthand) = if self.look_ahead(1, |t| t == &token::Colon) {
                 // Parsing a pattern of the form "fieldname: pat"
-                let fieldname = self.parse_ident()?;
+                let fieldname = self.parse_field_name()?;
                 self.bump();
                 let pat = self.parse_pat()?;
                 hi = pat.span.hi;
@@ -3779,19 +3786,18 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a structure field
-    fn parse_name_and_ty(&mut self, pr: Visibility,
-                         attrs: Vec<Attribute> ) -> PResult<'a, StructField> {
-        let lo = match pr {
-            Visibility::Inherited => self.span.lo,
-            _ => self.last_span.lo,
-        };
+    fn parse_name_and_ty(&mut self,
+                         lo: BytePos,
+                         vis: Visibility,
+                         attrs: Vec<Attribute>)
+                         -> PResult<'a, StructField> {
         let name = self.parse_ident()?;
         self.expect(&token::Colon)?;
         let ty = self.parse_ty_sum()?;
         Ok(StructField {
             span: mk_sp(lo, self.last_span.hi),
             ident: Some(name),
-            vis: pr,
+            vis: vis,
             id: ast::DUMMY_NODE_ID,
             ty: ty,
             attrs: attrs,
@@ -5111,10 +5117,11 @@ impl<'a> Parser<'a> {
 
     /// Parse a structure field declaration
     pub fn parse_single_struct_field(&mut self,
+                                     lo: BytePos,
                                      vis: Visibility,
                                      attrs: Vec<Attribute> )
                                      -> PResult<'a, StructField> {
-        let a_var = self.parse_name_and_ty(vis, attrs)?;
+        let a_var = self.parse_name_and_ty(lo, vis, attrs)?;
         match self.token {
             token::Comma => {
                 self.bump();
@@ -5135,8 +5142,9 @@ impl<'a> Parser<'a> {
     /// Parse an element of a struct definition
     fn parse_struct_decl_field(&mut self) -> PResult<'a, StructField> {
         let attrs = self.parse_outer_attributes()?;
+        let lo = self.span.lo;
         let vis = self.parse_visibility(true)?;
-        self.parse_single_struct_field(vis, attrs)
+        self.parse_single_struct_field(lo, vis, attrs)
     }
 
     // If `allow_path` is false, just parse the `pub` in `pub(path)` (but still parse `pub(crate)`)
