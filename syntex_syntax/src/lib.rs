@@ -117,6 +117,7 @@ pub mod ext {
     pub mod env;
     pub mod expand;
     pub mod hygiene;
+    pub mod proc_macro_shim;
     pub mod quote;
     pub mod source_util;
 
