@@ -12,7 +12,7 @@ const EXTRA_STACK: &'static str = "16777216"; // 16 MB
 /// The Rust parser uses a lot of stack space so codegen sometimes requires more
 /// than is available by default.
 ///
-/// ```
+/// ```rust,ignore
 /// syntex::with_extra_stack(move || {
 ///     let mut reg = syntex::Registry::new();
 ///     reg.add_decorator(/* ... */);
