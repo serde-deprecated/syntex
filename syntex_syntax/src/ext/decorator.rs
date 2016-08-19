@@ -228,7 +228,7 @@ fn expand_3(
                                               &attr.node.value,
                                               item);
                 if modified.len() != 1 {
-                    panic!("expected 1 output from `#[{}]` but got {}",
+                    panic!("syntex limitation: expected 1 output from `#[{}]` but got {}",
                            mname, modified.len());
                 }
                 let modified = modified.pop().unwrap();
@@ -237,8 +237,8 @@ fn expand_3(
 
                 let mut expanded = expand_annotatable(modified, fld);
                 if expanded.is_empty() {
-                    panic!("expected 1 output from `#[{}]` but got {}",
-                           mname, expanded.len());
+                    panic!("syntex limitation: output of `#[{}]` must not expand further",
+                           mname);
                 }
                 let last = expanded.pop().unwrap();
 
