@@ -147,11 +147,13 @@ fn expand_2(
             let derive = fld.cx.attribute(
                 attr.span,
                 fld.cx.meta_word(titem.span, tname.as_str()));
-            let (handled, out) = expand_3(item, &derive, fld, out_items, tname);
-            if !handled {
-                not_handled.push((*titem).clone());
-            }
-            item = out;
+            item = match expand_3(item, &derive, fld, out_items, tname) {
+                Expansion::Handled(item) => item,
+                Expansion::NotHandled(item) => {
+                    not_handled.push((*titem).clone());
+                    item
+                }
+            };
         }
         if !not_handled.is_empty() {
             // #[derive(Trait, ...)]
@@ -162,17 +164,25 @@ fn expand_2(
         }
         item
     } else {
-        let (handled, out) = expand_3(item, attr, fld, out_items, mname);
-        if !handled {
-            new_attrs.push((*attr).clone());
+        match expand_3(item, attr, fld, out_items, mname) {
+            Expansion::Handled(item) => item,
+            Expansion::NotHandled(item) => {
+                new_attrs.push((*attr).clone());
+                item
+            }
         }
-        out
     }
 }
 
+enum Expansion {
+    Handled(Annotatable),
+    /// Here is your `Annotatable` back.
+    NotHandled(Annotatable),
+}
+
 // Responsible for expanding attributes that match a MultiDecorator or
-// MultiModifier registered in the syntax_env. Returns whether the given
-// attribute was handled, along with the item to continue processing.
+// MultiModifier registered in the syntax_env. Returns the item to continue
+// processing.
 //
 // Syntex supports only a special case of MultiModifier - those that produce
 // exactly one output. If a MultiModifier produces zero or more than one output
@@ -187,7 +197,7 @@ fn expand_3(
     fld: &mut MacroExpander,
     out_items: &mut SmallVector<Annotatable>,
     mname: Name,
-) -> (bool, Annotatable) {
+) -> Expansion {
     match fld.cx.syntax_env.find(mname) {
         Some(rc) => match *rc {
             MultiDecorator(ref mac) => {
@@ -209,7 +219,7 @@ fn expand_3(
                 fld.cx.bt_pop();
                 out_items.extend(modified.into_iter()
                     .flat_map(|ann| expand_annotatable(ann, fld).into_iter()));
-                (true, item)
+                Expansion::Handled(item)
             }
             MultiModifier(ref mac) => {
                 attr::mark_used(&attr);
@@ -243,10 +253,10 @@ fn expand_3(
                 let last = expanded.pop().unwrap();
 
                 out_items.extend(expanded);
-                (true, last)
+                Expansion::Handled(last)
             }
-            _ => (false, item),
+            _ => Expansion::NotHandled(item),
         },
-        _ => (false, item),
+        _ => Expansion::NotHandled(item),
     }
 }
