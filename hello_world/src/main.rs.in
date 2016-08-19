@@ -1,5 +1,16 @@
+use std::fmt::Debug;
+
+// #[syntex_modifier] turns into #[derive(Clone)]
+#[syntex_modifier]
+struct S<'a>(&'a str);
+
 fn main() {
-    // Unfortunately syntex macros cannot be embedded in macros it doesn't know about.
-    let s = hello_world!();
-    println!("{}", s);
+    // syntex_macro!() turns into "hello world"
+    let s = S(syntex_macro!());
+
+    assert_debug::<S>();
+
+    println!("{}", s.0);
 }
+
+fn assert_debug<T: Debug>() {}

@@ -8,21 +8,22 @@ use parse::token::intern;
 use util::small_vector::SmallVector;
 
 pub fn expand_annotatable(
-    item: Annotatable,
+    mut item: Annotatable,
     fld: &mut MacroExpander,
 ) -> SmallVector<Annotatable> {
-    let mut decorator_items = SmallVector::zero();
+    let mut out_items = SmallVector::zero();
     let mut new_attrs = Vec::new();
 
-    expand_decorators(&item, fld, &mut decorator_items, &mut new_attrs);
+    item = expand_1(item, fld, &mut out_items, &mut new_attrs);
 
-    let item = item.fold_attrs(new_attrs);
-    let mut new_items = expand_multi_modified(item, fld);
-    new_items.push_all(decorator_items);
-    new_items
+    item = item.fold_attrs(new_attrs);
+    let expanded = expand_multi_modified(item, fld);
+    out_items.push_all(expanded);
+
+    out_items
 }
 
-// Responsible for expanding `cfg_attr` and delegating to expand_decorators_2.
+// Responsible for expanding `cfg_attr` and delegating to expand_2.
 //
 // The expansion turns this:
 //
@@ -37,16 +38,24 @@ pub fn expand_annotatable(
 //     #[cfg_attr(COND2, SPEC3)]
 //     struct Item { ... }
 //
-// In the example, SPEC1 was handled by expand_decorators_2 to create the impl,
-// and the handling of SPEC2 resulted in a new attribute SPEC3 which remains
+// In the example, SPEC1 was handled by expand_2 to create the impl, and the
+// handling of SPEC2 resulted in a new attribute SPEC3 which remains
 // conditional.
-fn expand_decorators(
-    item: &Annotatable,
+fn expand_1(
+    mut item: Annotatable,
     fld: &mut MacroExpander,
-    decorator_items: &mut SmallVector<Annotatable>,
+    out_items: &mut SmallVector<Annotatable>,
     new_attrs: &mut Vec<ast::Attribute>,
-) {
-    for attr in item.attrs() {
+) -> Annotatable {
+    while !item.attrs().is_empty() {
+        // Pop the first attribute.
+        let mut attr = None;
+        item = item.map_attrs(|mut attrs| {
+            attr = Some(attrs.remove(0));
+            attrs
+        });
+        let attr = attr.unwrap();
+
         match attr.node.value.node {
             // #[cfg_attr(COND, SPEC)]
             ast::MetaItemKind::List(ref word, ref vec)
@@ -65,13 +74,13 @@ fn expand_decorators(
                     vec[1].clone());
                 let mut items = SmallVector::zero();
                 let mut attrs = Vec::new();
-                expand_decorators_2(item, &spec, fld, &mut items, &mut attrs);
-                for item in items {
-                    let item = item.map_attrs(|mut attrs| {
+                item = expand_2(item, &spec, fld, &mut items, &mut attrs);
+                for new_item in items {
+                    let new_item = new_item.map_attrs(|mut attrs| {
                         attrs.push(cond.clone());
                         attrs
                     });
-                    decorator_items.push(item);
+                    out_items.push(new_item);
                 }
                 for new_attr in attrs {
                     // #[cfg_attr(COND, NEW_SPEC)]
@@ -85,13 +94,14 @@ fn expand_decorators(
                 }
             }
             _ => {
-                expand_decorators_2(&item, attr, fld, decorator_items, new_attrs);
+                item = expand_2(item, &attr, fld, out_items, new_attrs);
             }
         }
     }
+    item
 }
 
-// Responsible for expanding `derive` and delegating to expand_decorators_3.
+// Responsible for expanding `derive` and delegating to expand_3.
 //
 // The expansion turns this:
 //
@@ -106,16 +116,16 @@ fn expand_decorators(
 //     #[other_attr]
 //     struct Item { ... }
 //
-// In the example, `derive_Serialize` was handled by expand_decorators_3 to
-// create the impl but `derive_Clone` and `other_attr` were not handled.
-// Attributes that are not handled by expand_decorators_3 are preserved.
-fn expand_decorators_2(
-    item: &Annotatable,
+// In the example, `derive_Serialize` was handled by expand_3 to create the impl
+// but `derive_Clone` and `other_attr` were not handled. Attributes that are not
+// handled by expand_3 are preserved.
+fn expand_2(
+    mut item: Annotatable,
     attr: &ast::Attribute,
     fld: &mut MacroExpander,
-    decorator_items: &mut SmallVector<Annotatable>,
+    out_items: &mut SmallVector<Annotatable>,
     new_attrs: &mut Vec<ast::Attribute>,
-) {
+) -> Annotatable {
     let mname = intern(&attr.name());
     let mitem = &attr.node.value;
     if mname.as_str() == "derive" {
@@ -137,10 +147,13 @@ fn expand_decorators_2(
             let derive = fld.cx.attribute(
                 attr.span,
                 fld.cx.meta_word(titem.span, tname.as_str()));
-            let handled = expand_decorators_3(item, &derive, fld, decorator_items, tname);
-            if !handled {
-                not_handled.push((*titem).clone());
-            }
+            item = match expand_3(item, &derive, fld, out_items, tname) {
+                Expansion::Handled(item) => item,
+                Expansion::NotHandled(item) => {
+                    not_handled.push((*titem).clone());
+                    item
+                }
+            };
         }
         if !not_handled.is_empty() {
             // #[derive(Trait, ...)]
@@ -149,23 +162,42 @@ fn expand_decorators_2(
                 fld.cx.meta_list(mitem.span, mname.as_str(), not_handled));
             new_attrs.push(derive);
         }
+        item
     } else {
-        let handled = expand_decorators_3(item, attr, fld, decorator_items, mname);
-        if !handled {
-            new_attrs.push((*attr).clone());
+        match expand_3(item, attr, fld, out_items, mname) {
+            Expansion::Handled(item) => item,
+            Expansion::NotHandled(item) => {
+                new_attrs.push((*attr).clone());
+                item
+            }
         }
     }
 }
 
-// Responsible for expanding attributes that match a MultiDecorator registered
-// in the syntax_env. Returns whether the given attribute was handled.
-fn expand_decorators_3(
-    item: &Annotatable,
+enum Expansion {
+    Handled(Annotatable),
+    /// Here is your `Annotatable` back.
+    NotHandled(Annotatable),
+}
+
+// Responsible for expanding attributes that match a MultiDecorator or
+// MultiModifier registered in the syntax_env. Returns the item to continue
+// processing.
+//
+// Syntex supports only a special case of MultiModifier - those that produce
+// exactly one output. If a MultiModifier produces zero or more than one output
+// this function panics. The problematic case we cannot support is:
+//
+//     #[decorator] // not registered with Syntex
+//     #[modifier] // registered
+//     struct A;
+fn expand_3(
+    item: Annotatable,
     attr: &ast::Attribute,
     fld: &mut MacroExpander,
-    decorator_items: &mut SmallVector<Annotatable>,
+    out_items: &mut SmallVector<Annotatable>,
     mname: Name,
-) -> bool {
+) -> Expansion {
     match fld.cx.syntax_env.find(mname) {
         Some(rc) => match *rc {
             MultiDecorator(ref mac) => {
@@ -181,16 +213,50 @@ fn expand_decorators_3(
                 });
 
                 let mut modified = Vec::new();
-                mac.expand(fld.cx, attr.span, &attr.node.value, item,
+                mac.expand(fld.cx, attr.span, &attr.node.value, &item,
                         &mut |item| modified.push(item));
 
                 fld.cx.bt_pop();
-                decorator_items.extend(modified.into_iter()
+                out_items.extend(modified.into_iter()
                     .flat_map(|ann| expand_annotatable(ann, fld).into_iter()));
-                true
+                Expansion::Handled(item)
             }
-            _ => false,
+            MultiModifier(ref mac) => {
+                attr::mark_used(&attr);
+                fld.cx.bt_push(ExpnInfo {
+                    call_site: attr.span,
+                    callee: NameAndSpan {
+                        format: MacroAttribute(mname),
+                        span: Some(attr.span),
+                        // attributes can do whatever they like, for now.
+                        allow_internal_unstable: true,
+                    }
+                });
+
+                let mut modified = mac.expand(fld.cx,
+                                              attr.span,
+                                              &attr.node.value,
+                                              item);
+                if modified.len() != 1 {
+                    panic!("syntex limitation: expected 1 output from `#[{}]` but got {}",
+                           mname, modified.len());
+                }
+                let modified = modified.pop().unwrap();
+
+                fld.cx.bt_pop();
+
+                let mut expanded = expand_annotatable(modified, fld);
+                if expanded.is_empty() {
+                    panic!("syntex limitation: output of `#[{}]` must not expand further",
+                           mname);
+                }
+                let last = expanded.pop().unwrap();
+
+                out_items.extend(expanded);
+                Expansion::Handled(last)
+            }
+            _ => Expansion::NotHandled(item),
         },
-        _ => false,
+        _ => Expansion::NotHandled(item),
     }
 }
