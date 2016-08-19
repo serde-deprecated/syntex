@@ -158,6 +158,10 @@ impl Registry {
             self.cfg.clone(),
             &sess));
 
+        if sess.span_diagnostic.has_errors() {
+            return Err(Error::Parse);
+        }
+
         let src_name = src.to_str().unwrap().to_string();
 
         let out = try!(self.expand_crate(
@@ -165,6 +169,10 @@ impl Registry {
                 &sess,
                 src_name,
                 krate));
+
+        if sess.span_diagnostic.has_errors() {
+            return Err(Error::Expand);
+        }
 
         let mut dst = try!(File::create(dst));
         try!(dst.write_all(&out));
