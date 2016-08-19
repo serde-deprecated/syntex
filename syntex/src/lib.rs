@@ -2,7 +2,7 @@ extern crate syntex_syntax;
 extern crate syntex_errors as errors;
 
 use std::fs::File;
-use std::io::{self, Write};
+use std::io::Write;
 use std::path::Path;
 
 use syntex_syntax::ast;
@@ -240,20 +240,15 @@ impl Registry {
         let mut out = Vec::new();
         let annotation = pprust::NoAnn;
 
-        {
-            let out: &mut io::Write = &mut out;
-
-            try!(pprust::print_crate(
-                sess.codemap(),
-                &sess.span_diagnostic,
-                &krate,
-                src_name,
-                &mut rdr,
-                Box::new(out),
-                &annotation,
-                false)
-            );
-        }
+        try!(pprust::print_crate(
+            sess.codemap(),
+            &sess.span_diagnostic,
+            &krate,
+            src_name,
+            &mut rdr,
+            Box::new(&mut out),
+            &annotation,
+            false));
 
         Ok(out)
     }
