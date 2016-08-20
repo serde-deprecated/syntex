@@ -27,6 +27,9 @@ use syntex_syntax::ptr::P;
 mod error;
 pub use error::Error;
 
+mod stack;
+pub use stack::with_extra_stack;
+
 pub type Pass = fn(ast::Crate) -> ast::Crate;
 
 pub struct Registry {
