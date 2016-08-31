@@ -39,7 +39,7 @@
 use std::fmt::{self, Display, Debug};
 use std::iter::FromIterator;
 use std::ops::Deref;
-use std::{slice, vec};
+use std::{mem, ptr, slice, vec};
 
 use serialize::{Encodable, Decodable, Encoder, Decoder};
 
@@ -71,10 +71,25 @@ impl<T: 'static> P<T> {
     }
 
     /// Transform the inner value, consuming `self` and producing a new `P<T>`.
-    pub fn map<F>(self, f: F) -> P<T> where
+    pub fn map<F>(mut self, f: F) -> P<T> where
         F: FnOnce(T) -> T,
     {
-        P(f(*self.ptr))
+        let p: *mut T = &mut *self.ptr;
+
+        // Leak self in case of panic.
+        // FIXME(eddyb) Use some sort of "free guard" that
+        // only deallocates, without dropping the pointee,
+        // in case the call the `f` below ends in a panic.
+        mem::forget(self);
+
+        unsafe {
+            ptr::write(p, f(ptr::read(p)));
+
+            // Recreate self from the raw pointer.
+            P {
+                ptr: Box::from_raw(p)
+            }
+        }
     }
 }
 

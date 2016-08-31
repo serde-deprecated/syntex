@@ -1,6 +1,6 @@
 use ast::{self, Name};
-use attr::{self, AttrMetaMethods, HasAttrs};
-use codemap::{ExpnInfo, MacroAttribute, NameAndSpan};
+use attr::{self, HasAttrs};
+use codemap::{ExpnInfo, MacroAttribute, NameAndSpan, respan};
 use ext::base::*;
 use ext::build::AstBuilder;
 use ext::expand::{MacroExpander, expand_multi_modified};
@@ -16,7 +16,7 @@ pub fn expand_annotatable(
 
     item = expand_1(item, fld, &mut out_items, &mut new_attrs);
 
-    item = item.fold_attrs(new_attrs);
+    item = item.map_attrs(|_| new_attrs);
     let expanded = expand_multi_modified(item, fld);
     out_items.push_all(expanded);
 
@@ -56,47 +56,48 @@ fn expand_1(
         });
         let attr = attr.unwrap();
 
-        match attr.node.value.node {
+        if let ast::MetaItemKind::List(ref word, ref vec) = attr.node.value.node {
             // #[cfg_attr(COND, SPEC)]
-            ast::MetaItemKind::List(ref word, ref vec)
-                if word == "cfg_attr" && vec.len() == 2 =>
-            {
-                // #[cfg(COND)]
-                let cond = fld.cx.attribute(
-                    attr.span,
-                    fld.cx.meta_list(
-                        attr.node.value.span,
-                        intern("cfg").as_str(),
-                        vec[..1].to_vec()));
-                // #[SPEC]
-                let spec = fld.cx.attribute(
-                    attr.span,
-                    vec[1].clone());
-                let mut items = SmallVector::zero();
-                let mut attrs = Vec::new();
-                item = expand_2(item, &spec, fld, &mut items, &mut attrs);
-                for new_item in items {
-                    let new_item = new_item.map_attrs(|mut attrs| {
-                        attrs.push(cond.clone());
-                        attrs
-                    });
-                    out_items.push(new_item);
-                }
-                for new_attr in attrs {
-                    // #[cfg_attr(COND, NEW_SPEC)]
-                    let new_attr = fld.cx.attribute(
+            if word == "cfg_attr" && vec.len() == 2 {
+                if let ast::NestedMetaItemKind::MetaItem(ref spec) = vec[1].node {
+                    // #[cfg(COND)]
+                    let cond = fld.cx.attribute(
                         attr.span,
                         fld.cx.meta_list(
                             attr.node.value.span,
-                            word.clone(),
-                            vec![vec[0].clone(), new_attr.node.value]));
-                    new_attrs.push(new_attr);
+                            intern("cfg").as_str(),
+                            vec[..1].to_vec()));
+                    // #[SPEC]
+                    let spec = fld.cx.attribute(
+                        attr.span,
+                        spec.clone());
+                    let mut items = SmallVector::zero();
+                    let mut attrs = Vec::new();
+                    item = expand_2(item, &spec, fld, &mut items, &mut attrs);
+                    for new_item in items {
+                        let new_item = new_item.map_attrs(|mut attrs| {
+                            attrs.push(cond.clone());
+                            attrs
+                        });
+                        out_items.push(new_item);
+                    }
+                    for new_attr in attrs {
+                        let new_spec = respan(attr.span,
+                            ast::NestedMetaItemKind::MetaItem(new_attr.node.value));
+                        // #[cfg_attr(COND, NEW_SPEC)]
+                        let new_attr = fld.cx.attribute(
+                            attr.span,
+                            fld.cx.meta_list(
+                                attr.node.value.span,
+                                word.clone(),
+                                vec![vec[0].clone(), new_spec]));
+                        new_attrs.push(new_attr);
+                    }
+                    continue;
                 }
             }
-            _ => {
-                item = expand_2(item, &attr, fld, out_items, new_attrs);
-            }
         }
+        item = expand_2(item, &attr, fld, out_items, new_attrs);
     }
     item
 }
@@ -136,7 +137,15 @@ fn expand_2(
         let mut not_handled = Vec::new();
         for titem in traits.iter().rev() {
             let tname = match titem.node {
-                ast::MetaItemKind::Word(ref tname) => tname,
+                ast::NestedMetaItemKind::MetaItem(ref inner) => {
+                    match inner.node {
+                        ast::MetaItemKind::Word(ref tname) => tname,
+                        _ => {
+                            fld.cx.span_err(titem.span, "malformed `derive` entry");
+                            continue;
+                        }
+                    }
+                }
                 _ => {
                     fld.cx.span_err(titem.span, "malformed `derive` entry");
                     continue;

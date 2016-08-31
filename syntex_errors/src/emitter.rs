@@ -12,7 +12,7 @@ use self::Destination::*;
 
 use syntax_pos::{COMMAND_LINE_SP, DUMMY_SP, FileMap, Span, MultiSpan, CharPos};
 
-use {Level, CodeSuggestion, DiagnosticBuilder, CodeMapper};
+use {Level, CodeSuggestion, DiagnosticBuilder, SubDiagnostic, CodeMapper};
 use RenderSpan::*;
 use snippet::{StyledString, Style, Annotation, Line};
 use styled_buffer::StyledBuffer;
@@ -31,7 +31,10 @@ pub trait Emitter {
 
 impl Emitter for EmitterWriter {
     fn emit(&mut self, db: &DiagnosticBuilder) {
-        self.emit_messages_default(db);
+        let mut primary_span = db.span.clone();
+        let mut children = db.children.clone();
+        self.fix_multispans_in_std_macros(&mut primary_span, &mut children);
+        self.emit_messages_default(&db.level, &db.message, &db.code, &primary_span, &children);
     }
 }
 
@@ -382,17 +385,100 @@ impl EmitterWriter {
         max
     }
 
-    fn get_max_line_num(&mut self, db: &DiagnosticBuilder) -> usize {
+    fn get_max_line_num(&mut self, span: &MultiSpan, children: &Vec<SubDiagnostic>) -> usize {
         let mut max = 0;
 
-        let primary = self.get_multispan_max_line_num(&db.span);
+        let primary = self.get_multispan_max_line_num(span);
         max = if primary > max { primary } else { max };
 
-        for sub in &db.children {
+        for sub in children {
             let sub_result = self.get_multispan_max_line_num(&sub.span);
             max = if sub_result > max { primary } else { max };
         }
         max
+    }
+
+    // This "fixes" MultiSpans that contain Spans that are pointing to locations inside of
+    // <*macros>. Since these locations are often difficult to read, we move these Spans from
+    // <*macros> to their corresponding use site.
+    fn fix_multispan_in_std_macros(&mut self, span: &mut MultiSpan) -> bool {
+        let mut spans_updated = false;
+
+        if let Some(ref cm) = self.cm {
+            let mut before_after: Vec<(Span, Span)> = vec![];
+            let mut new_labels: Vec<(Span, String)> = vec![];
+
+            // First, find all the spans in <*macros> and point instead at their use site
+            for sp in span.primary_spans() {
+                if (*sp == COMMAND_LINE_SP) || (*sp == DUMMY_SP) {
+                    continue;
+                }
+                if cm.span_to_filename(sp.clone()).contains("macros>") {
+                    let v = cm.macro_backtrace(sp.clone());
+                    if let Some(use_site) = v.last() {
+                        before_after.push((sp.clone(), use_site.call_site.clone()));
+                    }
+                }
+                for trace in cm.macro_backtrace(sp.clone()).iter().rev() {
+                    // Only show macro locations that are local
+                    // and display them like a span_note
+                    if let Some(def_site) = trace.def_site_span {
+                        if (def_site == COMMAND_LINE_SP) || (def_site == DUMMY_SP) {
+                            continue;
+                        }
+                        // Check to make sure we're not in any <*macros>
+                        if !cm.span_to_filename(def_site).contains("macros>") &&
+                            !trace.macro_decl_name.starts_with("#[")
+                        {
+                            new_labels.push((trace.call_site,
+                                             "in this macro invocation".to_string()));
+                            break;
+                        }
+                    }
+                }
+            }
+            for (label_span, label_text) in new_labels {
+                span.push_span_label(label_span, label_text);
+            }
+            for sp_label in span.span_labels() {
+                if (sp_label.span == COMMAND_LINE_SP) || (sp_label.span == DUMMY_SP) {
+                    continue;
+                }
+                if cm.span_to_filename(sp_label.span.clone()).contains("macros>") {
+                    let v = cm.macro_backtrace(sp_label.span.clone());
+                    if let Some(use_site) = v.last() {
+                        before_after.push((sp_label.span.clone(), use_site.call_site.clone()));
+                    }
+                }
+            }
+            // After we have them, make sure we replace these 'bad' def sites with their use sites
+            for (before, after) in before_after {
+                span.replace(before, after);
+                spans_updated = true;
+            }
+        }
+
+        spans_updated
+    }
+
+    // This does a small "fix" for multispans by looking to see if it can find any that
+    // point directly at <*macros>. Since these are often difficult to read, this
+    // will change the span to point at the use site.
+    fn fix_multispans_in_std_macros(&mut self,
+                                    span: &mut MultiSpan,
+                                    children: &mut Vec<SubDiagnostic>) {
+        let mut spans_updated = self.fix_multispan_in_std_macros(span);
+        for child in children.iter_mut() {
+            spans_updated |= self.fix_multispan_in_std_macros(&mut child.span);
+        }
+        if spans_updated {
+            children.push(SubDiagnostic {
+                level: Level::Note,
+                message: "this error originates in a macro from the standard library".to_string(),
+                span: MultiSpan::new(),
+                render_span: None
+            });
+        }
     }
 
     fn emit_message_default(&mut self,
@@ -529,10 +615,6 @@ impl EmitterWriter {
             }
         }
 
-        if let Some(ref primary_span) = msp.primary_span().as_ref() {
-            try!(self.render_macro_backtrace_old_school(primary_span, &mut buffer));
-        }
-
         // final step: take our styled buffer, render it, then output it
         try!(emit_to_destination(&buffer.render(), level, &mut self.dst));
 
@@ -579,26 +661,31 @@ impl EmitterWriter {
         }
         Ok(())
     }
-    fn emit_messages_default(&mut self, db: &DiagnosticBuilder) {
-        let max_line_num = self.get_max_line_num(db);
+    fn emit_messages_default(&mut self,
+                             level: &Level,
+                             message: &String,
+                             code: &Option<String>,
+                             span: &MultiSpan,
+                             children: &Vec<SubDiagnostic>) {
+        let max_line_num = self.get_max_line_num(span, children);
         let max_line_num_len = max_line_num.to_string().len();
 
-        match self.emit_message_default(&db.span,
-                                        &db.message,
-                                        &db.code,
-                                        &db.level,
+        match self.emit_message_default(span,
+                                        message,
+                                        code,
+                                        level,
                                         max_line_num_len,
                                         false) {
             Ok(()) => {
-                if !db.children.is_empty() {
+                if !children.is_empty() {
                     let mut buffer = StyledBuffer::new();
                     draw_col_separator_no_space(&mut buffer, 0, max_line_num_len + 1);
-                    match emit_to_destination(&buffer.render(), &db.level, &mut self.dst) {
+                    match emit_to_destination(&buffer.render(), level, &mut self.dst) {
                         Ok(()) => (),
                         Err(e) => panic!("failed to emit error: {}", e)
                     }
                 }
-                for child in &db.children {
+                for child in children {
                     match child.render_span {
                         Some(FullSpan(ref msp)) => {
                             match self.emit_message_default(msp,
@@ -638,31 +725,11 @@ impl EmitterWriter {
         }
         match write!(&mut self.dst, "\n") {
             Err(e) => panic!("failed to emit error: {}", e),
-            _ => ()
-        }
-    }
-    fn render_macro_backtrace_old_school(&mut self,
-                                         sp: &Span,
-                                         buffer: &mut StyledBuffer) -> io::Result<()> {
-        if let Some(ref cm) = self.cm {
-            for trace in cm.macro_backtrace(sp.clone()) {
-                let line_offset = buffer.num_lines();
-
-                let mut diag_string =
-                    format!("in this expansion of {}", trace.macro_decl_name);
-                if let Some(def_site_span) = trace.def_site_span {
-                    diag_string.push_str(
-                        &format!(" (defined in {})",
-                            cm.span_to_filename(def_site_span)));
-                }
-                let snippet = cm.span_to_string(trace.call_site);
-                buffer.append(line_offset, &format!("{} ", snippet), Style::NoStyle);
-                buffer.append(line_offset, "note", Style::Level(Level::Note));
-                buffer.append(line_offset, ": ", Style::NoStyle);
-                buffer.append(line_offset, &diag_string, Style::OldSchoolNoteText);
+            _ => match self.dst.flush() {
+                Err(e) => panic!("failed to emit error: {}", e),
+                _ => ()
             }
         }
-        Ok(())
     }
 }
 
@@ -696,6 +763,21 @@ impl<Idx> SyntexContains<Idx> for ops::Range<Idx> where Idx: PartialOrd {
 fn emit_to_destination(rendered_buffer: &Vec<Vec<StyledString>>,
         lvl: &Level,
         dst: &mut Destination) -> io::Result<()> {
+    use lock;
+
+    // In order to prevent error message interleaving, where multiple error lines get intermixed
+    // when multiple compiler processes error simultaneously, we emit errors with additional
+    // steps.
+    //
+    // On Unix systems, we write into a buffered terminal rather than directly to a terminal. When
+    // the .flush() is called we take the buffer created from the buffered writes and write it at
+    // one shot.  Because the Unix systems use ANSI for the colors, which is a text-based styling
+    // scheme, this buffered approach works and maintains the styling.
+    //
+    // On Windows, styling happens through calls to a terminal API. This prevents us from using the
+    // same buffering approach.  Instead, we use a global Windows mutex, which we acquire long
+    // enough to output the full error message, then we release.
+    let _buffer_lock = lock::acquire_global_lock("rustc_errors");
     for line in rendered_buffer {
         for part in line {
             try!(dst.apply_style(lvl.clone(), part.style));
@@ -704,6 +786,7 @@ fn emit_to_destination(rendered_buffer: &Vec<Vec<StyledString>>,
         }
         try!(write!(dst, "\n"));
     }
+    try!(dst.flush());
     Ok(())
 }
 
@@ -730,14 +813,74 @@ fn stderr_isatty() -> bool {
     }
 }
 
+pub type BufferedStderr = term::Terminal<Output = BufferedWriter> + Send;
+
 pub enum Destination {
     Terminal(Box<term::StderrTerminal>),
+    BufferedTerminal(Box<BufferedStderr>),
     Raw(Box<Write + Send>),
 }
 
+/// Buffered writer gives us a way on Unix to buffer up an entire error message before we output
+/// it.  This helps to prevent interleaving of multiple error messages when multiple compiler
+/// processes error simultaneously
+pub struct BufferedWriter {
+    buffer: Vec<u8>,
+}
+
+impl BufferedWriter {
+    // note: we use _new because the conditional compilation at its use site may make this
+    // this function unused on some platforms
+    fn _new() -> BufferedWriter {
+        BufferedWriter {
+            buffer: vec![]
+        }
+    }
+}
+
+impl Write for BufferedWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        for b in buf {
+            self.buffer.push(*b);
+        }
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        let mut stderr = io::stderr();
+        let result = (|| {
+            try!(stderr.write_all(&self.buffer));
+            stderr.flush()
+        })();
+        self.buffer.clear();
+        result
+    }
+}
+
 impl Destination {
+    #[cfg(not(windows))]
+    /// When not on Windows, prefer the buffered terminal so that we can buffer an entire error
+    /// to be emitted at one time.
     fn from_stderr() -> Destination {
-        match term::stderr() {
+        let stderr: Option<Box<BufferedStderr>>  =
+            term::TerminfoTerminal::new(BufferedWriter::_new())
+                .map(|t| Box::new(t) as Box<BufferedStderr>);
+
+        match stderr {
+            Some(t) => BufferedTerminal(t),
+            None    => Raw(Box::new(io::stderr())),
+        }
+    }
+
+    #[cfg(windows)]
+    /// Return a normal, unbuffered terminal when on Windows.
+    fn from_stderr() -> Destination {
+        let stderr: Option<Box<term::StderrTerminal>> =
+            term::TerminfoTerminal::new(io::stderr())
+                .map(|t| Box::new(t) as Box<term::StderrTerminal>)
+                .or_else(|| term::WinConsole::new(io::stderr()).ok()
+                    .map(|t| Box::new(t) as Box<term::StderrTerminal>));
+
+        match stderr {
             Some(t) => Terminal(t),
             None    => Raw(Box::new(io::stderr())),
         }
@@ -786,6 +929,7 @@ impl Destination {
     fn start_attr(&mut self, attr: term::Attr) -> io::Result<()> {
         match *self {
             Terminal(ref mut t) => { try!(t.attr(attr)); }
+            BufferedTerminal(ref mut t) => { try!(t.attr(attr)); }
             Raw(_) => { }
         }
         Ok(())
@@ -794,6 +938,7 @@ impl Destination {
     fn reset_attrs(&mut self) -> io::Result<()> {
         match *self {
             Terminal(ref mut t) => { try!(t.reset()); }
+            BufferedTerminal(ref mut t) => { try!(t.reset()); }
             Raw(_) => { }
         }
         Ok(())
@@ -804,12 +949,14 @@ impl Write for Destination {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         match *self {
             Terminal(ref mut t) => t.write(bytes),
+            BufferedTerminal(ref mut t) => t.write(bytes),
             Raw(ref mut w) => w.write(bytes),
         }
     }
     fn flush(&mut self) -> io::Result<()> {
         match *self {
             Terminal(ref mut t) => t.flush(),
+            BufferedTerminal(ref mut t) => t.flush(),
             Raw(ref mut w) => w.flush(),
         }
     }

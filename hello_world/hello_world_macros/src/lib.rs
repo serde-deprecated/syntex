@@ -36,7 +36,7 @@ fn expand_modifier(cx: &mut ExtCtxt,
     let item = item.expect_item();
     let mut new_item = (*item).clone();
 
-    let debug = cx.meta_word(span, InternedString::new("Debug"));
+    let debug = cx.meta_list_item_word(span, InternedString::new("Debug"));
     let attr = cx.attribute(span,
                             cx.meta_list(span,
                                          InternedString::new("derive"),
