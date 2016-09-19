@@ -725,7 +725,7 @@ fn mark_tts(tts: &[TokenTree], m: Mark) -> Vec<TokenTree> {
 mod tests {
     use super::{expand_crate, ExpansionConfig};
     use ast;
-    use ext::base::{ExtCtxt, DummyMacroLoader};
+    use ext::base::{ExtCtxt, DummyResolver};
     use parse;
     use util::parser_testing::{string_to_parser};
     use visit;
@@ -766,7 +766,7 @@ mod tests {
             src,
             Vec::new(), &sess).unwrap();
         // should fail:
-        let mut loader = DummyMacroLoader;
+        let mut loader = DummyResolver;
         let mut ecx = ExtCtxt::new(&sess, vec![], test_ecfg(), &mut loader);
         expand_crate(&mut ecx, vec![], crate_ast);
     }
@@ -781,7 +781,7 @@ mod tests {
             "<test>".to_string(),
             src,
             Vec::new(), &sess).unwrap();
-        let mut loader = DummyMacroLoader;
+        let mut loader = DummyResolver;
         let mut ecx = ExtCtxt::new(&sess, vec![], test_ecfg(), &mut loader);
         expand_crate(&mut ecx, vec![], crate_ast);
     }
@@ -795,7 +795,7 @@ mod tests {
             "<test>".to_string(),
             src,
             Vec::new(), &sess).unwrap();
-        let mut loader = DummyMacroLoader;
+        let mut loader = DummyResolver;
         let mut ecx = ExtCtxt::new(&sess, vec![], test_ecfg(), &mut loader);
         expand_crate(&mut ecx, vec![], crate_ast);
     }
@@ -804,7 +804,7 @@ mod tests {
         let ps = parse::ParseSess::new();
         let crate_ast = panictry!(string_to_parser(&ps, crate_str).parse_crate_mod());
         // the cfg argument actually does matter, here...
-        let mut loader = DummyMacroLoader;
+        let mut loader = DummyResolver;
         let mut ecx = ExtCtxt::new(&ps, vec![], test_ecfg(), &mut loader);
         expand_crate(&mut ecx, vec![], crate_ast)
     }

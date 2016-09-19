@@ -10,7 +10,7 @@ use syntex_syntax::attr;
 use syntex_syntax::codemap::{DUMMY_SP, respan};
 use syntex_syntax::ext::base::{
     IdentMacroExpander,
-    MacroLoader,
+    Resolver,
     MultiItemDecorator,
     MultiItemModifier,
     NamedSyntaxExtension,
@@ -41,19 +41,19 @@ pub struct Registry {
     attrs: Vec<ast::Attribute>,
 }
 
-struct SyntexMacroLoader {
+struct SyntexResolver {
     macros: Vec<ast::MacroDef>,
 }
 
-impl SyntexMacroLoader {
+impl SyntexResolver {
     fn new(macros: Vec<ast::MacroDef>) -> Self {
-        SyntexMacroLoader {
+        SyntexResolver {
             macros: macros
         }
     }
 }
 
-impl MacroLoader for SyntexMacroLoader {
+impl Resolver for SyntexResolver {
     fn load_crate(&mut self, _extern_crate: &ast::Item, _allows_macros: bool) -> Vec<ast::MacroDef> {
         self.macros.clone()
     }
@@ -221,7 +221,7 @@ impl Registry {
         ecfg.features = Some(&features);
 
         let cfg = Vec::new();
-        let mut macro_loader = SyntexMacroLoader::new(self.macros.clone());
+        let mut macro_loader = SyntexResolver::new(self.macros.clone());
         let mut ecx = ExtCtxt::new(&sess, cfg, ecfg, &mut macro_loader);
 
         let krate = expand::expand_crate(&mut ecx, self.syntax_exts, krate);
