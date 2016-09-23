@@ -362,6 +362,7 @@ impl Generics {
 }
 
 impl Default for Generics {
+    /// Creates an instance of `Generics`.
     fn default() ->  Generics {
         Generics {
             lifetimes: Vec::new(),
@@ -561,8 +562,8 @@ impl Pat {
             }
             PatKind::Wild |
             PatKind::Lit(_) |
-            PatKind::Range(_, _) |
-            PatKind::Ident(_, _, _) |
+            PatKind::Range(..) |
+            PatKind::Ident(..) |
             PatKind::Path(..) |
             PatKind::Mac(_) => {
                 true
@@ -1886,7 +1887,7 @@ pub enum ItemKind {
     /// A union definition (`union` or `pub union`).
     ///
     /// E.g. `union Foo<A, B> { x: A, y: B }`
-    Union(VariantData, Generics), // FIXME: not yet implemented
+    Union(VariantData, Generics),
     /// A Trait declaration (`trait` or `pub trait`).
     ///
     /// E.g. `trait Foo { .. }` or `trait Foo<T> { .. }`
