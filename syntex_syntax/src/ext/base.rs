@@ -478,208 +478,10 @@ pub enum LoadedMacro {
     CustomDerive(String, Box<MultiItemModifier>),
 }
 
-<<<<<<< HEAD
-/// The base map of methods for expanding syntax extension
-/// AST nodes into full ASTs
-fn initial_syntax_expander_table<'feat>(ecfg: &expand::ExpansionConfig<'feat>)
-                                        -> SyntaxEnv {
-    // utility function to simplify creating NormalTT syntax extensions
-    fn builtin_normal_expander(f: MacroExpanderFn) -> SyntaxExtension {
-        NormalTT(Box::new(f), None, false)
-    }
-
-    let mut syntax_expanders = SyntaxEnv::new();
-
-    /*
-    syntax_expanders.insert(intern("macro_rules"), MacroRulesTT);
-    */
-
-    if ecfg.enable_quotes() {
-        // Quasi-quoting expanders
-        syntax_expanders.insert(intern("quote_tokens"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_tokens));
-        syntax_expanders.insert(intern("quote_expr"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_expr));
-        syntax_expanders.insert(intern("quote_ty"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_ty));
-        syntax_expanders.insert(intern("quote_item"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_item));
-        syntax_expanders.insert(intern("quote_pat"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_pat));
-        syntax_expanders.insert(intern("quote_arm"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_arm));
-        syntax_expanders.insert(intern("quote_stmt"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_stmt));
-        syntax_expanders.insert(intern("quote_matcher"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_matcher));
-        syntax_expanders.insert(intern("quote_attr"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_attr));
-        syntax_expanders.insert(intern("quote_arg"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_arg));
-        syntax_expanders.insert(intern("quote_block"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_block));
-        syntax_expanders.insert(intern("quote_meta_item"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_meta_item));
-        syntax_expanders.insert(intern("quote_path"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_path));
-    }
-
-    /*
-    syntax_expanders.insert(intern("line"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_line));
-    syntax_expanders.insert(intern("column"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_column));
-    syntax_expanders.insert(intern("file"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_file));
-    syntax_expanders.insert(intern("stringify"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_stringify));
-                                    */
-
-    syntax_expanders.insert(intern("option_env"),
-                            builtin_normal_expander(
-                                    ext::env::expand_option_env));
-    syntax_expanders.insert(intern("env"),
-                            builtin_normal_expander(
-                                    ext::env::expand_env));
-
-    syntax_expanders.insert(intern("include"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_include));
-    syntax_expanders.insert(intern("include_str"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_include_str));
-    syntax_expanders.insert(intern("include_bytes"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_include_bytes));
-    /*
-    syntax_expanders.insert(intern("module_path"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_mod));
-    */
-
-    syntax_expanders
-}
-
-pub trait Resolver {
-    fn load_crate(&mut self, extern_crate: &ast::Item, allows_macros: bool) -> Vec<ast::MacroDef>;
-}
-
-pub struct DummyResolver;
-impl Resolver for DummyResolver {
-    fn load_crate(&mut self, _: &ast::Item, _: bool) -> Vec<ast::MacroDef> {
-||||||| merged common ancestors
-/// The base map of methods for expanding syntax extension
-/// AST nodes into full ASTs
-fn initial_syntax_expander_table<'feat>(ecfg: &expand::ExpansionConfig<'feat>)
-                                        -> SyntaxEnv {
-    // utility function to simplify creating NormalTT syntax extensions
-    fn builtin_normal_expander(f: MacroExpanderFn) -> SyntaxExtension {
-        NormalTT(Box::new(f), None, false)
-    }
-
-    let mut syntax_expanders = SyntaxEnv::new();
-    syntax_expanders.insert(intern("macro_rules"), MacroRulesTT);
-
-    if ecfg.enable_quotes() {
-        // Quasi-quoting expanders
-        syntax_expanders.insert(intern("quote_tokens"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_tokens));
-        syntax_expanders.insert(intern("quote_expr"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_expr));
-        syntax_expanders.insert(intern("quote_ty"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_ty));
-        syntax_expanders.insert(intern("quote_item"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_item));
-        syntax_expanders.insert(intern("quote_pat"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_pat));
-        syntax_expanders.insert(intern("quote_arm"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_arm));
-        syntax_expanders.insert(intern("quote_stmt"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_stmt));
-        syntax_expanders.insert(intern("quote_matcher"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_matcher));
-        syntax_expanders.insert(intern("quote_attr"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_attr));
-        syntax_expanders.insert(intern("quote_arg"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_arg));
-        syntax_expanders.insert(intern("quote_block"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_block));
-        syntax_expanders.insert(intern("quote_meta_item"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_meta_item));
-        syntax_expanders.insert(intern("quote_path"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_path));
-    }
-
-    syntax_expanders.insert(intern("line"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_line));
-    syntax_expanders.insert(intern("column"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_column));
-    syntax_expanders.insert(intern("file"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_file));
-    syntax_expanders.insert(intern("stringify"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_stringify));
-    syntax_expanders.insert(intern("include"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_include));
-    syntax_expanders.insert(intern("include_str"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_include_str));
-    syntax_expanders.insert(intern("include_bytes"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_include_bytes));
-    syntax_expanders.insert(intern("module_path"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_mod));
-    syntax_expanders
-}
-
-pub trait MacroLoader {
-    fn load_crate(&mut self, extern_crate: &ast::Item, allows_macros: bool) -> Vec<ast::MacroDef>;
-}
-
-pub struct DummyMacroLoader;
-impl MacroLoader for DummyMacroLoader {
-    fn load_crate(&mut self, _: &ast::Item, _: bool) -> Vec<ast::MacroDef> {
-=======
 pub struct DummyResolver;
 
 impl Resolver for DummyResolver {
     fn load_crate(&mut self, _extern_crate: &ast::Item, _allows_macros: bool) -> Vec<LoadedMacro> {
->>>>>>> origin/rust
         Vec::new()
     }
     fn next_node_id(&mut self) -> ast::NodeId { ast::DUMMY_NODE_ID }
@@ -715,17 +517,7 @@ pub struct ExtCtxt<'a> {
     pub cfg: ast::CrateConfig,
     pub ecfg: expand::ExpansionConfig<'a>,
     pub crate_root: Option<&'static str>,
-<<<<<<< HEAD
-    pub loader: &'a mut Resolver,
-
-    pub mod_path: Vec<ast::Ident> ,
-||||||| merged common ancestors
-    pub loader: &'a mut MacroLoader,
-
-    pub mod_path: Vec<ast::Ident> ,
-=======
     pub resolver: &'a mut Resolver,
->>>>>>> origin/rust
     pub exported_macros: Vec<ast::MacroDef>,
     pub derive_modes: HashMap<InternedString, Box<MultiItemModifier>>,
     pub current_expansion: ExpansionData,
@@ -734,13 +526,7 @@ pub struct ExtCtxt<'a> {
 impl<'a> ExtCtxt<'a> {
     pub fn new(parse_sess: &'a parse::ParseSess, cfg: ast::CrateConfig,
                ecfg: expand::ExpansionConfig<'a>,
-<<<<<<< HEAD
-               loader: &'a mut Resolver)
-||||||| merged common ancestors
-               loader: &'a mut MacroLoader)
-=======
                resolver: &'a mut Resolver)
->>>>>>> origin/rust
                -> ExtCtxt<'a> {
         ExtCtxt {
             parse_sess: parse_sess,

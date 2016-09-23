@@ -4712,15 +4712,7 @@ impl<'a> Parser<'a> {
             if self.eat(&token::OrOr) {
                 Vec::new()
             } else {
-<<<<<<< HEAD
                 try!(self.expect(&token::BinOp(token::Or)));
-                try!(self.parse_obsolete_closure_kind());
-||||||| merged common ancestors
-                self.expect(&token::BinOp(token::Or))?;
-                self.parse_obsolete_closure_kind()?;
-=======
-                self.expect(&token::BinOp(token::Or))?;
->>>>>>> origin/rust
                 let args = self.parse_seq_to_before_end(
                     &token::BinOp(token::Or),
                     SeqSep::trailing_allowed(token::Comma),
@@ -5096,14 +5088,14 @@ impl<'a> Parser<'a> {
 
     /// Parse union Foo { ... }
     fn parse_item_union(&mut self) -> PResult<'a, ItemInfo> {
-        let class_name = self.parse_ident()?;
-        let mut generics = self.parse_generics()?;
+        let class_name = try!(self.parse_ident());
+        let mut generics = try!(self.parse_generics());
 
         let vdata = if self.token.is_keyword(keywords::Where) {
-            generics.where_clause = self.parse_where_clause()?;
-            VariantData::Struct(self.parse_record_struct_body()?, ast::DUMMY_NODE_ID)
+            generics.where_clause = try!(self.parse_where_clause());
+            VariantData::Struct(try!(self.parse_record_struct_body()), ast::DUMMY_NODE_ID)
         } else if self.token == token::OpenDelim(token::Brace) {
-            VariantData::Struct(self.parse_record_struct_body()?, ast::DUMMY_NODE_ID)
+            VariantData::Struct(try!(self.parse_record_struct_body()), ast::DUMMY_NODE_ID)
         } else {
             let token_str = self.this_token_to_string();
             return Err(self.fatal(&format!("expected `where` or `{{` after union \
@@ -5298,50 +5290,22 @@ impl<'a> Parser<'a> {
         let id = try!(self.parse_ident());
         if self.check(&token::Semi) {
             self.bump();
-<<<<<<< HEAD
-            // This mod is in an external file. Let's go get it!
-            let (m, attrs) = try!(self.eval_src_mod(id, &outer_attrs, id_span));
-            Ok((id, m, Some(attrs)))
-||||||| merged common ancestors
-            // This mod is in an external file. Let's go get it!
-            let (m, attrs) = self.eval_src_mod(id, &outer_attrs, id_span)?;
-            Ok((id, m, Some(attrs)))
-=======
             if in_cfg {
                 // This mod is in an external file. Let's go get it!
-                let (m, attrs) = self.eval_src_mod(id, &outer_attrs, id_span)?;
+                let (m, attrs) = try!(self.eval_src_mod(id, &outer_attrs, id_span));
                 Ok((id, m, Some(attrs)))
             } else {
                 let placeholder = ast::Mod { inner: syntax_pos::DUMMY_SP, items: Vec::new() };
                 Ok((id, ItemKind::Mod(placeholder), None))
             }
->>>>>>> origin/rust
         } else {
-<<<<<<< HEAD
-            self.push_mod_path(id, &outer_attrs);
-            try!(self.expect(&token::OpenDelim(token::Brace)));
-||||||| merged common ancestors
-            self.push_mod_path(id, &outer_attrs);
-            self.expect(&token::OpenDelim(token::Brace))?;
-=======
             let directory = self.directory.clone();
             self.push_directory(id, &outer_attrs);
-            self.expect(&token::OpenDelim(token::Brace))?;
->>>>>>> origin/rust
+            try!(self.expect(&token::OpenDelim(token::Brace)));
             let mod_inner_lo = self.span.lo;
-<<<<<<< HEAD
             let attrs = try!(self.parse_inner_attributes());
             let m = try!(self.parse_mod_items(&token::CloseDelim(token::Brace), mod_inner_lo));
-            self.pop_mod_path();
-||||||| merged common ancestors
-            let attrs = self.parse_inner_attributes()?;
-            let m = self.parse_mod_items(&token::CloseDelim(token::Brace), mod_inner_lo)?;
-            self.pop_mod_path();
-=======
-            let attrs = self.parse_inner_attributes()?;
-            let m = self.parse_mod_items(&token::CloseDelim(token::Brace), mod_inner_lo)?;
             self.directory = directory;
->>>>>>> origin/rust
             Ok((id, ItemKind::Mod(m), Some(attrs)))
         }
     }
@@ -5980,7 +5944,7 @@ impl<'a> Parser<'a> {
                 self.look_ahead(1, |t| t.is_ident() && !t.is_any_keyword()) {
             // UNION ITEM
             self.bump();
-            let (ident, item_, extra_attrs) = self.parse_item_union()?;
+            let (ident, item_, extra_attrs) = try!(self.parse_item_union());
             let last_span = self.last_span;
             let item = self.mk_item(lo,
                                     last_span.hi,

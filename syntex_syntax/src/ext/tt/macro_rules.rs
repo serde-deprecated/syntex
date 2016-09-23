@@ -212,21 +212,9 @@ fn generic_extension<'cx>(cx: &'cx ExtCtxt,
                                            imported_from,
                                            rhs);
                 let mut p = Parser::new(cx.parse_sess(), cx.cfg(), Box::new(trncbr));
-<<<<<<< HEAD
-                p.filename = cx.filename.clone();
-                p.mod_path_stack = cx.mod_path_stack.clone();
-                p.restrictions = match cx.in_block {
-                    true => Restrictions::no_noninline_mod(),
-||||||| merged common ancestors
-                p.filename = cx.filename.clone();
-                p.mod_path_stack = cx.mod_path_stack.clone();
-                p.restrictions = match cx.in_block {
-                    true => Restrictions::NO_NONINLINE_MOD,
-=======
                 p.directory = cx.current_expansion.module.directory.clone();
                 p.restrictions = match cx.current_expansion.in_block {
-                    true => Restrictions::NO_NONINLINE_MOD,
->>>>>>> origin/rust
+                    true => Restrictions::no_inline_mod(),
                     false => Restrictions::empty(),
                 };
                 p.check_unknown_macro_variable();

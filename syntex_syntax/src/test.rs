@@ -28,13 +28,7 @@ use errors;
 use errors::snippet::{SnippetData};
 use config;
 use entry::{self, EntryPointType};
-<<<<<<< HEAD
-use ext::base::{ExtCtxt, DummyResolver};
-||||||| merged common ancestors
-use ext::base::{ExtCtxt, DummyMacroLoader};
-=======
 use ext::base::{ExtCtxt, Resolver};
->>>>>>> origin/rust
 use ext::build::AstBuilder;
 use ext::expand::ExpansionConfig;
 use fold::Folder;
@@ -284,12 +278,6 @@ fn generate_test_harness(sess: &ParseSess,
     let mut cleaner = EntryPointCleaner { depth: 0 };
     let krate = cleaner.fold_crate(krate);
 
-<<<<<<< HEAD
-    let mut loader = DummyResolver;
-||||||| merged common ancestors
-    let mut loader = DummyMacroLoader;
-=======
->>>>>>> origin/rust
     let mut cx: TestCtxt = TestCtxt {
         sess: sess,
         span_diagnostic: sd,
