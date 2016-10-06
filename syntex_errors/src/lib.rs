@@ -263,9 +263,20 @@ impl<'a> DiagnosticBuilder<'a> {
                                found: &fmt::Display)
                                -> &mut DiagnosticBuilder<'a>
     {
+        self.note_expected_found_extra(label, expected, found, &"", &"")
+    }
+
+    pub fn note_expected_found_extra(&mut self,
+                                     label: &fmt::Display,
+                                     expected: &fmt::Display,
+                                     found: &fmt::Display,
+                                     expected_extra: &fmt::Display,
+                                     found_extra: &fmt::Display)
+                                     -> &mut DiagnosticBuilder<'a>
+    {
         // For now, just attach these as notes
-        self.note(&format!("expected {} `{}`", label, expected));
-        self.note(&format!("   found {} `{}`", label, found));
+        self.note(&format!("expected {} `{}`{}", label, expected, expected_extra));
+        self.note(&format!("   found {} `{}`{}", label, found, found_extra));
         self
     }
 
@@ -721,7 +732,13 @@ impl Level {
     pub fn color(self) -> term::color::Color {
         match self {
             Bug | Fatal | PhaseFatal | Error => term::color::BRIGHT_RED,
-            Warning => term::color::YELLOW,
+            Warning => {
+                if cfg!(windows) {
+                    term::color::BRIGHT_YELLOW
+                } else {
+                    term::color::YELLOW
+                }
+            },
             Note => term::color::BRIGHT_GREEN,
             Help => term::color::BRIGHT_CYAN,
             Cancelled => unreachable!(),
