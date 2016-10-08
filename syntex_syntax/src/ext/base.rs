@@ -8,30 +8,27 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-pub use self::SyntaxExtension::*;
+pub use self::SyntaxExtension::{MultiDecorator, MultiModifier, NormalTT, IdentTT};
 
-use ast;
-use ast::{Name, PatKind};
+use ast::{self, Attribute, Name, PatKind};
 use attr::HasAttrs;
-use codemap::{self, CodeMap, ExpnInfo};
+use codemap::{self, CodeMap, ExpnInfo, Spanned, respan};
 use syntax_pos::{Span, ExpnId, NO_EXPANSION};
 use errors::DiagnosticBuilder;
-use ext;
-use ext::expand;
-use ext::tt::macro_rules;
-use parse;
-use parse::parser;
+use ext::expand::{self, Invocation, Expansion};
+use ext::hygiene::Mark;
+use fold::{self, Folder};
+use parse::{self, parser};
 use parse::token;
-use parse::token::{InternedString, intern, str_to_ident};
+use parse::token::{InternedString, str_to_ident};
 use ptr::P;
+use std_inject;
 use util::small_vector::SmallVector;
-use util::lev_distance::find_best_match_for_name;
-use fold::Folder;
 
-use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::default::Default;
-use tokenstream;
+use tokenstream::{self, TokenStream};
 
 
 #[derive(Debug,Clone)]
@@ -42,7 +39,7 @@ pub enum Annotatable {
 }
 
 impl HasAttrs for Annotatable {
-    fn attrs(&self) -> &[ast::Attribute] {
+    fn attrs(&self) -> &[Attribute] {
         match *self {
             Annotatable::Item(ref item) => &item.attrs,
             Annotatable::TraitItem(ref trait_item) => &trait_item.attrs,
@@ -50,7 +47,7 @@ impl HasAttrs for Annotatable {
         }
     }
 
-    fn map_attrs<F: FnOnce(Vec<ast::Attribute>) -> Vec<ast::Attribute>>(self, f: F) -> Self {
+    fn map_attrs<F: FnOnce(Vec<Attribute>) -> Vec<Attribute>>(self, f: F) -> Self {
         match self {
             Annotatable::Item(item) => Annotatable::Item(item.map_attrs(f)),
             Annotatable::TraitItem(trait_item) => Annotatable::TraitItem(trait_item.map_attrs(f)),
@@ -88,16 +85,6 @@ impl Annotatable {
         match self {
             Annotatable::ImplItem(i) => i.unwrap(),
             _ => panic!("expected Item")
-        }
-    }
-
-    pub fn fold_with<F: Folder>(self, folder: &mut F) -> SmallVector<Self> {
-        match self {
-            Annotatable::Item(item) => folder.fold_item(item).map(Annotatable::Item),
-            Annotatable::ImplItem(item) =>
-                folder.fold_impl_item(item.unwrap()).map(|item| Annotatable::ImplItem(P(item))),
-            Annotatable::TraitItem(item) =>
-                folder.fold_trait_item(item.unwrap()).map(|item| Annotatable::TraitItem(P(item))),
         }
     }
 }
@@ -156,6 +143,50 @@ impl Into<Vec<Annotatable>> for Annotatable {
     }
 }
 
+pub trait ProcMacro {
+    fn expand<'cx>(&self,
+                   ecx: &'cx mut ExtCtxt,
+                   span: Span,
+                   ts: TokenStream)
+                   -> TokenStream;
+}
+
+impl<F> ProcMacro for F
+    where F: Fn(TokenStream) -> TokenStream
+{
+    fn expand<'cx>(&self,
+                   _ecx: &'cx mut ExtCtxt,
+                   _span: Span,
+                   ts: TokenStream)
+                   -> TokenStream {
+        // FIXME setup implicit context in TLS before calling self.
+        (*self)(ts)
+    }
+}
+
+pub trait AttrProcMacro {
+    fn expand<'cx>(&self,
+                   ecx: &'cx mut ExtCtxt,
+                   span: Span,
+                   annotation: TokenStream,
+                   annotated: TokenStream)
+                   -> TokenStream;
+}
+
+impl<F> AttrProcMacro for F
+    where F: Fn(TokenStream, TokenStream) -> TokenStream
+{
+    fn expand<'cx>(&self,
+                   _ecx: &'cx mut ExtCtxt,
+                   _span: Span,
+                   annotation: TokenStream,
+                   annotated: TokenStream)
+                   -> TokenStream {
+        // FIXME setup implicit context in TLS before calling self.
+        (*self)(annotation, annotated)
+    }
+}
+
 /// Represents a thing that maps token trees to Macro Results
 pub trait TTMacroExpander {
     fn expand<'cx>(&self,
@@ -187,7 +218,8 @@ pub trait IdentMacroExpander {
                    cx: &'cx mut ExtCtxt,
                    sp: Span,
                    ident: ast::Ident,
-                   token_tree: Vec<tokenstream::TokenTree> )
+                   token_tree: Vec<tokenstream::TokenTree>,
+                   attrs: Vec<ast::Attribute>)
                    -> Box<MacResult+'cx>;
 }
 
@@ -203,7 +235,8 @@ impl<F> IdentMacroExpander for F
                    cx: &'cx mut ExtCtxt,
                    sp: Span,
                    ident: ast::Ident,
-                   token_tree: Vec<tokenstream::TokenTree> )
+                   token_tree: Vec<tokenstream::TokenTree>,
+                   _attrs: Vec<ast::Attribute>)
                    -> Box<MacResult+'cx>
     {
         (*self)(cx, sp, ident, token_tree)
@@ -447,11 +480,22 @@ pub enum SyntaxExtension {
     /// based upon it.
     ///
     /// `#[derive(...)]` is a `MultiItemDecorator`.
-    MultiDecorator(Box<MultiItemDecorator + 'static>),
+    ///
+    /// Prefer ProcMacro or MultiModifier since they are more flexible.
+    MultiDecorator(Box<MultiItemDecorator>),
 
     /// A syntax extension that is attached to an item and modifies it
-    /// in-place. More flexible version than Modifier.
-    MultiModifier(Box<MultiItemModifier + 'static>),
+    /// in-place. Also allows decoration, i.e., creating new items.
+    MultiModifier(Box<MultiItemModifier>),
+
+    /// A function-like procedural macro. TokenStream -> TokenStream.
+    ProcMacro(Box<ProcMacro>),
+
+    /// An attribute-like procedural macro. TokenStream, TokenStream -> TokenStream.
+    /// The first TokenSteam is the attribute, the second is the annotated item.
+    /// Allows modification of the input items and adding new items, similar to
+    /// MultiModifier, but uses TokenStreams, rather than AST nodes.
+    AttrProcMacro(Box<AttrProcMacro>),
 
     /// A normal, function-like syntax extension.
     ///
@@ -459,139 +503,63 @@ pub enum SyntaxExtension {
     ///
     /// The `bool` dictates whether the contents of the macro can
     /// directly use `#[unstable]` things (true == yes).
-    NormalTT(Box<TTMacroExpander + 'static>, Option<Span>, bool),
+    NormalTT(Box<TTMacroExpander>, Option<Span>, bool),
 
     /// A function-like syntax extension that has an extra ident before
     /// the block.
     ///
-    IdentTT(Box<IdentMacroExpander + 'static>, Option<Span>, bool),
-
-    /// Represents `macro_rules!` itself.
-    MacroRulesTT,
+    IdentTT(Box<IdentMacroExpander>, Option<Span>, bool),
 }
 
 pub type NamedSyntaxExtension = (Name, SyntaxExtension);
 
-pub struct BlockInfo {
-    /// Should macros escape from this scope?
-    pub macros_escape: bool,
-}
-
-impl BlockInfo {
-    pub fn new() -> BlockInfo {
-        BlockInfo {
-            macros_escape: false,
-        }
-    }
-}
-
-/// The base map of methods for expanding syntax extension
-/// AST nodes into full ASTs
-fn initial_syntax_expander_table<'feat>(ecfg: &expand::ExpansionConfig<'feat>)
-                                        -> SyntaxEnv {
-    // utility function to simplify creating NormalTT syntax extensions
-    fn builtin_normal_expander(f: MacroExpanderFn) -> SyntaxExtension {
-        NormalTT(Box::new(f), None, false)
-    }
-
-    let mut syntax_expanders = SyntaxEnv::new();
-
-    /*
-    syntax_expanders.insert(intern("macro_rules"), MacroRulesTT);
-    */
-
-    if ecfg.enable_quotes() {
-        // Quasi-quoting expanders
-        syntax_expanders.insert(intern("quote_tokens"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_tokens));
-        syntax_expanders.insert(intern("quote_expr"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_expr));
-        syntax_expanders.insert(intern("quote_ty"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_ty));
-        syntax_expanders.insert(intern("quote_item"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_item));
-        syntax_expanders.insert(intern("quote_pat"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_pat));
-        syntax_expanders.insert(intern("quote_arm"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_arm));
-        syntax_expanders.insert(intern("quote_stmt"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_stmt));
-        syntax_expanders.insert(intern("quote_matcher"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_matcher));
-        syntax_expanders.insert(intern("quote_attr"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_attr));
-        syntax_expanders.insert(intern("quote_arg"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_arg));
-        syntax_expanders.insert(intern("quote_block"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_block));
-        syntax_expanders.insert(intern("quote_meta_item"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_meta_item));
-        syntax_expanders.insert(intern("quote_path"),
-                           builtin_normal_expander(
-                                ext::quote::expand_quote_path));
-    }
-
-    /*
-    syntax_expanders.insert(intern("line"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_line));
-    syntax_expanders.insert(intern("column"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_column));
-    syntax_expanders.insert(intern("file"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_file));
-    syntax_expanders.insert(intern("stringify"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_stringify));
-                                    */
-
-    syntax_expanders.insert(intern("option_env"),
-                            builtin_normal_expander(
-                                    ext::env::expand_option_env));
-    syntax_expanders.insert(intern("env"),
-                            builtin_normal_expander(
-                                    ext::env::expand_env));
-
-    syntax_expanders.insert(intern("include"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_include));
-    syntax_expanders.insert(intern("include_str"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_include_str));
-    syntax_expanders.insert(intern("include_bytes"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_include_bytes));
-    /*
-    syntax_expanders.insert(intern("module_path"),
-                            builtin_normal_expander(
-                                    ext::source_util::expand_mod));
-    */
-
-    syntax_expanders
-}
-
 pub trait Resolver {
-    fn load_crate(&mut self, extern_crate: &ast::Item, allows_macros: bool) -> Vec<ast::MacroDef>;
+    fn next_node_id(&mut self) -> ast::NodeId;
+    fn get_module_scope(&mut self, id: ast::NodeId) -> Mark;
+
+    fn visit_expansion(&mut self, mark: Mark, expansion: &Expansion);
+    fn add_macro(&mut self, scope: Mark, def: ast::MacroDef);
+    fn add_ext(&mut self, ident: ast::Ident, ext: Rc<SyntaxExtension>);
+    fn add_expansions_at_stmt(&mut self, id: ast::NodeId, macros: Vec<Mark>);
+
+    fn find_attr_invoc(&mut self, attrs: &mut Vec<Attribute>) -> Option<Attribute>;
+    fn resolve_invoc(&mut self, scope: Mark, invoc: &Invocation) -> Option<Rc<SyntaxExtension>>;
+    fn resolve_derive_mode(&mut self, ident: ast::Ident) -> Option<Rc<MultiItemModifier>>;
 }
 
 pub struct DummyResolver;
+
 impl Resolver for DummyResolver {
-    fn load_crate(&mut self, _: &ast::Item, _: bool) -> Vec<ast::MacroDef> {
-        Vec::new()
+    fn next_node_id(&mut self) -> ast::NodeId { ast::DUMMY_NODE_ID }
+    fn get_module_scope(&mut self, _id: ast::NodeId) -> Mark { Mark::root() }
+
+    fn visit_expansion(&mut self, _invoc: Mark, _expansion: &Expansion) {}
+    fn add_macro(&mut self, _scope: Mark, _def: ast::MacroDef) {}
+    fn add_ext(&mut self, _ident: ast::Ident, _ext: Rc<SyntaxExtension>) {}
+    fn add_expansions_at_stmt(&mut self, _id: ast::NodeId, _macros: Vec<Mark>) {}
+
+    fn find_attr_invoc(&mut self, _attrs: &mut Vec<Attribute>) -> Option<Attribute> { None }
+    fn resolve_derive_mode(&mut self, _ident: ast::Ident) -> Option<Rc<MultiItemModifier>> { None }
+    fn resolve_invoc(&mut self, _scope: Mark, _invoc: &Invocation) -> Option<Rc<SyntaxExtension>> {
+        None
     }
+}
+
+#[derive(Clone)]
+pub struct ModuleData {
+    pub mod_path: Vec<ast::Ident>,
+    pub directory: PathBuf,
+}
+
+#[derive(Clone)]
+pub struct ExpansionData {
+    pub mark: Mark,
+    pub depth: usize,
+    pub backtrace: ExpnId,
+    pub module: Rc<ModuleData>,
+
+    // True if non-inline modules without a `#[path]` are forbidden at the root of this expansion.
+    pub no_noninline_mod: bool,
 }
 
 /// One of these is made during expansion and incrementally updated as we go;
@@ -600,72 +568,66 @@ impl Resolver for DummyResolver {
 pub struct ExtCtxt<'a> {
     pub parse_sess: &'a parse::ParseSess,
     pub cfg: ast::CrateConfig,
-    pub backtrace: ExpnId,
     pub ecfg: expand::ExpansionConfig<'a>,
     pub crate_root: Option<&'static str>,
-    pub loader: &'a mut Resolver,
-
-    pub mod_path: Vec<ast::Ident> ,
-    pub exported_macros: Vec<ast::MacroDef>,
-
-    pub syntax_env: SyntaxEnv,
-    pub recursion_count: usize,
-
-    pub filename: Option<String>,
-    pub mod_path_stack: Vec<InternedString>,
-    pub in_block: bool,
+    pub resolver: &'a mut Resolver,
+    pub resolve_err_count: usize,
+    pub current_expansion: ExpansionData,
 }
 
 impl<'a> ExtCtxt<'a> {
     pub fn new(parse_sess: &'a parse::ParseSess, cfg: ast::CrateConfig,
                ecfg: expand::ExpansionConfig<'a>,
-               loader: &'a mut Resolver)
+               resolver: &'a mut Resolver)
                -> ExtCtxt<'a> {
-        let env = initial_syntax_expander_table(&ecfg);
         ExtCtxt {
             parse_sess: parse_sess,
             cfg: cfg,
-            backtrace: NO_EXPANSION,
-            mod_path: Vec::new(),
             ecfg: ecfg,
             crate_root: None,
-            exported_macros: Vec::new(),
-            loader: loader,
-            syntax_env: env,
-            recursion_count: 0,
-
-            filename: None,
-            mod_path_stack: Vec::new(),
-            in_block: false,
+            resolver: resolver,
+            resolve_err_count: 0,
+            current_expansion: ExpansionData {
+                mark: Mark::root(),
+                depth: 0,
+                backtrace: NO_EXPANSION,
+                module: Rc::new(ModuleData { mod_path: Vec::new(), directory: PathBuf::new() }),
+                no_noninline_mod: false,
+            },
         }
     }
 
     /// Returns a `Folder` for deeply expanding all macros in an AST node.
     pub fn expander<'b>(&'b mut self) -> expand::MacroExpander<'b, 'a> {
-        expand::MacroExpander::new(self, false, false)
+        expand::MacroExpander::new(self, false)
+    }
+
+    /// Returns a `Folder` that deeply expands all macros and assigns all node ids in an AST node.
+    /// Once node ids are assigned, the node may not be expanded, removed, or otherwise modified.
+    pub fn monotonic_expander<'b>(&'b mut self) -> expand::MacroExpander<'b, 'a> {
+        expand::MacroExpander::new(self, true)
     }
 
     pub fn new_parser_from_tts(&self, tts: &[tokenstream::TokenTree])
         -> parser::Parser<'a> {
         parse::tts_to_parser(self.parse_sess, tts.to_vec(), self.cfg())
     }
-
     pub fn codemap(&self) -> &'a CodeMap { self.parse_sess.codemap() }
     pub fn parse_sess(&self) -> &'a parse::ParseSess { self.parse_sess }
     pub fn cfg(&self) -> ast::CrateConfig { self.cfg.clone() }
     pub fn call_site(&self) -> Span {
-        self.codemap().with_expn_info(self.backtrace, |ei| match ei {
+        self.codemap().with_expn_info(self.backtrace(), |ei| match ei {
             Some(expn_info) => expn_info.call_site,
             None => self.bug("missing top span")
         })
     }
-    pub fn backtrace(&self) -> ExpnId { self.backtrace }
+    pub fn backtrace(&self) -> ExpnId { self.current_expansion.backtrace }
 
     /// Returns span for the macro which originally caused the current expansion to happen.
     ///
     /// Stops backtracing at include! boundary.
     pub fn expansion_cause(&self) -> Span {
-        let mut expn_id = self.backtrace;
+        let mut expn_id = self.backtrace();
         let mut last_macro = None;
         loop {
             if self.codemap().with_expn_info(expn_id, |info| {
@@ -685,50 +647,21 @@ impl<'a> ExtCtxt<'a> {
         last_macro.expect("missing expansion backtrace")
     }
 
-    pub fn mod_push(&mut self, i: ast::Ident) { self.mod_path.push(i); }
-    pub fn mod_pop(&mut self) { self.mod_path.pop().unwrap(); }
-    pub fn mod_path(&self) -> Vec<ast::Ident> {
-        let mut v = Vec::new();
-        v.push(token::str_to_ident(&self.ecfg.crate_name));
-        v.extend(self.mod_path.iter().cloned());
-        return v;
-    }
     pub fn bt_push(&mut self, ei: ExpnInfo) {
-        self.recursion_count += 1;
-        if self.recursion_count > self.ecfg.recursion_limit {
+        if self.current_expansion.depth > self.ecfg.recursion_limit {
             self.span_fatal(ei.call_site,
                             &format!("recursion limit reached while expanding the macro `{}`",
                                     ei.callee.name()));
         }
 
         let mut call_site = ei.call_site;
-        call_site.expn_id = self.backtrace;
-        self.backtrace = self.codemap().record_expansion(ExpnInfo {
+        call_site.expn_id = self.backtrace();
+        self.current_expansion.backtrace = self.codemap().record_expansion(ExpnInfo {
             call_site: call_site,
             callee: ei.callee
         });
     }
-    pub fn bt_pop(&mut self) {
-        match self.backtrace {
-            NO_EXPANSION => self.bug("tried to pop without a push"),
-            expn_id => {
-                self.recursion_count -= 1;
-                self.backtrace = self.codemap().with_expn_info(expn_id, |expn_info| {
-                    expn_info.map_or(NO_EXPANSION, |ei| ei.call_site.expn_id)
-                });
-            }
-        }
-    }
-
-    pub fn insert_macro(&mut self, def: ast::MacroDef) {
-        if def.export {
-            self.exported_macros.push(def.clone());
-        }
-        if def.use_locally {
-            let ext = macro_rules::compile(self, &def);
-            self.syntax_env.insert(def.ident.name, ext);
-        }
-    }
+    pub fn bt_pop(&mut self) {}
 
     pub fn struct_span_warn(&self,
                             sp: Span,
@@ -805,29 +738,37 @@ impl<'a> ExtCtxt<'a> {
         token::intern(st)
     }
 
-    pub fn suggest_macro_name(&mut self,
-                              name: &str,
-                              err: &mut DiagnosticBuilder<'a>) {
-        let names = &self.syntax_env.names;
-        if let Some(suggestion) = find_best_match_for_name(names.iter(), name, None) {
-            if suggestion != name {
-                err.help(&format!("did you mean `{}!`?", suggestion));
-            } else {
-                err.help(&format!("have you added the `#[macro_use]` on the \
-                                   module/import?"));
-            }
+    pub fn initialize(&mut self, user_exts: Vec<NamedSyntaxExtension>, krate: &ast::Crate) {
+        if std_inject::no_core(&krate) {
+            self.crate_root = None;
+        } else if std_inject::no_std(&krate) {
+            self.crate_root = Some("core");
+        } else {
+            self.crate_root = Some("std");
         }
+
+        for (name, extension) in user_exts {
+            let ident = ast::Ident::with_empty_ctxt(name);
+            self.resolver.add_ext(ident, Rc::new(extension));
+        }
+
+        let mut module = ModuleData {
+            mod_path: vec![token::str_to_ident(&self.ecfg.crate_name)],
+            directory: PathBuf::from(self.parse_sess.codemap().span_to_filename(krate.span)),
+        };
+        module.directory.pop();
+        self.current_expansion.module = Rc::new(module);
     }
 }
 
 /// Extract a string literal from the macro expanded version of `expr`,
 /// emitting `err_msg` if `expr` is not a string literal. This does not stop
 /// compilation on error, merely emits a non-fatal error and returns None.
-pub fn expr_to_string(cx: &mut ExtCtxt, expr: P<ast::Expr>, err_msg: &str)
-                      -> Option<(InternedString, ast::StrStyle)> {
+pub fn expr_to_spanned_string(cx: &mut ExtCtxt, expr: P<ast::Expr>, err_msg: &str)
+                              -> Option<Spanned<(InternedString, ast::StrStyle)>> {
     // Update `expr.span`'s expn_id now in case expr is an `include!` macro invocation.
     let expr = expr.map(|mut expr| {
-        expr.span.expn_id = cx.backtrace;
+        expr.span.expn_id = cx.backtrace();
         expr
     });
 
@@ -835,12 +776,17 @@ pub fn expr_to_string(cx: &mut ExtCtxt, expr: P<ast::Expr>, err_msg: &str)
     let expr = cx.expander().fold_expr(expr);
     match expr.node {
         ast::ExprKind::Lit(ref l) => match l.node {
-            ast::LitKind::Str(ref s, style) => return Some(((*s).clone(), style)),
+            ast::LitKind::Str(ref s, style) => return Some(respan(expr.span, (s.clone(), style))),
             _ => cx.span_err(l.span, err_msg)
         },
         _ => cx.span_err(expr.span, err_msg)
     }
     None
+}
+
+pub fn expr_to_string(cx: &mut ExtCtxt, expr: P<ast::Expr>, err_msg: &str)
+                      -> Option<(InternedString, ast::StrStyle)> {
+    expr_to_spanned_string(cx, expr, err_msg).map(|s| s.node)
 }
 
 /// Non-fatally assert that `tts` is empty. Note that this function
@@ -869,7 +815,7 @@ pub fn get_single_str_from_tts(cx: &mut ExtCtxt,
         cx.span_err(sp, &format!("{} takes 1 argument", name));
         return None
     }
-    let ret = cx.expander().fold_expr(panictry!(p.parse_expr()));
+    let ret = panictry!(p.parse_expr());
     if p.token != token::Eof {
         cx.span_err(sp, &format!("{} takes 1 argument", name));
     }
@@ -898,85 +844,16 @@ pub fn get_exprs_from_tts(cx: &mut ExtCtxt,
     Some(es)
 }
 
-/// In order to have some notion of scoping for macros,
-/// we want to implement the notion of a transformation
-/// environment.
-///
-/// This environment maps Names to SyntaxExtensions.
-pub struct SyntaxEnv {
-    chain: Vec<MapChainFrame>,
-    /// All bang-style macro/extension names
-    /// encountered so far; to be used for diagnostics in resolve
-    pub names: HashSet<Name>,
+pub struct ChangeSpan {
+    pub span: Span
 }
 
-// impl question: how to implement it? Initially, the
-// env will contain only macros, so it might be painful
-// to add an empty frame for every context. Let's just
-// get it working, first....
-
-// NB! the mutability of the underlying maps means that
-// if expansion is out-of-order, a deeper scope may be
-// able to refer to a macro that was added to an enclosing
-// scope lexically later than the deeper scope.
-
-struct MapChainFrame {
-    info: BlockInfo,
-    map: HashMap<Name, Rc<SyntaxExtension>>,
-}
-
-impl SyntaxEnv {
-    fn new() -> SyntaxEnv {
-        let mut map = SyntaxEnv { chain: Vec::new() , names: HashSet::new()};
-        map.push_frame();
-        map
+impl Folder for ChangeSpan {
+    fn new_span(&mut self, _sp: Span) -> Span {
+        self.span
     }
 
-    pub fn push_frame(&mut self) {
-        self.chain.push(MapChainFrame {
-            info: BlockInfo::new(),
-            map: HashMap::new(),
-        });
-    }
-
-    pub fn pop_frame(&mut self) {
-        assert!(self.chain.len() > 1, "too many pops on MapChain!");
-        self.chain.pop();
-    }
-
-    fn find_escape_frame(&mut self) -> &mut MapChainFrame {
-        for (i, frame) in self.chain.iter_mut().enumerate().rev() {
-            if !frame.info.macros_escape || i == 0 {
-                return frame
-            }
-        }
-        unreachable!()
-    }
-
-    pub fn find(&self, k: Name) -> Option<Rc<SyntaxExtension>> {
-        for frame in self.chain.iter().rev() {
-            if let Some(v) = frame.map.get(&k) {
-                return Some(v.clone());
-            }
-        }
-        None
-    }
-
-    pub fn insert(&mut self, k: Name, v: SyntaxExtension) {
-        if let NormalTT(..) = v {
-            self.names.insert(k);
-        }
-        self.find_escape_frame().map.insert(k, Rc::new(v));
-    }
-
-    pub fn info(&mut self) -> &mut BlockInfo {
-        let last_chain_index = self.chain.len() - 1;
-        &mut self.chain[last_chain_index].info
-    }
-
-    pub fn is_crate_root(&mut self) -> bool {
-        // The first frame is pushed in `SyntaxEnv::new()` and the second frame is
-        // pushed when folding the crate root pseudo-module (c.f. noop_fold_crate).
-        self.chain.len() <= 2
+    fn fold_mac(&mut self, mac: ast::Mac) -> ast::Mac {
+        fold::noop_fold_mac(mac, self)
     }
 }
