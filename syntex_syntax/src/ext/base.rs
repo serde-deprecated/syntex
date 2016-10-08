@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-pub use self::SyntaxExtension::*;
+pub use self::SyntaxExtension::{MultiDecorator, MultiModifier, NormalTT, IdentTT};
 
 use ast::{self, Attribute, Name, PatKind};
 use attr::HasAttrs;
@@ -17,21 +17,18 @@ use syntax_pos::{Span, ExpnId, NO_EXPANSION};
 use errors::DiagnosticBuilder;
 use ext::expand::{self, Invocation, Expansion};
 use ext::hygiene::Mark;
-use ext::tt::macro_rules;
-use parse;
-use parse::parser;
+use fold::{self, Folder};
+use parse::{self, parser};
 use parse::token;
 use parse::token::{InternedString, str_to_ident};
 use ptr::P;
 use std_inject;
 use util::small_vector::SmallVector;
-use fold::Folder;
-use feature_gate;
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
-use tokenstream;
+use std::default::Default;
+use tokenstream::{self, TokenStream};
 
 
 #[derive(Debug,Clone)]
@@ -143,6 +140,50 @@ impl<F, T> MultiItemModifier for F
 impl Into<Vec<Annotatable>> for Annotatable {
     fn into(self) -> Vec<Annotatable> {
         vec![self]
+    }
+}
+
+pub trait ProcMacro {
+    fn expand<'cx>(&self,
+                   ecx: &'cx mut ExtCtxt,
+                   span: Span,
+                   ts: TokenStream)
+                   -> TokenStream;
+}
+
+impl<F> ProcMacro for F
+    where F: Fn(TokenStream) -> TokenStream
+{
+    fn expand<'cx>(&self,
+                   _ecx: &'cx mut ExtCtxt,
+                   _span: Span,
+                   ts: TokenStream)
+                   -> TokenStream {
+        // FIXME setup implicit context in TLS before calling self.
+        (*self)(ts)
+    }
+}
+
+pub trait AttrProcMacro {
+    fn expand<'cx>(&self,
+                   ecx: &'cx mut ExtCtxt,
+                   span: Span,
+                   annotation: TokenStream,
+                   annotated: TokenStream)
+                   -> TokenStream;
+}
+
+impl<F> AttrProcMacro for F
+    where F: Fn(TokenStream, TokenStream) -> TokenStream
+{
+    fn expand<'cx>(&self,
+                   _ecx: &'cx mut ExtCtxt,
+                   _span: Span,
+                   annotation: TokenStream,
+                   annotated: TokenStream)
+                   -> TokenStream {
+        // FIXME setup implicit context in TLS before calling self.
+        (*self)(annotation, annotated)
     }
 }
 
@@ -439,11 +480,22 @@ pub enum SyntaxExtension {
     /// based upon it.
     ///
     /// `#[derive(...)]` is a `MultiItemDecorator`.
-    MultiDecorator(Box<MultiItemDecorator + 'static>),
+    ///
+    /// Prefer ProcMacro or MultiModifier since they are more flexible.
+    MultiDecorator(Box<MultiItemDecorator>),
 
     /// A syntax extension that is attached to an item and modifies it
-    /// in-place. More flexible version than Modifier.
-    MultiModifier(Box<MultiItemModifier + 'static>),
+    /// in-place. Also allows decoration, i.e., creating new items.
+    MultiModifier(Box<MultiItemModifier>),
+
+    /// A function-like procedural macro. TokenStream -> TokenStream.
+    ProcMacro(Box<ProcMacro>),
+
+    /// An attribute-like procedural macro. TokenStream, TokenStream -> TokenStream.
+    /// The first TokenSteam is the attribute, the second is the annotated item.
+    /// Allows modification of the input items and adding new items, similar to
+    /// MultiModifier, but uses TokenStreams, rather than AST nodes.
+    AttrProcMacro(Box<AttrProcMacro>),
 
     /// A normal, function-like syntax extension.
     ///
@@ -451,47 +503,46 @@ pub enum SyntaxExtension {
     ///
     /// The `bool` dictates whether the contents of the macro can
     /// directly use `#[unstable]` things (true == yes).
-    NormalTT(Box<TTMacroExpander + 'static>, Option<Span>, bool),
+    NormalTT(Box<TTMacroExpander>, Option<Span>, bool),
 
     /// A function-like syntax extension that has an extra ident before
     /// the block.
     ///
-    IdentTT(Box<IdentMacroExpander + 'static>, Option<Span>, bool),
+    IdentTT(Box<IdentMacroExpander>, Option<Span>, bool),
 }
 
 pub type NamedSyntaxExtension = (Name, SyntaxExtension);
 
 pub trait Resolver {
-    fn load_crate(&mut self, extern_crate: &ast::Item, allows_macros: bool) -> Vec<LoadedMacro>;
     fn next_node_id(&mut self) -> ast::NodeId;
+    fn get_module_scope(&mut self, id: ast::NodeId) -> Mark;
 
     fn visit_expansion(&mut self, mark: Mark, expansion: &Expansion);
-    fn add_macro(&mut self, scope: Mark, ident: ast::Ident, ext: Rc<SyntaxExtension>);
+    fn add_macro(&mut self, scope: Mark, def: ast::MacroDef);
+    fn add_ext(&mut self, ident: ast::Ident, ext: Rc<SyntaxExtension>);
     fn add_expansions_at_stmt(&mut self, id: ast::NodeId, macros: Vec<Mark>);
 
     fn find_attr_invoc(&mut self, attrs: &mut Vec<Attribute>) -> Option<Attribute>;
-    fn resolve_invoc(&mut self, invoc: &Invocation) -> Option<Rc<SyntaxExtension>>;
-}
-
-pub enum LoadedMacro {
-    Def(ast::MacroDef),
-    CustomDerive(String, Box<MultiItemModifier>),
+    fn resolve_invoc(&mut self, scope: Mark, invoc: &Invocation) -> Option<Rc<SyntaxExtension>>;
+    fn resolve_derive_mode(&mut self, ident: ast::Ident) -> Option<Rc<MultiItemModifier>>;
 }
 
 pub struct DummyResolver;
 
 impl Resolver for DummyResolver {
-    fn load_crate(&mut self, _extern_crate: &ast::Item, _allows_macros: bool) -> Vec<LoadedMacro> {
-        Vec::new()
-    }
     fn next_node_id(&mut self) -> ast::NodeId { ast::DUMMY_NODE_ID }
+    fn get_module_scope(&mut self, _id: ast::NodeId) -> Mark { Mark::root() }
 
     fn visit_expansion(&mut self, _invoc: Mark, _expansion: &Expansion) {}
-    fn add_macro(&mut self, _scope: Mark, _ident: ast::Ident, _ext: Rc<SyntaxExtension>) {}
+    fn add_macro(&mut self, _scope: Mark, _def: ast::MacroDef) {}
+    fn add_ext(&mut self, _ident: ast::Ident, _ext: Rc<SyntaxExtension>) {}
     fn add_expansions_at_stmt(&mut self, _id: ast::NodeId, _macros: Vec<Mark>) {}
 
     fn find_attr_invoc(&mut self, _attrs: &mut Vec<Attribute>) -> Option<Attribute> { None }
-    fn resolve_invoc(&mut self, _invoc: &Invocation) -> Option<Rc<SyntaxExtension>> { None }
+    fn resolve_derive_mode(&mut self, _ident: ast::Ident) -> Option<Rc<MultiItemModifier>> { None }
+    fn resolve_invoc(&mut self, _scope: Mark, _invoc: &Invocation) -> Option<Rc<SyntaxExtension>> {
+        None
+    }
 }
 
 #[derive(Clone)]
@@ -506,7 +557,9 @@ pub struct ExpansionData {
     pub depth: usize,
     pub backtrace: ExpnId,
     pub module: Rc<ModuleData>,
-    pub in_block: bool,
+
+    // True if non-inline modules without a `#[path]` are forbidden at the root of this expansion.
+    pub no_noninline_mod: bool,
 }
 
 /// One of these is made during expansion and incrementally updated as we go;
@@ -518,8 +571,7 @@ pub struct ExtCtxt<'a> {
     pub ecfg: expand::ExpansionConfig<'a>,
     pub crate_root: Option<&'static str>,
     pub resolver: &'a mut Resolver,
-    pub exported_macros: Vec<ast::MacroDef>,
-    pub derive_modes: HashMap<InternedString, Box<MultiItemModifier>>,
+    pub resolve_err_count: usize,
     pub current_expansion: ExpansionData,
 }
 
@@ -533,15 +585,14 @@ impl<'a> ExtCtxt<'a> {
             cfg: cfg,
             ecfg: ecfg,
             crate_root: None,
-            exported_macros: Vec::new(),
             resolver: resolver,
-            derive_modes: HashMap::new(),
+            resolve_err_count: 0,
             current_expansion: ExpansionData {
                 mark: Mark::root(),
                 depth: 0,
                 backtrace: NO_EXPANSION,
                 module: Rc::new(ModuleData { mod_path: Vec::new(), directory: PathBuf::new() }),
-                in_block: false,
+                no_noninline_mod: false,
             },
         }
     }
@@ -611,31 +662,6 @@ impl<'a> ExtCtxt<'a> {
         });
     }
     pub fn bt_pop(&mut self) {}
-
-    pub fn insert_macro(&mut self, def: ast::MacroDef) {
-        if def.export {
-            self.exported_macros.push(def.clone());
-        }
-        if def.use_locally {
-            let ext = macro_rules::compile(self, &def);
-            self.resolver.add_macro(self.current_expansion.mark, def.ident, Rc::new(ext));
-        }
-    }
-
-    pub fn insert_custom_derive(&mut self, name: &str, ext: Box<MultiItemModifier>, sp: Span) {
-        if !self.ecfg.enable_rustc_macro() {
-            feature_gate::emit_feature_err(&self.parse_sess.span_diagnostic,
-                                           "rustc_macro",
-                                           sp,
-                                           feature_gate::GateIssue::Language,
-                                           "loading custom derive macro crates \
-                                            is experimentally supported");
-        }
-        let name = token::intern_and_get_ident(name);
-        if self.derive_modes.insert(name.clone(), ext).is_some() {
-            self.span_err(sp, &format!("cannot shadow existing derive mode `{}`", name));
-        }
-    }
 
     pub fn struct_span_warn(&self,
                             sp: Span,
@@ -723,7 +749,7 @@ impl<'a> ExtCtxt<'a> {
 
         for (name, extension) in user_exts {
             let ident = ast::Ident::with_empty_ctxt(name);
-            self.resolver.add_macro(Mark::root(), ident, Rc::new(extension));
+            self.resolver.add_ext(ident, Rc::new(extension));
         }
 
         let mut module = ModuleData {
@@ -816,4 +842,18 @@ pub fn get_exprs_from_tts(cx: &mut ExtCtxt,
         }
     }
     Some(es)
+}
+
+pub struct ChangeSpan {
+    pub span: Span
+}
+
+impl Folder for ChangeSpan {
+    fn new_span(&mut self, _sp: Span) -> Span {
+        self.span
+    }
+
+    fn fold_mac(&mut self, mac: ast::Mac) -> ast::Mac {
+        fold::noop_fold_mac(mac, self)
+    }
 }

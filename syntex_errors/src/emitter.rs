@@ -99,8 +99,10 @@ impl EmitterWriter {
     pub fn new(dst: Box<Write + Send>,
                code_map: Option<Rc<CodeMapper>>)
                -> EmitterWriter {
-        EmitterWriter { dst: Raw(dst),
-                        cm: code_map}
+        EmitterWriter {
+            dst: Raw(dst),
+            cm: code_map,
+        }
     }
 
     fn preprocess_annotations(&self, msp: &MultiSpan) -> Vec<FileWithAnnotatedLines> {
@@ -473,7 +475,8 @@ impl EmitterWriter {
         if spans_updated {
             children.push(SubDiagnostic {
                 level: Level::Note,
-                message: "this error originates in a macro from the standard library".to_string(),
+                message:"this error originates in a macro outside of the current \
+                         crate".to_string(),
                 span: MultiSpan::new(),
                 render_span: None
             });
