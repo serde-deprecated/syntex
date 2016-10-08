@@ -18,7 +18,6 @@ use codemap::{ExpnInfo, NameAndSpan, MacroBang, MacroAttribute};
 use syntax_pos::{self, Span, ExpnId};
 use config::{is_test_or_bench, StripUnconfigured};
 use ext::base::*;
-use ext::decorator::expand_annotatable;
 use feature_gate::{self, Features};
 use fold;
 use fold::*;
@@ -469,7 +468,7 @@ impl<'a> Parser<'a> {
         Ok(match kind {
             ExpansionKind::Items => {
                 let mut items = SmallVector::zero();
-                while let Some(item) = self.parse_item()? {
+                while let Some(item) = try!(self.parse_item()) {
                     items.push(item);
                 }
                 Expansion::Items(items)
@@ -477,30 +476,30 @@ impl<'a> Parser<'a> {
             ExpansionKind::TraitItems => {
                 let mut items = SmallVector::zero();
                 while self.token != token::Eof {
-                    items.push(self.parse_trait_item()?);
+                    items.push(try!(self.parse_trait_item()));
                 }
                 Expansion::TraitItems(items)
             }
             ExpansionKind::ImplItems => {
                 let mut items = SmallVector::zero();
                 while self.token != token::Eof {
-                    items.push(self.parse_impl_item()?);
+                    items.push(try!(self.parse_impl_item()));
                 }
                 Expansion::ImplItems(items)
             }
             ExpansionKind::Stmts => {
                 let mut stmts = SmallVector::zero();
                 while self.token != token::Eof {
-                    if let Some(stmt) = self.parse_full_stmt(macro_legacy_warnings)? {
+                    if let Some(stmt) = try!(self.parse_full_stmt(macro_legacy_warnings)) {
                         stmts.push(stmt);
                     }
                 }
                 Expansion::Stmts(stmts)
             }
-            ExpansionKind::Expr => Expansion::Expr(self.parse_expr()?),
-            ExpansionKind::OptExpr => Expansion::OptExpr(Some(self.parse_expr()?)),
-            ExpansionKind::Ty => Expansion::Ty(self.parse_ty()?),
-            ExpansionKind::Pat => Expansion::Pat(self.parse_pat()?),
+            ExpansionKind::Expr => Expansion::Expr(try!(self.parse_expr())),
+            ExpansionKind::OptExpr => Expansion::OptExpr(Some(try!(self.parse_expr()))),
+            ExpansionKind::Ty => Expansion::Ty(try!(self.parse_ty())),
+            ExpansionKind::Pat => Expansion::Pat(try!(self.parse_pat())),
         })
     }
 

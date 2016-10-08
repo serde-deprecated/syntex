@@ -329,14 +329,14 @@ impl fmt::Display for NodeId {
     }
 }
 
-impl serialize::UseSpecializedEncodable for NodeId {
-    fn default_encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+impl serialize::Encodable for NodeId {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
         s.emit_u32(self.0)
     }
 }
 
-impl serialize::UseSpecializedDecodable for NodeId {
-    fn default_decode<D: Decoder>(d: &mut D) -> Result<NodeId, D::Error> {
+impl serialize::Decodable for NodeId {
+    fn decode<D: Decoder>(d: &mut D) -> Result<NodeId, D::Error> {
         d.read_u32().map(NodeId)
     }
 }

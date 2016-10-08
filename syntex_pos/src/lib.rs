@@ -111,8 +111,8 @@ pub struct SpanLabel {
     pub label: Option<String>,
 }
 
-impl serialize::UseSpecializedEncodable for Span {
-    fn default_encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+impl Encodable for Span {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
         s.emit_struct("Span", 2, |s| {
             try!(s.emit_struct_field("lo", 0, |s| {
                 self.lo.encode(s)
@@ -125,11 +125,11 @@ impl serialize::UseSpecializedEncodable for Span {
     }
 }
 
-impl serialize::UseSpecializedDecodable for Span {
-    fn default_decode<D: Decoder>(d: &mut D) -> Result<Span, D::Error> {
+impl Decodable for Span {
+    fn decode<D: Decoder>(d: &mut D) -> Result<Span, D::Error> {
         d.read_struct("Span", 2, |d| {
-            let lo = d.read_struct_field("lo", 0, Decodable::decode)?;
-            let hi = d.read_struct_field("hi", 1, Decodable::decode)?;
+            let lo = try!(d.read_struct_field("lo", 0, Decodable::decode));
+            let hi = try!(d.read_struct_field("hi", 1, Decodable::decode));
             Ok(mk_sp(lo, hi))
         })
     }

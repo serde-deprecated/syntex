@@ -1192,8 +1192,8 @@ impl<'a> Parser<'a> {
         let lo = self.span.lo;
 
         let (name, node) = if self.eat_keyword(keywords::Type) {
-            let TyParam {ident, bounds, default, ..} = self.parse_ty_param(vec![])?;
-            self.expect(&token::Semi)?;
+            let TyParam {ident, bounds, default, ..} = try!(self.parse_ty_param(vec![]));
+            try!(self.expect(&token::Semi));
             (ident, TraitItemKind::Type(bounds, default))
         } else if self.is_const_item() {
                 try!(self.expect_keyword(keywords::Const));
@@ -1214,16 +1214,16 @@ impl<'a> Parser<'a> {
             // trait item macro.
             // code copied from parse_macro_use_or_failure... abstraction!
             let lo = self.span.lo;
-            let pth = self.parse_path(PathStyle::Mod)?;
-            self.expect(&token::Not)?;
+            let pth = try!(self.parse_path(PathStyle::Mod));
+            try!(self.expect(&token::Not));
 
             // eat a matched-delimiter token tree:
-            let delim = self.expect_open_delim()?;
-            let tts = self.parse_seq_to_end(&token::CloseDelim(delim),
+            let delim = try!(self.expect_open_delim());
+            let tts = try!(self.parse_seq_to_end(&token::CloseDelim(delim),
                                             SeqSep::none(),
-                                            |pp| pp.parse_token_tree())?;
+                                            |pp| pp.parse_token_tree()));
             if delim != token::Brace {
-                self.expect(&token::Semi)?
+                try!(self.expect(&token::Semi))
             }
 
             let mac = spanned(lo, self.last_span.hi, Mac_ { path: pth, tts: tts });
@@ -1241,7 +1241,7 @@ impl<'a> Parser<'a> {
                                 break;
                             }
                             token::OpenDelim(token::Brace) => {
-                                self.parse_token_tree()?;
+                                try!(self.parse_token_tree());
                                 break;
                             }
                             _ => self.bump(),
@@ -1252,17 +1252,17 @@ impl<'a> Parser<'a> {
                 }
             };
 
-            let ident = self.parse_ident()?;
-            let mut generics = self.parse_generics()?;
+            let ident = try!(self.parse_ident());
+            let mut generics = try!(self.parse_generics());
 
-            let d = self.parse_fn_decl_with_self(|p: &mut Parser<'a>|{
+            let d = try!(self.parse_fn_decl_with_self(|p: &mut Parser<'a>|{
                 // This is somewhat dubious; We don't want to allow
                 // argument names to be left off if there is a
                 // definition...
                 p.parse_arg_general(false)
-            })?;
+            }));
 
-            generics.where_clause = self.parse_where_clause()?;
+            generics.where_clause = try!(self.parse_where_clause());
             let sig = ast::MethodSig {
                 unsafety: unsafety,
                 constness: constness,
@@ -1279,7 +1279,7 @@ impl<'a> Parser<'a> {
                 }
                 token::OpenDelim(token::Brace) => {
                     debug!("parse_trait_methods(): parsing provided method");
-                    let (inner_attrs, body) = self.parse_inner_attrs_and_block()?;
+                    let (inner_attrs, body) = try!(self.parse_inner_attrs_and_block());
                     attrs.extend(inner_attrs.iter().cloned());
                     Some(body)
                 }
@@ -1398,7 +1398,7 @@ impl<'a> Parser<'a> {
 
             // Parse the `; e` in `[ i32; e ]`
             // where `e` is a const expression
-            let t = match self.maybe_parse_fixed_length_of_vec()? {
+            let t = match try!(self.maybe_parse_fixed_length_of_vec()) {
                 None => TyKind::Slice(t),
                 Some(suffix) => TyKind::Array(t, suffix)
             };
@@ -1430,11 +1430,11 @@ impl<'a> Parser<'a> {
 
             TyKind::Path(Some(qself), path)
         } else if self.token.is_path_start() {
-            let path = self.parse_path(PathStyle::Type)?;
+            let path = try!(self.parse_path(PathStyle::Type));
             if self.eat(&token::Not) {
                 // MACRO INVOCATION
-                let delim = self.expect_open_delim()?;
-                let tts = self.parse_seq_to_end(&token::CloseDelim(delim),
+                let delim = try!(self.expect_open_delim());
+                let tts = try!(self.parse_seq_to_end(&token::CloseDelim(delim),
                                                 SeqSep::none(),
                                                 |p| p.parse_token_tree()));
                 let hi = self.span.hi;
@@ -1938,7 +1938,7 @@ impl<'a> Parser<'a> {
     {
         let mut res = Vec::new();
         loop {
-            let attrs = self.parse_outer_attributes()?;
+            let attrs = try!(self.parse_outer_attributes());
             match self.token {
                 token::Lifetime(_) => {
                     let lifetime = try!(self.parse_lifetime());
@@ -2333,10 +2333,10 @@ impl<'a> Parser<'a> {
                     // `!`, as an operator, is prefix, so we know this isn't that
                     if self.eat(&token::Not) {
                         // MACRO INVOCATION expression
-                        let delim = self.expect_open_delim()?;
-                        let tts = self.parse_seq_to_end(&token::CloseDelim(delim),
+                        let delim = try!(self.expect_open_delim());
+                        let tts = try!(self.parse_seq_to_end(&token::CloseDelim(delim),
                                                         SeqSep::none(),
-                                                        |p| p.parse_token_tree())?;
+                                                        |p| p.parse_token_tree()));
                         let hi = self.last_span.hi;
                         return Ok(self.mk_mac_expr(lo, hi, Mac_ { path: pth, tts: tts }, attrs));
                     }
@@ -2379,7 +2379,7 @@ impl<'a> Parser<'a> {
         let mut fields = Vec::new();
         let mut base = None;
 
-        attrs.extend(self.parse_inner_attributes()?);
+        attrs.extend(try!(self.parse_inner_attributes()));
 
         while self.token != token::CloseDelim(token::Brace) {
             if self.eat(&token::DotDot) {
@@ -2416,7 +2416,7 @@ impl<'a> Parser<'a> {
         }
 
         let hi = self.span.hi;
-        self.expect(&token::CloseDelim(token::Brace))?;
+        try!(self.expect(&token::CloseDelim(token::Brace)));
         return Ok(self.mk_expr(lo, hi, ExprKind::Struct(pth, fields, base), attrs));
     }
 
@@ -3601,26 +3601,26 @@ impl<'a> Parser<'a> {
             }
             token::BinOp(token::And) | token::AndAnd => {
                 // Parse &pat / &mut pat
-                self.expect_and()?;
-                let mutbl = self.parse_mutability()?;
+                try!(self.expect_and());
+                let mutbl = try!(self.parse_mutability());
                 if let token::Lifetime(ident) = self.token {
                     return Err(self.fatal(&format!("unexpected lifetime `{}` in pattern", ident)));
                 }
-                let subpat = self.parse_pat()?;
+                let subpat = try!(self.parse_pat());
                 pat = PatKind::Ref(subpat, mutbl);
             }
             token::OpenDelim(token::Paren) => {
                 // Parse (pat,pat,pat,...) as tuple pattern
                 self.bump();
-                let (fields, ddpos) = self.parse_pat_tuple_elements(true)?;
-                self.expect(&token::CloseDelim(token::Paren))?;
+                let (fields, ddpos) = try!(self.parse_pat_tuple_elements(true));
+                try!(self.expect(&token::CloseDelim(token::Paren)));
                 pat = PatKind::Tuple(fields, ddpos);
             }
             token::OpenDelim(token::Bracket) => {
                 // Parse [pat,pat,...] as slice pattern
                 self.bump();
-                let (before, slice, after) = self.parse_pat_vec_elements()?;
-                self.expect(&token::CloseDelim(token::Bracket))?;
+                let (before, slice, after) = try!(self.parse_pat_vec_elements());
+                try!(self.expect(&token::CloseDelim(token::Bracket)));
                 pat = PatKind::Slice(before, slice, after);
             }
             // At this point, token != _, &, &&, (, [
@@ -3645,25 +3645,25 @@ impl<'a> Parser<'a> {
                 // This can give false positives and parse nullary enums,
                 // they are dealt with later in resolve
                 let binding_mode = BindingMode::ByValue(Mutability::Immutable);
-                pat = self.parse_pat_ident(binding_mode)?;
+                pat = try!(self.parse_pat_ident(binding_mode));
             } else if self.token.is_path_start() {
                 // Parse pattern starting with a path
                 let (qself, path) = if self.eat_lt() {
                     // Parse a qualified path
-                    let (qself, path) = self.parse_qualified_path(PathStyle::Expr)?;
+                    let (qself, path) = try!(self.parse_qualified_path(PathStyle::Expr));
                     (Some(qself), path)
                 } else {
                     // Parse an unqualified path
-                    (None, self.parse_path(PathStyle::Expr)?)
+                    (None, try!(self.parse_path(PathStyle::Expr)))
                 };
                 match self.token {
                     token::Not if qself.is_none() => {
                         // Parse macro invocation
                         self.bump();
-                        let delim = self.expect_open_delim()?;
-                        let tts = self.parse_seq_to_end(&token::CloseDelim(delim),
+                        let delim = try!(self.expect_open_delim());
+                        let tts = try!(self.parse_seq_to_end(&token::CloseDelim(delim),
                                                         SeqSep::none(),
-                                                        |p| p.parse_token_tree())?;
+                                                        |p| p.parse_token_tree()));
                         let mac = spanned(lo, self.last_span.hi, Mac_ { path: path, tts: tts });
                         pat = PatKind::Mac(mac);
                     }
@@ -3905,20 +3905,20 @@ impl<'a> Parser<'a> {
             !self.check_keyword(keywords::Union) ||
             self.look_ahead(1, |t| *t == token::Not || *t == token::ModSep)
         } {
-            let pth = self.parse_path(PathStyle::Expr)?;
+            let pth = try!(self.parse_path(PathStyle::Expr));
 
             if !self.eat(&token::Not) {
                 let expr = if self.check(&token::OpenDelim(token::Brace)) {
-                    self.parse_struct_expr(lo, pth, ThinVec::new())?
+                    try!(self.parse_struct_expr(lo, pth, ThinVec::new()))
                 } else {
                     let hi = self.last_span.hi;
                     self.mk_expr(lo, hi, ExprKind::Path(None, pth), ThinVec::new())
                 };
 
-                let expr = self.with_res(Restrictions::RESTRICTION_STMT_EXPR, |this| {
-                    let expr = this.parse_dot_or_call_expr_with(expr, lo, attrs.into())?;
+                let expr = try!(self.with_res(Restrictions::restriction_stmt_expr(), |this| {
+                    let expr = try!(this.parse_dot_or_call_expr_with(expr, lo, attrs.into()));
                     this.parse_assoc_expr_with(0, LhsExpr::AlreadyParsed(expr))
-                })?;
+                }));
 
                 return Ok(Some(Stmt {
                     id: ast::DUMMY_NODE_ID,
@@ -4305,19 +4305,19 @@ impl<'a> Parser<'a> {
             // attributes in `attrs`, and 3. pass in those attributes
             // when parsing formal type param after lifetime defs.
             let mut attrs = vec![];
-            let lifetime_defs = self.parse_lifetime_defs(Some(&mut attrs))?;
+            let lifetime_defs = try!(self.parse_lifetime_defs(Some(&mut attrs)));
             let mut seen_default = false;
             let mut post_lifetime_attrs = Some(attrs);
-            let ty_params = self.parse_seq_to_gt(Some(token::Comma), |p| {
-                p.forbid_lifetime()?;
+            let ty_params = try!(self.parse_seq_to_gt(Some(token::Comma), |p| {
+                try!(p.forbid_lifetime());
                 // Move out of `post_lifetime_attrs` if present. O/w
                 // not first type param: parse attributes anew.
                 let attrs = match post_lifetime_attrs.as_mut() {
-                    None => p.parse_outer_attributes()?,
+                    None => try!(p.parse_outer_attributes()),
                     Some(attrs) => mem::replace(attrs, vec![]),
                 };
                 post_lifetime_attrs = None;
-                let ty_param = p.parse_ty_param(attrs)?;
+                let ty_param = try!(p.parse_ty_param(attrs));
                 if ty_param.default.is_some() {
                     seen_default = true;
                 } else if seen_default {
@@ -4326,7 +4326,7 @@ impl<'a> Parser<'a> {
                                "type parameters with a default must be trailing");
                 }
                 Ok(ty_param)
-            })?;
+            }));
             if let Some(attrs) = post_lifetime_attrs {
                 if !attrs.is_empty() {
                     self.span_err(attrs[0].span,
@@ -4479,9 +4479,9 @@ impl<'a> Parser<'a> {
                 _ => {
                     let bound_lifetimes = if self.eat_keyword(keywords::For) {
                         // Higher ranked constraint.
-                        self.expect(&token::Lt)?;
-                        let lifetime_defs = self.parse_lifetime_defs(None)?;
-                        self.expect_gt()?;
+                        try!(self.expect(&token::Lt));
+                        let lifetime_defs = try!(self.parse_lifetime_defs(None));
+                        try!(self.expect_gt());
                         lifetime_defs
                     } else {
                         vec![]
@@ -4748,7 +4748,7 @@ impl<'a> Parser<'a> {
             if self.eat(&token::OrOr) {
                 Vec::new()
             } else {
-                self.expect(&token::BinOp(token::Or))?;
+                try!(self.expect(&token::BinOp(token::Or)));
                 let args = self.parse_seq_to_before_end(
                     &token::BinOp(token::Or),
                     SeqSep::trailing_allowed(token::Comma),
@@ -4911,14 +4911,14 @@ impl<'a> Parser<'a> {
             self.complain_if_pub_macro(&vis, last_span);
 
             let lo = self.span.lo;
-            let pth = self.parse_path(PathStyle::Mod)?;
-            self.expect(&token::Not)?;
+            let pth = try!(self.parse_path(PathStyle::Mod));
+            try!(self.expect(&token::Not));
 
             // eat a matched-delimiter token tree:
             let delim = try!(self.expect_open_delim());
             let tts = try!(self.parse_seq_to_end(&token::CloseDelim(delim),
                                             SeqSep::none(),
-                                            |p| p.parse_token_tree())?;
+                                            |p| p.parse_token_tree()));
             if delim != token::Brace {
                 try!(self.expect(&token::Semi))
             }
@@ -5047,9 +5047,9 @@ impl<'a> Parser<'a> {
 
     fn parse_late_bound_lifetime_defs(&mut self) -> PResult<'a, Vec<ast::LifetimeDef>> {
         if self.eat_keyword(keywords::For) {
-            self.expect(&token::Lt)?;
-            let lifetime_defs = self.parse_lifetime_defs(None)?;
-            self.expect_gt()?;
+            try!(self.expect(&token::Lt));
+            let lifetime_defs = try!(self.parse_lifetime_defs(None));
+            try!(self.expect_gt());
             Ok(lifetime_defs)
         } else {
             Ok(Vec::new())
@@ -5119,14 +5119,14 @@ impl<'a> Parser<'a> {
 
     /// Parse union Foo { ... }
     fn parse_item_union(&mut self) -> PResult<'a, ItemInfo> {
-        let class_name = self.parse_ident()?;
-        let mut generics = self.parse_generics()?;
+        let class_name = try!(self.parse_ident());
+        let mut generics = try!(self.parse_generics());
 
         let vdata = if self.token.is_keyword(keywords::Where) {
-            generics.where_clause = self.parse_where_clause()?;
-            VariantData::Struct(self.parse_record_struct_body()?, ast::DUMMY_NODE_ID)
+            generics.where_clause = try!(self.parse_where_clause());
+            VariantData::Struct(try!(self.parse_record_struct_body()), ast::DUMMY_NODE_ID)
         } else if self.token == token::OpenDelim(token::Brace) {
-            VariantData::Struct(self.parse_record_struct_body()?, ast::DUMMY_NODE_ID)
+            VariantData::Struct(try!(self.parse_record_struct_body()), ast::DUMMY_NODE_ID)
         } else {
             let token_str = self.this_token_to_string();
             return Err(self.fatal(&format!("expected `where` or `{{` after union \
@@ -5323,7 +5323,7 @@ impl<'a> Parser<'a> {
             self.bump();
             if in_cfg {
                 // This mod is in an external file. Let's go get it!
-                let (m, attrs) = self.eval_src_mod(id, &outer_attrs, id_span)?;
+                let (m, attrs) = try!(self.eval_src_mod(id, &outer_attrs, id_span));
                 Ok((id, m, Some(attrs)))
             } else {
                 let placeholder = ast::Mod { inner: syntax_pos::DUMMY_SP, items: Vec::new() };
@@ -5332,12 +5332,12 @@ impl<'a> Parser<'a> {
         } else {
             let directory = self.directory.clone();
             let restrictions = self.push_directory(id, &outer_attrs);
-            self.expect(&token::OpenDelim(token::Brace))?;
+            try!(self.expect(&token::OpenDelim(token::Brace)));
             let mod_inner_lo = self.span.lo;
-            let attrs = self.parse_inner_attributes()?;
-            let m = self.with_res(restrictions, |this| {
+            let attrs = try!(self.parse_inner_attributes());
+            let m = try!(self.with_res(restrictions, |this| {
                 this.parse_mod_items(&token::CloseDelim(token::Brace), mod_inner_lo)
-            })?;
+            }));
             self.directory = directory;
             Ok((id, ItemKind::Mod(m), Some(attrs)))
         }
@@ -5346,7 +5346,7 @@ impl<'a> Parser<'a> {
     fn push_directory(&mut self, id: Ident, attrs: &[Attribute]) -> Restrictions {
         if let Some(path) = ::attr::first_attr_value_str_by_name(attrs, "path") {
             self.directory.push(&*path);
-            self.restrictions - Restrictions::NO_NONINLINE_MOD
+            self.restrictions - Restrictions::no_noninline_mod()
         } else {
             let default_path = self.id_to_interned_str(id);
             self.directory.push(&*default_path);
@@ -5979,7 +5979,7 @@ impl<'a> Parser<'a> {
                 self.look_ahead(1, |t| t.is_ident() && !t.is_any_keyword()) {
             // UNION ITEM
             self.bump();
-            let (ident, item_, extra_attrs) = self.parse_item_union()?;
+            let (ident, item_, extra_attrs) = try!(self.parse_item_union());
             let last_span = self.last_span;
             let item = self.mk_item(lo,
                                     last_span.hi,
@@ -6034,8 +6034,8 @@ impl<'a> Parser<'a> {
             let mac_lo = self.span.lo;
 
             // item macro.
-            let pth = self.parse_path(PathStyle::Mod)?;
-            self.expect(&token::Not)?;
+            let pth = try!(self.parse_path(PathStyle::Mod));
+            try!(self.expect(&token::Not));
 
             // a 'special' identifier (like what `macro_rules!` uses)
             // is optional. We should eventually unify invoc syntax
@@ -6049,7 +6049,7 @@ impl<'a> Parser<'a> {
             let delim = try!(self.expect_open_delim());
             let tts = try!(self.parse_seq_to_end(&token::CloseDelim(delim),
                                             SeqSep::none(),
-                                            |p| p.parse_token_tree())?;
+                                            |p| p.parse_token_tree()));
             if delim != token::Brace {
                 if !self.eat(&token::Semi) {
                     let last_span = self.last_span;

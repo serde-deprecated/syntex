@@ -123,7 +123,7 @@ fn generic_extension<'cx>(cx: &'cx ExtCtxt,
                 let mut p = Parser::new(cx.parse_sess(), cx.cfg(), Box::new(trncbr));
                 p.directory = cx.current_expansion.module.directory.clone();
                 p.restrictions = match cx.current_expansion.no_noninline_mod {
-                    true => Restrictions::NO_NONINLINE_MOD,
+                    true => Restrictions::no_noninline_mod(),
                     false => Restrictions::empty(),
                 };
                 p.check_unknown_macro_variable();
