@@ -11,7 +11,6 @@ use syntex_syntax::ext::base::{
     MultiItemDecorator,
     MultiItemModifier,
     NamedSyntaxExtension,
-    Resolver,
     SyntaxExtension,
     TTMacroExpander,
 };
@@ -22,12 +21,12 @@ use syntex_syntax::parse::token::intern;
 use syntex_syntax::print::pprust;
 use syntex_syntax::ptr::P;
 
+use super::resolver::Resolver;
 use super::error::Error;
 
 pub type Pass = fn(ast::Crate) -> ast::Crate;
 
 pub struct Registry {
-    macros: Vec<ast::MacroDef>,
     syntax_exts: Vec<NamedSyntaxExtension>,
     pre_expansion_passes: Vec<Box<Pass>>,
     post_expansion_passes: Vec<Box<Pass>>,
@@ -35,28 +34,9 @@ pub struct Registry {
     attrs: Vec<ast::Attribute>,
 }
 
-struct SyntexResolver {
-    macros: Vec<ast::MacroDef>,
-}
-
-impl SyntexResolver {
-    fn new(macros: Vec<ast::MacroDef>) -> Self {
-        SyntexResolver {
-            macros: macros
-        }
-    }
-}
-
-impl Resolver for SyntexResolver {
-    fn load_crate(&mut self, _extern_crate: &ast::Item, _allows_macros: bool) -> Vec<ast::MacroDef> {
-        self.macros.clone()
-    }
-}
-
 impl Registry {
     pub fn new() -> Registry {
         Registry {
-            macros: Vec::new(),
             syntax_exts: Vec::new(),
             pre_expansion_passes: Vec::new(),
             post_expansion_passes: Vec::new(),
@@ -214,8 +194,8 @@ impl Registry {
         ecfg.features = Some(&features);
 
         let cfg = Vec::new();
-        let mut macro_loader = SyntexResolver::new(self.macros.clone());
-        let mut ecx = ExtCtxt::new(&sess, cfg, ecfg, &mut macro_loader);
+        let mut resolver = Resolver::new(sess);
+        let mut ecx = ExtCtxt::new(&sess, cfg, ecfg, &mut resolver);
 
         let krate = expand::expand_crate(&mut ecx, self.syntax_exts, krate);
 

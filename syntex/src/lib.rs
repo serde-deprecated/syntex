@@ -3,6 +3,7 @@ extern crate syntex_errors as errors;
 
 mod error;
 mod registry;
+mod resolver;
 mod stack;
 
 pub use error::Error;
