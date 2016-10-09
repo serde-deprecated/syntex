@@ -72,7 +72,9 @@ macro_rules! configure {
 impl<'a> StripUnconfigured<'a> {
     pub fn configure<T: HasAttrs>(&mut self, node: T) -> Option<T> {
         let node = self.process_cfg_attrs(node);
-        if self.in_cfg(node.attrs()) { Some(node) } else { None }
+        // FIXME(syntex): ignore unknown attributes
+        //if self.in_cfg(node.attrs()) { Some(node) } else { None }
+        Some(node)
     }
 
     pub fn process_cfg_attrs<T: HasAttrs>(&mut self, node: T) -> T {

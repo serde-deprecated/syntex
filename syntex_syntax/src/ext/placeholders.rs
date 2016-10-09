@@ -101,42 +101,56 @@ impl<'a, 'b> Folder for PlaceholderExpander<'a, 'b> {
         match item.node {
             // Scope placeholder
             ast::ItemKind::Mac(_) if item.id == ast::DUMMY_NODE_ID => SmallVector::one(item),
-            ast::ItemKind::Mac(_) => self.remove(item.id).make_items(),
+            // FIXME(syntex): ignore unknown macros
+            ast::ItemKind::Mac(_) if self.expansions.contains_key(&item.id) => self.remove(item.id).make_items(),
             _ => noop_fold_item(item, self),
         }
     }
 
     fn fold_trait_item(&mut self, item: ast::TraitItem) -> SmallVector<ast::TraitItem> {
         match item.node {
-            ast::TraitItemKind::Macro(_) => self.remove(item.id).make_trait_items(),
+            // FIXME(syntex): ignore unknown macros
+            ast::TraitItemKind::Macro(_) if self.expansions.contains_key(&item.id) => self.remove(item.id).make_trait_items(),
             _ => noop_fold_trait_item(item, self),
         }
     }
 
     fn fold_impl_item(&mut self, item: ast::ImplItem) -> SmallVector<ast::ImplItem> {
         match item.node {
-            ast::ImplItemKind::Macro(_) => self.remove(item.id).make_impl_items(),
+            // FIXME(syntex): ignore unknown macros
+            ast::ImplItemKind::Macro(_) if self.expansions.contains_key(&item.id) => self.remove(item.id).make_impl_items(),
             _ => noop_fold_impl_item(item, self),
         }
     }
 
     fn fold_expr(&mut self, expr: P<ast::Expr>) -> P<ast::Expr> {
         match expr.node {
-            ast::ExprKind::Mac(_) => self.remove(expr.id).make_expr(),
+            // FIXME(syntex): ignore unknown macros
+            ast::ExprKind::Mac(_) if self.expansions.contains_key(&expr.id) => self.remove(expr.id).make_expr(),
             _ => expr.map(|expr| noop_fold_expr(expr, self)),
         }
     }
 
     fn fold_opt_expr(&mut self, expr: P<ast::Expr>) -> Option<P<ast::Expr>> {
         match expr.node {
-            ast::ExprKind::Mac(_) => self.remove(expr.id).make_opt_expr(),
+            // FIXME(syntex): ignore unknown macros
+            ast::ExprKind::Mac(_) if self.expansions.contains_key(&expr.id) => self.remove(expr.id).make_opt_expr(),
             _ => noop_fold_opt_expr(expr, self),
         }
     }
 
-    fn fold_stmt(&mut self, stmt: ast::Stmt) -> SmallVector<ast::Stmt> {
+    fn fold_stmt(&mut self, mut stmt: ast::Stmt) -> SmallVector<ast::Stmt> {
         let (style, mut expansion) = match stmt.node {
-            ast::StmtKind::Mac(mac) => (mac.1, self.remove(stmt.id).make_stmts()),
+            // FIXME(syntex): ignore unknown macros
+            ast::StmtKind::Mac(mac) => {
+                println!("placeholder fold_stmt1: {:?} {:?}", stmt.id, self.expansions.contains_key(&stmt.id));
+                if self.expansions.contains_key(&stmt.id) {
+                    (mac.1, self.remove(stmt.id).make_stmts())
+                } else {
+                    stmt.node = ast::StmtKind::Mac(mac);
+                    return noop_fold_stmt(stmt, self);
+                }
+            }
             _ => return noop_fold_stmt(stmt, self),
         };
 
@@ -151,14 +165,16 @@ impl<'a, 'b> Folder for PlaceholderExpander<'a, 'b> {
 
     fn fold_pat(&mut self, pat: P<ast::Pat>) -> P<ast::Pat> {
         match pat.node {
-            ast::PatKind::Mac(_) => self.remove(pat.id).make_pat(),
+            // FIXME(syntex): ignore unknown macros
+            ast::PatKind::Mac(_) if !self.expansions.contains_key(&pat.id) => self.remove(pat.id).make_pat(),
             _ => noop_fold_pat(pat, self),
         }
     }
 
     fn fold_ty(&mut self, ty: P<ast::Ty>) -> P<ast::Ty> {
         match ty.node {
-            ast::TyKind::Mac(_) => self.remove(ty.id).make_ty(),
+            // FIXME(syntex): ignore unknown macros
+            ast::TyKind::Mac(_) if !self.expansions.contains_key(&ty.id) => self.remove(ty.id).make_ty(),
             _ => noop_fold_ty(ty, self),
         }
     }
@@ -211,6 +227,11 @@ impl<'a, 'b> Folder for PlaceholderExpander<'a, 'b> {
             _ => Some(item),
         });
         module
+    }
+
+    fn fold_mac(&mut self, mac: ast::Mac) -> ast::Mac {
+        // FIXME(syntex): ignore unknown macros
+        noop_fold_mac(mac, self)
     }
 }
 
