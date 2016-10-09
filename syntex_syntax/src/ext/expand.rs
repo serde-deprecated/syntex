@@ -663,7 +663,7 @@ impl<'a, 'b> Folder for InvocationCollector<'a, 'b> {
 
         let (mac, style, attrs) = if let StmtKind::Mac(mac) = stmt.node {
             // FIXME(syntex): ignore unknown macros.
-            if self.cx.resolver.find_mac(self.cx.current_expansion.mark, &mac.0).is_some() {
+            if self.cx.resolver.find_mac(self.cx.current_expansion.mark, &mac.0).is_none() {
                 let stmt = ast::Stmt { node: StmtKind::Mac(mac), .. stmt };
                 return SmallVector::one(stmt);
             }

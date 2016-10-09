@@ -143,7 +143,6 @@ impl<'a, 'b> Folder for PlaceholderExpander<'a, 'b> {
         let (style, mut expansion) = match stmt.node {
             // FIXME(syntex): ignore unknown macros
             ast::StmtKind::Mac(mac) => {
-                println!("placeholder fold_stmt1: {:?} {:?}", stmt.id, self.expansions.contains_key(&stmt.id));
                 if self.expansions.contains_key(&stmt.id) {
                     (mac.1, self.remove(stmt.id).make_stmts())
                 } else {
