@@ -4,6 +4,7 @@ use std::rc::Rc;
 use syntex_syntax::ast::{self, Attribute};
 use syntex_syntax::ext::base::{
     self,
+    Determinacy,
     MultiDecorator,
     MultiModifier,
     MultiItemModifier,
@@ -86,7 +87,8 @@ impl<'a> base::Resolver for Resolver<'a> {
         let name = path.segments[0].identifier.name;
         self.find_extension(scope, name)
     }
-    fn resolve_invoc(&mut self, scope: Mark, invoc: &Invocation) -> Option<Rc<SyntaxExtension>> {
+    fn resolve_invoc(&mut self, scope: Mark, invoc: &Invocation, force: bool)
+                     -> Result<Rc<SyntaxExtension>, Determinacy> {
         let (name, span) = match invoc.kind {
             InvocationKind::Bang { ref mac, .. } => {
                 let path = &mac.node.path;
@@ -95,18 +97,22 @@ impl<'a> base::Resolver for Resolver<'a> {
                     // NOTE: Pass macros with module separators through to the generated source.
                     self.session.span_diagnostic.span_err(path.span,
                                                           "expected macro name without module separators");
-                    return None;
+                    return Err(Determinacy::Undetermined);
                 }
                 (path.segments[0].identifier.name, path.span)
             }
             InvocationKind::Attr { ref attr, .. } => (intern(&*attr.name()), attr.span),
         };
 
-        self.find_extension(scope, name).or_else(|| {
-            let mut err =
-                self.session.span_diagnostic.struct_span_err(span, &format!("macro undefined: '{}!'", name));
-            err.emit();
-            None
+        self.find_extension(scope, name).ok_or_else(|| {
+            if force {
+                let mut err =
+                    self.session.span_diagnostic.struct_span_err(span, &format!("macro undefined: '{}!'", name));
+                err.emit();
+                Determinacy::Determined
+            } else {
+                Determinacy::Undetermined
+            }
         })
     }
     fn resolve_derive_mode(&mut self, ident: ast::Ident) -> Option<Rc<MultiItemModifier>> {

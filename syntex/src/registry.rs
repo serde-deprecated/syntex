@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
+use std::rc::Rc;
 
 use syntex_syntax::ast;
 use syntex_syntax::attr;
@@ -11,6 +12,7 @@ use syntex_syntax::ext::base::{
     MultiItemDecorator,
     MultiItemModifier,
     NamedSyntaxExtension,
+    Resolver,
     SyntaxExtension,
     TTMacroExpander,
 };
@@ -21,7 +23,7 @@ use syntex_syntax::parse::token::intern;
 use syntex_syntax::print::pprust;
 use syntex_syntax::ptr::P;
 
-use super::resolver::Resolver;
+use super::resolver;
 use super::error::Error;
 
 pub type Pass = fn(ast::Crate) -> ast::Crate;
@@ -194,10 +196,15 @@ impl Registry {
         ecfg.features = Some(&features);
 
         let cfg = Vec::new();
-        let mut resolver = Resolver::new(sess);
-        let mut ecx = ExtCtxt::new(&sess, cfg, ecfg, &mut resolver);
+        let mut resolver = resolver::Resolver::new(sess);
 
-        let krate = expand::expand_crate(&mut ecx, self.syntax_exts, krate);
+        for (name, ext) in self.syntax_exts {
+            let ident = ast::Ident::with_empty_ctxt(name);
+            resolver.add_ext(ident, Rc::new(ext));
+        }
+
+        let mut ecx = ExtCtxt::new(&sess, cfg, ecfg, &mut resolver);
+        let krate = ecx.monotonic_expander().expand_crate(krate);
 
         let krate = self.post_expansion_passes.iter()
             .fold(krate, |krate, f| (f)(krate));

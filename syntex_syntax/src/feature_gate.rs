@@ -253,9 +253,6 @@ declare_features! (
     // a...b and ...b
     (active, inclusive_range_syntax, "1.7.0", Some(28237)),
 
-    // `expr?`
-    (active, question_mark, "1.9.0", Some(31436)),
-
     // impl specialization (RFC 1210)
     (active, specialization, "1.7.0", Some(31844)),
 
@@ -292,7 +289,7 @@ declare_features! (
     (active, item_like_imports, "1.13.0", Some(35120)),
 
     // Macros 1.1
-    (active, rustc_macro, "1.13.0", Some(35900)),
+    (active, proc_macro, "1.13.0", Some(35900)),
 
     // Allows untagged unions `union U { ... }`
     (active, untagged_unions, "1.13.0", Some(32836)),
@@ -348,6 +345,8 @@ declare_features! (
     (accepted, while_let, "1.0.0", None),
     // Allows `#[deprecated]` attribute
     (accepted, deprecated, "1.9.0", Some(29935)),
+    // `expr?`
+    (accepted, question_mark, "1.14.0", Some(31436)),
 );
 // (changing above list without updating src/doc/reference.md makes @cmr sad)
 
@@ -576,10 +575,10 @@ pub const KNOWN_ATTRIBUTES: &'static [(&'static str, AttributeType, AttributeGat
                                    is an experimental feature",
                                   cfg_fn!(linked_from))),
 
-    ("rustc_macro_derive", Normal, Gated("rustc_macro",
-                                         "the `#[rustc_macro_derive]` attribute \
-                                          is an experimental feature",
-                                         cfg_fn!(rustc_macro))),
+    ("proc_macro_derive", Normal, Gated("proc_macro",
+                                        "the `#[proc_macro_derive]` attribute \
+                                         is an experimental feature",
+                                        cfg_fn!(proc_macro))),
 
     ("rustc_copy_clone_marker", Whitelisted, Gated("rustc_attrs",
                                                    "internal implementation detail",
@@ -658,7 +657,7 @@ const GATED_CFGS: &'static [(&'static str, &'static str, fn(&Features) -> bool)]
     ("target_vendor", "cfg_target_vendor", cfg_fn!(cfg_target_vendor)),
     ("target_thread_local", "cfg_target_thread_local", cfg_fn!(cfg_target_thread_local)),
     ("target_has_atomic", "cfg_target_has_atomic", cfg_fn!(cfg_target_has_atomic)),
-    ("rustc_macro", "rustc_macro", cfg_fn!(rustc_macro)),
+    ("proc_macro", "proc_macro", cfg_fn!(proc_macro)),
 ];
 
 #[derive(Debug, Eq, PartialEq)]
@@ -1071,9 +1070,6 @@ impl<'a> Visitor for PostExpansionVisitor<'a> {
                 gate_feature_post!(&self, inclusive_range_syntax,
                                   e.span,
                                   "inclusive range syntax is experimental");
-            }
-            ast::ExprKind::Try(..) => {
-                gate_feature_post!(&self, question_mark, e.span, "the `?` operator is not stable");
             }
             ast::ExprKind::InPlace(..) => {
                 gate_feature_post!(&self, placement_in_syntax, e.span, EXPLAIN_PLACEMENT_IN);
