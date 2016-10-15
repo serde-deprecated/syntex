@@ -22,7 +22,6 @@ use parse::{self, parser};
 use parse::token;
 use parse::token::{InternedString, str_to_ident};
 use ptr::P;
-use std_inject;
 use util::small_vector::SmallVector;
 
 use std::path::PathBuf;
@@ -527,8 +526,15 @@ pub trait Resolver {
     fn find_extension(&mut self, scope: Mark, name: ast::Name) -> Option<Rc<SyntaxExtension>>;
     // FIXME(syntax): ignore unknown macros
     fn find_mac(&mut self, scope: Mark, mac: &ast::Mac) -> Option<Rc<SyntaxExtension>>;
-    fn resolve_invoc(&mut self, scope: Mark, invoc: &Invocation) -> Option<Rc<SyntaxExtension>>;
+    fn resolve_invoc(&mut self, scope: Mark, invoc: &Invocation, force: bool)
+                     -> Result<Rc<SyntaxExtension>, Determinacy>;
     fn resolve_derive_mode(&mut self, ident: ast::Ident) -> Option<Rc<MultiItemModifier>>;
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum Determinacy {
+    Determined,
+    Undetermined,
 }
 
 pub struct DummyResolver;
@@ -548,8 +554,9 @@ impl Resolver for DummyResolver {
     }
     fn find_mac(&mut self, _scope: Mark, _mac: &ast::Mac) -> Option<Rc<SyntaxExtension>> { None }
     fn resolve_derive_mode(&mut self, _ident: ast::Ident) -> Option<Rc<MultiItemModifier>> { None }
-    fn resolve_invoc(&mut self, _scope: Mark, _invoc: &Invocation) -> Option<Rc<SyntaxExtension>> {
-        None
+    fn resolve_invoc(&mut self, _scope: Mark, _invoc: &Invocation, _force: bool)
+                     -> Result<Rc<SyntaxExtension>, Determinacy> {
+        Err(Determinacy::Determined)
     }
 }
 
@@ -744,28 +751,6 @@ impl<'a> ExtCtxt<'a> {
     }
     pub fn name_of(&self, st: &str) -> ast::Name {
         token::intern(st)
-    }
-
-    pub fn initialize(&mut self, user_exts: Vec<NamedSyntaxExtension>, krate: &ast::Crate) {
-        if std_inject::no_core(&krate) {
-            self.crate_root = None;
-        } else if std_inject::no_std(&krate) {
-            self.crate_root = Some("core");
-        } else {
-            self.crate_root = Some("std");
-        }
-
-        for (name, extension) in user_exts {
-            let ident = ast::Ident::with_empty_ctxt(name);
-            self.resolver.add_ext(ident, Rc::new(extension));
-        }
-
-        let mut module = ModuleData {
-            mod_path: vec![token::str_to_ident(&self.ecfg.crate_name)],
-            directory: PathBuf::from(self.parse_sess.codemap().span_to_filename(krate.span)),
-        };
-        module.directory.pop();
-        self.current_expansion.module = Rc::new(module);
     }
 }
 

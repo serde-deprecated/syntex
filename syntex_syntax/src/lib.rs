@@ -22,6 +22,7 @@
        test(attr(deny(warnings))))]
 #![cfg_attr(not(stage0), deny(warnings))]
 
+extern crate rustc_serialize;
 extern crate term;
 extern crate libc;
 #[macro_use] extern crate log;
@@ -29,7 +30,6 @@ extern crate libc;
 extern crate syntex_errors as errors;
 extern crate syntex_pos as syntax_pos;
 
-extern crate rustc_serialize;
 extern crate rustc_serialize as serialize;
 extern crate unicode_xid;
 
