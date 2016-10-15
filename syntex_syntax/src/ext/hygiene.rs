@@ -15,6 +15,7 @@
 //! and definition contexts*. J. Funct. Program. 22, 2 (March 2012), 181-216.
 //! DOI=10.1017/S0956796812000093 http://dx.doi.org/10.1017/S0956796812000093
 
+use ast::NodeId;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
@@ -29,7 +30,7 @@ pub struct SyntaxContextData {
     pub prev_ctxt: SyntaxContext,
 }
 
-/// A mark represents a unique id associated with a macro expansion.
+/// A mark is a unique id associated with a macro expansion.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
 pub struct Mark(u32);
 
@@ -39,6 +40,19 @@ impl Mark {
             let next_mark = Mark(data.next_mark.0 + 1);
             ::std::mem::replace(&mut data.next_mark, next_mark)
         })
+    }
+
+    /// The mark of the theoretical expansion that generates freshly parsed, unexpanded AST.
+    pub fn root() -> Self {
+        Mark(0)
+    }
+
+    pub fn from_placeholder_id(id: NodeId) -> Self {
+        Mark(id.as_u32())
+    }
+
+    pub fn as_u32(&self) -> u32 {
+        self.0
     }
 }
 
@@ -52,8 +66,8 @@ impl HygieneData {
     fn new() -> Self {
         HygieneData {
             syntax_contexts: vec![SyntaxContextData {
-                outer_mark: Mark(0), // the null mark
-                prev_ctxt: SyntaxContext(0), // the empty context
+                outer_mark: Mark::root(),
+                prev_ctxt: SyntaxContext::empty(),
             }],
             markings: HashMap::new(),
             next_mark: Mark(1),

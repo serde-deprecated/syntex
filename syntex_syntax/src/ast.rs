@@ -27,7 +27,9 @@ use tokenstream::{TokenTree};
 
 use std::fmt;
 use std::rc::Rc;
-use serialize::{Encodable, Decodable, Encoder, Decoder};
+use std::u32;
+
+use serialize::{self, Encodable, Decodable, Encoder, Decoder};
 
 /// A name is a part of an identifier, representing a string or gensym. It's
 /// the result of interning.
@@ -119,6 +121,7 @@ impl fmt::Debug for Lifetime {
 /// A lifetime definition, e.g. `'a: 'b+'c+'d`
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 pub struct LifetimeDef {
+    pub attrs: ThinVec<Attribute>,
     pub lifetime: Lifetime,
     pub bounds: Vec<Lifetime>
 }
@@ -298,17 +301,53 @@ pub struct ParenthesizedParameterData {
     pub output: Option<P<Ty>>,
 }
 
-pub type CrateNum = u32;
+#[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash, Debug)]
+pub struct NodeId(u32);
 
-pub type NodeId = u32;
+impl NodeId {
+    pub fn new(x: usize) -> NodeId {
+        assert!(x < (u32::MAX as usize));
+        NodeId(x as u32)
+    }
+
+    pub fn from_u32(x: u32) -> NodeId {
+        NodeId(x)
+    }
+
+    pub fn as_usize(&self) -> usize {
+        self.0 as usize
+    }
+
+    pub fn as_u32(&self) -> u32 {
+        self.0
+    }
+}
+
+impl fmt::Display for NodeId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
+
+impl serialize::Encodable for NodeId {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        s.emit_u32(self.0)
+    }
+}
+
+impl serialize::Decodable for NodeId {
+    fn decode<D: Decoder>(d: &mut D) -> Result<NodeId, D::Error> {
+        d.read_u32().map(NodeId)
+    }
+}
 
 /// Node id used to represent the root of the crate.
-pub const CRATE_NODE_ID: NodeId = 0;
+pub const CRATE_NODE_ID: NodeId = NodeId(0);
 
 /// When parsing and doing expansions, we initially give all AST nodes this AST
 /// node value. Then later, in the renumber pass, we renumber them to have
 /// small, positive ids.
-pub const DUMMY_NODE_ID: NodeId = !0;
+pub const DUMMY_NODE_ID: NodeId = NodeId(!0);
 
 /// The AST represents all type param bounds as types.
 /// typeck::collect::compute_bounds matches these against
@@ -332,6 +371,7 @@ pub type TyParamBounds = P<[TyParamBound]>;
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 pub struct TyParam {
+    pub attrs: ThinVec<Attribute>,
     pub ident: Ident,
     pub id: NodeId,
     pub bounds: TyParamBounds,
@@ -362,6 +402,7 @@ impl Generics {
 }
 
 impl Default for Generics {
+    /// Creates an instance of `Generics`.
     fn default() ->  Generics {
         Generics {
             lifetimes: Vec::new(),
@@ -554,15 +595,15 @@ impl Pat {
             PatKind::Box(ref s) | PatKind::Ref(ref s, _) => {
                 s.walk(it)
             }
-            PatKind::Vec(ref before, ref slice, ref after) => {
+            PatKind::Slice(ref before, ref slice, ref after) => {
                 before.iter().all(|p| p.walk(it)) &&
                 slice.iter().all(|p| p.walk(it)) &&
                 after.iter().all(|p| p.walk(it))
             }
             PatKind::Wild |
             PatKind::Lit(_) |
-            PatKind::Range(_, _) |
-            PatKind::Ident(_, _, _) |
+            PatKind::Range(..) |
+            PatKind::Ident(..) |
             PatKind::Path(..) |
             PatKind::Mac(_) => {
                 true
@@ -630,8 +671,8 @@ pub enum PatKind {
     /// A range pattern, e.g. `1...2`
     Range(P<Expr>, P<Expr>),
     /// `[a, b, ..i, y, z]` is represented as:
-    ///     `PatKind::Vec(box [a, b], Some(i), box [y, z])`
-    Vec(Vec<P<Pat>>, Option<P<Pat>>, Vec<P<Pat>>),
+    ///     `PatKind::Slice(box [a, b], Some(i), box [y, z])`
+    Slice(Vec<P<Pat>>, Option<P<Pat>>, Vec<P<Pat>>),
     /// A macro pattern; pre-expansion
     Mac(Mac),
 }
@@ -1392,10 +1433,10 @@ pub struct BareFnTy {
 /// The different kinds of types recognized by the compiler
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
 pub enum TyKind {
-    /// A variable-length array (`[T]`)
-    Vec(P<Ty>),
+    /// A variable-length slice (`[T]`)
+    Slice(P<Ty>),
     /// A fixed length array (`[T; n]`)
-    FixedLengthVec(P<Ty>, P<Expr>),
+    Array(P<Ty>, P<Expr>),
     /// A raw pointer (`*const T` or `*mut T`)
     Ptr(MutTy),
     /// A reference (`&'a T` or `&'a mut T`)
@@ -1886,7 +1927,7 @@ pub enum ItemKind {
     /// A union definition (`union` or `pub union`).
     ///
     /// E.g. `union Foo<A, B> { x: A, y: B }`
-    Union(VariantData, Generics), // FIXME: not yet implemented
+    Union(VariantData, Generics),
     /// A Trait declaration (`trait` or `pub trait`).
     ///
     /// E.g. `trait Foo { .. }` or `trait Foo<T> { .. }`

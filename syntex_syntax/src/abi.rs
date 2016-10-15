@@ -24,6 +24,7 @@ pub enum Os {
     Netbsd,
     Openbsd,
     NaCl,
+    Haiku,
     Solaris,
 }
 
@@ -39,6 +40,7 @@ pub enum Abi {
     Vectorcall,
     Aapcs,
     Win64,
+    SysV64,
 
     // Multiplatform ABIs second
     Rust,
@@ -86,6 +88,7 @@ const AbiDatas: &'static [AbiData] = &[
     AbiData {abi: Abi::Vectorcall, name: "vectorcall"},
     AbiData {abi: Abi::Aapcs, name: "aapcs" },
     AbiData {abi: Abi::Win64, name: "win64" },
+    AbiData {abi: Abi::SysV64, name: "sysv64" },
 
     // Cross-platform ABIs
     //
@@ -144,6 +147,7 @@ impl fmt::Display for Os {
             Os::Netbsd => "netbsd".fmt(f),
             Os::Openbsd => "openbsd".fmt(f),
             Os::NaCl => "nacl".fmt(f),
+            Os::Haiku => "haiku".fmt(f),
             Os::Solaris => "solaris".fmt(f),
         }
     }
