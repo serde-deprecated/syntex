@@ -1,13 +1,58 @@
 use ast::{self, Name};
 use attr::{self, HasAttrs};
+use fold::*;
 use codemap::{ExpnInfo, MacroAttribute, NameAndSpan, respan};
 use ext::base::*;
 use ext::build::AstBuilder;
-use ext::expand::{MacroExpander, expand_multi_modified};
 use parse::token::intern;
+use ptr::P;
 use util::small_vector::SmallVector;
 
-pub fn expand_annotatable(
+pub fn expand_attributes(cx: &mut ExtCtxt, krate: ast::Crate) -> ast::Crate {
+    MacroExpander { cx: cx }.fold_crate(krate)
+}
+
+struct MacroExpander<'a, 'b: 'a> {
+    cx: &'a mut ExtCtxt<'b>,
+}
+
+impl<'a, 'b: 'a> Folder for MacroExpander<'a, 'b> {
+    fn fold_item(&mut self, item: P<ast::Item>) -> SmallVector<P<ast::Item>> {
+        let annotatable = Annotatable::Item(item);
+        expand_annotatable(annotatable, self).into_iter().flat_map(|annotatable| {
+            match annotatable {
+                Annotatable::Item(item) => noop_fold_item(item, self),
+                _ => panic!()
+            }
+        }).collect()
+    }
+
+    fn fold_trait_item(&mut self, item: ast::TraitItem) -> SmallVector<ast::TraitItem> {
+        let annotatable = Annotatable::TraitItem(P(item));
+        expand_annotatable(annotatable, self).into_iter().flat_map(|annotatable| {
+            match annotatable {
+                Annotatable::TraitItem(item) => noop_fold_trait_item(item.unwrap(), self),
+                _ => panic!()
+            }
+        }).collect()
+    }
+
+    fn fold_impl_item(&mut self, item: ast::ImplItem) -> SmallVector<ast::ImplItem> {
+        let annotatable = Annotatable::ImplItem(P(item));
+        expand_annotatable(annotatable, self).into_iter().flat_map(|annotatable| {
+            match annotatable {
+                Annotatable::ImplItem(item) => noop_fold_impl_item(item.unwrap(), self),
+                _ => panic!()
+            }
+        }).collect()
+    }
+
+    fn fold_mac(&mut self, mac: ast::Mac) -> ast::Mac {
+        noop_fold_mac(mac, self)
+    }
+}
+
+fn expand_annotatable(
     mut item: Annotatable,
     fld: &mut MacroExpander,
 ) -> SmallVector<Annotatable> {
@@ -17,8 +62,7 @@ pub fn expand_annotatable(
     item = expand_1(item, fld, &mut out_items, &mut new_attrs);
 
     item = item.map_attrs(|_| new_attrs);
-    let expanded = expand_multi_modified(item, fld);
-    out_items.push_all(expanded);
+    out_items.push(item);
 
     out_items
 }
@@ -207,7 +251,8 @@ fn expand_3(
     out_items: &mut SmallVector<Annotatable>,
     mname: Name,
 ) -> Expansion {
-    match fld.cx.syntax_env.find(mname) {
+    let scope = fld.cx.current_expansion.mark;
+    match fld.cx.resolver.find_extension(scope, mname) {
         Some(rc) => match *rc {
             MultiDecorator(ref mac) => {
                 attr::mark_used(&attr);

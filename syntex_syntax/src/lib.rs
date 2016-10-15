@@ -114,7 +114,7 @@ pub mod print {
 pub mod ext {
     pub mod base;
     pub mod build;
-    //pub mod decorator;
+    pub mod decorator;
     pub mod env;
     pub mod expand;
     pub mod placeholders;

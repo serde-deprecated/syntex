@@ -18,6 +18,7 @@ use codemap::{ExpnInfo, NameAndSpan, MacroBang, MacroAttribute};
 use syntax_pos::{self, Span, ExpnId};
 use config::{is_test_or_bench, StripUnconfigured};
 use ext::base::*;
+use ext::decorator::expand_attributes;
 use feature_gate::{self, Features};
 use fold;
 use fold::*;
@@ -186,8 +187,11 @@ impl<'a, 'b> MacroExpander<'a, 'b> {
         MacroExpander { cx: cx, monotonic: monotonic }
     }
 
-    fn expand_crate(&mut self, mut krate: ast::Crate) -> ast::Crate {
+    fn expand_crate(&mut self, krate: ast::Crate) -> ast::Crate {
         let err_count = self.cx.parse_sess.span_diagnostic.err_count();
+
+        // FIXME(syntex): Expand attributes
+        let mut krate = expand_attributes(self.cx, krate);
 
         let krate_item = Expansion::Items(SmallVector::one(P(ast::Item {
             attrs: krate.attrs,
@@ -313,8 +317,8 @@ impl<'a, 'b> MacroExpander<'a, 'b> {
 
         match *ext {
             MultiModifier(ref mac) => {
-                let item = mac.expand(self.cx, attr.span, &attr.node.value, item);
-                kind.expect_from_annotatables(item)
+                let items = mac.expand(self.cx, attr.span, &attr.node.value, item);
+                kind.expect_from_annotatables(items)
             }
             MultiDecorator(ref mac) => {
                 let mut items = Vec::new();

@@ -61,12 +61,12 @@ impl<'a> base::Resolver for Resolver<'a> {
     fn find_attr_invoc(&mut self, attrs: &mut Vec<Attribute>) -> Option<Attribute> {
         for i in 0..attrs.len() {
             let name = intern(&attrs[i].name());
-            match self.extensions.get(&name) {
-                Some(ext) => match **ext {
+
+            if let Some(ext) = self.extensions.get(&name) {
+                match **ext {
                     MultiModifier(..) | MultiDecorator(..) => return Some(attrs.remove(i)),
                     _ => {}
-                },
-                None => {}
+                }
             }
         }
         None

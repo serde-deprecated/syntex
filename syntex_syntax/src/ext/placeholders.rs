@@ -165,7 +165,7 @@ impl<'a, 'b> Folder for PlaceholderExpander<'a, 'b> {
     fn fold_pat(&mut self, pat: P<ast::Pat>) -> P<ast::Pat> {
         match pat.node {
             // FIXME(syntex): ignore unknown macros
-            ast::PatKind::Mac(_) if !self.expansions.contains_key(&pat.id) => self.remove(pat.id).make_pat(),
+            ast::PatKind::Mac(_) if self.expansions.contains_key(&pat.id) => self.remove(pat.id).make_pat(),
             _ => noop_fold_pat(pat, self),
         }
     }
@@ -173,7 +173,7 @@ impl<'a, 'b> Folder for PlaceholderExpander<'a, 'b> {
     fn fold_ty(&mut self, ty: P<ast::Ty>) -> P<ast::Ty> {
         match ty.node {
             // FIXME(syntex): ignore unknown macros
-            ast::TyKind::Mac(_) if !self.expansions.contains_key(&ty.id) => self.remove(ty.id).make_ty(),
+            ast::TyKind::Mac(_) if self.expansions.contains_key(&ty.id) => self.remove(ty.id).make_ty(),
             _ => noop_fold_ty(ty, self),
         }
     }
@@ -222,7 +222,8 @@ impl<'a, 'b> Folder for PlaceholderExpander<'a, 'b> {
     fn fold_mod(&mut self, module: ast::Mod) -> ast::Mod {
         let mut module = noop_fold_mod(module, self);
         module.items = module.items.move_flat_map(|item| match item.node {
-            ast::ItemKind::Mac(_) => None, // remove scope placeholders from modules
+            // FIXME(syntex): ignore unknown macros
+            ast::ItemKind::Mac(_) if self.expansions.contains_key(&item.id) => None, // remove scope placeholders from modules
             _ => Some(item),
         });
         module
