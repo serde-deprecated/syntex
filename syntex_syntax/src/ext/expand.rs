@@ -868,8 +868,15 @@ impl<'a, 'b> Folder for InvocationCollector<'a, 'b> {
         };
 
         match ty.node {
-            ast::TyKind::Mac(mac) =>
-                self.collect_bang(mac, Vec::new(), ty.span, ExpansionKind::Ty).make_ty(),
+            ast::TyKind::Mac(mac) => {
+                // FIXME(syntex): ignore unknown macros
+                if self.cx.resolver.find_mac(self.cx.current_expansion.mark, &mac).is_none() {
+                    let ty = ast::Ty { node: ast::TyKind::Mac(mac), .. ty };
+                    return noop_fold_ty(P(ty), self);
+                }
+
+                self.collect_bang(mac, Vec::new(), ty.span, ExpansionKind::Ty).make_ty()
+            }
             _ => unreachable!(),
         }
     }
