@@ -19,7 +19,6 @@ pub struct Resolver<'a> {
     session: &'a ParseSess,
     extensions: HashMap<ast::Name, Rc<SyntaxExtension>>,
     derive_modes: HashMap<ast::Name, Rc<MultiItemModifier>>,
-    next_node_id: ast::NodeId,
 }
 
 impl<'a> Resolver<'a> {
@@ -28,23 +27,13 @@ impl<'a> Resolver<'a> {
             session: session,
             extensions: HashMap::new(),
             derive_modes: HashMap::new(),
-            next_node_id: ast::NodeId::new(1),
         }
     }
 }
 
 impl<'a> base::Resolver for Resolver<'a> {
     fn next_node_id(&mut self) -> ast::NodeId {
-        let id = self.next_node_id;
-
-        match self.next_node_id.as_usize().checked_add(1) {
-            Some(next) => {
-                self.next_node_id = ast::NodeId::new(next);
-            }
-            None => panic!("Input too large, ran out of node ids!")
-        }
-
-        id
+        ast::DUMMY_NODE_ID
     }
     fn get_module_scope(&mut self, _id: ast::NodeId) -> Mark { Mark::root() }
 
