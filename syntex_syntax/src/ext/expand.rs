@@ -639,8 +639,7 @@ impl<'a, 'b> Folder for InvocationCollector<'a, 'b> {
         if let ast::ExprKind::Mac(mac) = expr.node {
             // FIXME(syntex): ignore unknown macros
             if self.cx.resolver.find_mac(self.cx.current_expansion.mark, &mac).is_none() {
-                let expr = ast::Expr { node: ast::ExprKind::Mac(mac), .. expr };
-                return P(noop_fold_expr(expr, self));
+                return P(ast::Expr { node: ast::ExprKind::Mac(mac), .. expr });
             }
 
             self.collect_bang(mac, expr.attrs.into(), expr.span, ExpansionKind::Expr).make_expr()
@@ -656,8 +655,7 @@ impl<'a, 'b> Folder for InvocationCollector<'a, 'b> {
         if let ast::ExprKind::Mac(mac) = expr.node {
             // FIXME(syntex): ignore unknown macros
             if self.cx.resolver.find_mac(self.cx.current_expansion.mark, &mac).is_none() {
-                let expr = ast::Expr { node: ast::ExprKind::Mac(mac), .. expr };
-                return Some(P(noop_fold_expr(expr, self)));
+                return Some(P(ast::Expr { node: ast::ExprKind::Mac(mac), .. expr }));
             }
 
             self.collect_bang(mac, expr.attrs.into(), expr.span, ExpansionKind::OptExpr)
@@ -677,8 +675,7 @@ impl<'a, 'b> Folder for InvocationCollector<'a, 'b> {
             PatKind::Mac(mac) => {
                 // FIXME(syntex): ignore unknown macros
                 if self.cx.resolver.find_mac(self.cx.current_expansion.mark, &mac).is_none() {
-                    let pat = ast::Pat { node: PatKind::Mac(mac), .. pat };
-                    return noop_fold_pat(P(pat), self);
+                    return P(ast::Pat { node: PatKind::Mac(mac), .. pat });
                 }
 
                 self.collect_bang(mac, Vec::new(), pat.span, ExpansionKind::Pat).make_pat()
@@ -753,7 +750,7 @@ impl<'a, 'b> Folder for InvocationCollector<'a, 'b> {
                         // FIXME(syntex): ignore unknown macros
                         if self.cx.resolver.find_mac(self.cx.current_expansion.mark, &mac).is_none() {
                             let item = ast::Item { node: ItemKind::Mac(mac), .. item };
-                            return noop_fold_item(P(item), self);
+                            return SmallVector::one(P(item));
                         }
 
                         self.collect(ExpansionKind::Items, InvocationKind::Bang {
@@ -826,8 +823,8 @@ impl<'a, 'b> Folder for InvocationCollector<'a, 'b> {
             ast::TraitItemKind::Macro(mac) => {
                 // FIXME(syntex): ignore unknown macros
                 if self.cx.resolver.find_mac(self.cx.current_expansion.mark, &mac).is_none() {
-                    let item = ast::TraitItem{ node: ast::TraitItemKind::Macro(mac), .. item };
-                    return noop_fold_trait_item(item, self);
+                    let item = ast::TraitItem { node: ast::TraitItemKind::Macro(mac), .. item };
+                    return SmallVector::one(item);
                 }
 
                 let ast::TraitItem { attrs, span, .. } = item;
@@ -851,7 +848,7 @@ impl<'a, 'b> Folder for InvocationCollector<'a, 'b> {
                 // FIXME(syntex): ignore unknown macros
                 if self.cx.resolver.find_mac(self.cx.current_expansion.mark, &mac).is_none() {
                     let item = ast::ImplItem { node: ast::ImplItemKind::Macro(mac), .. item };
-                    return noop_fold_impl_item(item, self);
+                    return SmallVector::one(item);
                 }
 
                 let ast::ImplItem { attrs, span, .. } = item;
@@ -868,8 +865,14 @@ impl<'a, 'b> Folder for InvocationCollector<'a, 'b> {
         };
 
         match ty.node {
-            ast::TyKind::Mac(mac) =>
-                self.collect_bang(mac, Vec::new(), ty.span, ExpansionKind::Ty).make_ty(),
+            ast::TyKind::Mac(mac) => {
+                // FIXME(syntex): ignore unknown macros
+                if self.cx.resolver.find_mac(self.cx.current_expansion.mark, &mac).is_none() {
+                    return P(ast::Ty { node: ast::TyKind::Mac(mac), .. ty });
+                }
+
+                self.collect_bang(mac, Vec::new(), ty.span, ExpansionKind::Ty).make_ty()
+            }
             _ => unreachable!(),
         }
     }
@@ -880,11 +883,6 @@ impl<'a, 'b> Folder for InvocationCollector<'a, 'b> {
 
     fn fold_item_kind(&mut self, item: ast::ItemKind) -> ast::ItemKind {
         noop_fold_item_kind(self.cfg.configure_item_kind(item), self)
-    }
-
-    // FIXME(syntex): ignore unknown macros
-    fn fold_mac(&mut self, mac: ast::Mac) -> ast::Mac {
-        noop_fold_mac(mac, self)
     }
 
     fn new_id(&mut self, id: ast::NodeId) -> ast::NodeId {
