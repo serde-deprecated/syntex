@@ -527,7 +527,7 @@ impl EmitterWriter {
             }
         } else {
             // If we don't have span information, emit and exit
-            emit_to_destination(&buffer.render(), level, &mut self.dst)?;
+            try!(emit_to_destination(&buffer.render(), level, &mut self.dst));
             return Ok(());
         };
         if let Ok(pos) =
