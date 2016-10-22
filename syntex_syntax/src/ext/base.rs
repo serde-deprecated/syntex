@@ -15,7 +15,7 @@ use attr::HasAttrs;
 use codemap::{self, CodeMap, ExpnInfo, Spanned, respan};
 use syntax_pos::{Span, ExpnId, NO_EXPANSION};
 use errors::DiagnosticBuilder;
-use ext::expand::{self, Invocation, Expansion};
+use ext::expand::{self, Expansion};
 use ext::hygiene::Mark;
 use fold::{self, Folder};
 use parse::{self, parser};
@@ -508,6 +508,8 @@ pub enum SyntaxExtension {
     /// the block.
     ///
     IdentTT(Box<IdentMacroExpander>, Option<Span>, bool),
+
+    CustomDerive(Box<MultiItemModifier>),
 }
 
 pub type NamedSyntaxExtension = (Name, SyntaxExtension);
@@ -522,13 +524,18 @@ pub trait Resolver {
     fn add_expansions_at_stmt(&mut self, id: ast::NodeId, macros: Vec<Mark>);
 
     fn find_attr_invoc(&mut self, attrs: &mut Vec<Attribute>) -> Option<Attribute>;
+<<<<<<< HEAD
     // FIXME(syntax): ignore unknown macros
     fn find_extension(&mut self, scope: Mark, name: ast::Name) -> Option<Rc<SyntaxExtension>>;
     // FIXME(syntax): ignore unknown macros
     fn find_mac(&mut self, scope: Mark, mac: &ast::Mac) -> Option<Rc<SyntaxExtension>>;
     fn resolve_invoc(&mut self, scope: Mark, invoc: &Invocation, force: bool)
+||||||| merged common ancestors
+    fn resolve_invoc(&mut self, scope: Mark, invoc: &Invocation, force: bool)
+=======
+    fn resolve_macro(&mut self, scope: Mark, path: &ast::Path, force: bool)
+>>>>>>> origin/rust
                      -> Result<Rc<SyntaxExtension>, Determinacy>;
-    fn resolve_derive_mode(&mut self, ident: ast::Ident) -> Option<Rc<MultiItemModifier>>;
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -549,12 +556,19 @@ impl Resolver for DummyResolver {
     fn add_expansions_at_stmt(&mut self, _id: ast::NodeId, _macros: Vec<Mark>) {}
 
     fn find_attr_invoc(&mut self, _attrs: &mut Vec<Attribute>) -> Option<Attribute> { None }
+<<<<<<< HEAD
     fn find_extension(&mut self, _scope: Mark, _name: ast::Name) -> Option<Rc<SyntaxExtension>> {
         None
     }
     fn find_mac(&mut self, _scope: Mark, _mac: &ast::Mac) -> Option<Rc<SyntaxExtension>> { None }
     fn resolve_derive_mode(&mut self, _ident: ast::Ident) -> Option<Rc<MultiItemModifier>> { None }
     fn resolve_invoc(&mut self, _scope: Mark, _invoc: &Invocation, _force: bool)
+||||||| merged common ancestors
+    fn resolve_derive_mode(&mut self, _ident: ast::Ident) -> Option<Rc<MultiItemModifier>> { None }
+    fn resolve_invoc(&mut self, _scope: Mark, _invoc: &Invocation, _force: bool)
+=======
+    fn resolve_macro(&mut self, _scope: Mark, _path: &ast::Path, _force: bool)
+>>>>>>> origin/rust
                      -> Result<Rc<SyntaxExtension>, Determinacy> {
         Err(Determinacy::Determined)
     }
@@ -625,11 +639,11 @@ impl<'a> ExtCtxt<'a> {
 
     pub fn new_parser_from_tts(&self, tts: &[tokenstream::TokenTree])
         -> parser::Parser<'a> {
-        parse::tts_to_parser(self.parse_sess, tts.to_vec(), self.cfg())
+        parse::tts_to_parser(self.parse_sess, tts.to_vec(), self.cfg().clone())
     }
     pub fn codemap(&self) -> &'a CodeMap { self.parse_sess.codemap() }
     pub fn parse_sess(&self) -> &'a parse::ParseSess { self.parse_sess }
-    pub fn cfg(&self) -> ast::CrateConfig { self.cfg.clone() }
+    pub fn cfg(&self) -> &ast::CrateConfig { &self.cfg }
     pub fn call_site(&self) -> Span {
         self.codemap().with_expn_info(self.backtrace(), |ei| match ei {
             Some(expn_info) => expn_info.call_site,
