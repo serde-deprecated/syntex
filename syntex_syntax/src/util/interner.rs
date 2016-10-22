@@ -14,13 +14,23 @@
 
 use ast::Name;
 
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+#[derive(PartialEq, Eq, Hash)]
+struct RcStr(Rc<String>);
+
+impl Borrow<str> for RcStr {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
 #[derive(Default)]
 pub struct Interner {
-    names: HashMap<Rc<str>, Name>,
-    strings: Vec<Rc<str>>,
+    names: HashMap<RcStr, Name>,
+    strings: Vec<Rc<String>>,
 }
 
 /// When traits can extend traits, we should extend index<Name,T> to get []
@@ -37,22 +47,22 @@ impl Interner {
         this
     }
 
-    pub fn intern(&mut self, string: &str) -> Name {
-        if let Some(&name) = self.names.get(string) {
+    pub fn intern<T: Borrow<str> + Into<String>>(&mut self, string: T) -> Name {
+        if let Some(&name) = self.names.get(string.borrow()) {
             return name;
         }
 
         let name = Name(self.strings.len() as u32);
-        let string = Rc::__from_str(string);
+        let string = Rc::new(string.into());
         self.strings.push(string.clone());
-        self.names.insert(string, name);
+        self.names.insert(RcStr(string), name);
         name
     }
 
     pub fn gensym(&mut self, string: &str) -> Name {
         let gensym = Name(self.strings.len() as u32);
         // leave out of `names` to avoid colliding
-        self.strings.push(Rc::__from_str(string));
+        self.strings.push(Rc::new(string.to_owned()));
         gensym
     }
 
@@ -65,7 +75,7 @@ impl Interner {
         gensym
     }
 
-    pub fn get(&self, name: Name) -> Rc<str> {
+    pub fn get(&self, name: Name) -> Rc<String> {
         self.strings[name.0 as usize].clone()
     }
 
@@ -99,13 +109,13 @@ mod tests {
         assert_eq!(i.gensym("dog"), Name(4));
         // gensym tests again with gensym_copy:
         assert_eq!(i.gensym_copy(Name(2)), Name(5));
-        assert_eq!(&*i.get(Name(5)), "zebra");
+        assert_eq!(*i.get(Name(5)), "zebra");
         assert_eq!(i.gensym_copy(Name(2)), Name(6));
-        assert_eq!(&*i.get(Name(6)), "zebra");
-        assert_eq!(&*i.get(Name(0)), "dog");
-        assert_eq!(&*i.get(Name(1)), "cat");
-        assert_eq!(&*i.get(Name(2)), "zebra");
-        assert_eq!(&*i.get(Name(3)), "zebra");
-        assert_eq!(&*i.get(Name(4)), "dog");
+        assert_eq!(*i.get(Name(6)), "zebra");
+        assert_eq!(*i.get(Name(0)), "dog");
+        assert_eq!(*i.get(Name(1)), "cat");
+        assert_eq!(*i.get(Name(2)), "zebra");
+        assert_eq!(*i.get(Name(3)), "zebra");
+        assert_eq!(*i.get(Name(4)), "dog");
     }
 }
