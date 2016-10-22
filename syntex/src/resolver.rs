@@ -7,10 +7,9 @@ use syntex_syntax::ext::base::{
     Determinacy,
     MultiDecorator,
     MultiModifier,
-    MultiItemModifier,
     SyntaxExtension,
 };
-use syntex_syntax::ext::expand::{Invocation, InvocationKind, Expansion};
+use syntex_syntax::ext::expand::Expansion;
 use syntex_syntax::ext::hygiene::Mark;
 use syntex_syntax::parse::token::intern;
 use syntex_syntax::parse::ParseSess;
@@ -18,7 +17,6 @@ use syntex_syntax::parse::ParseSess;
 pub struct Resolver<'a> {
     session: &'a ParseSess,
     extensions: HashMap<ast::Name, Rc<SyntaxExtension>>,
-    derive_modes: HashMap<ast::Name, Rc<MultiItemModifier>>,
 }
 
 impl<'a> Resolver<'a> {
@@ -26,7 +24,6 @@ impl<'a> Resolver<'a> {
         Resolver {
             session: session,
             extensions: HashMap::new(),
-            derive_modes: HashMap::new(),
         }
     }
 }
@@ -76,22 +73,17 @@ impl<'a> base::Resolver for Resolver<'a> {
         let name = path.segments[0].identifier.name;
         self.find_extension(scope, name)
     }
-    fn resolve_invoc(&mut self, scope: Mark, invoc: &Invocation, force: bool)
+    fn resolve_macro(&mut self, scope: Mark, path: &ast::Path, force: bool)
                      -> Result<Rc<SyntaxExtension>, Determinacy> {
-        let (name, span) = match invoc.kind {
-            InvocationKind::Bang { ref mac, .. } => {
-                let path = &mac.node.path;
-                if path.segments.len() > 1 || path.global ||
-                   !path.segments[0].parameters.is_empty() {
-                    // NOTE: Pass macros with module separators through to the generated source.
-                    self.session.span_diagnostic.span_err(path.span,
-                                                          "expected macro name without module separators");
-                    return Err(Determinacy::Undetermined);
-                }
-                (path.segments[0].identifier.name, path.span)
-            }
-            InvocationKind::Attr { ref attr, .. } => (intern(&*attr.name()), attr.span),
-        };
+        if path.segments.len() > 1 || path.global ||
+            !path.segments[0].parameters.is_empty() {
+            // NOTE: Pass macros with module separators through to the generated source.
+            self.session.span_diagnostic.span_err(path.span,
+                                                    "expected macro name without module separators");
+            return Err(Determinacy::Undetermined);
+        }
+        let name = path.segments[0].identifier.name;
+        let span = path.span;
 
         self.find_extension(scope, name).ok_or_else(|| {
             if force {
@@ -103,8 +95,5 @@ impl<'a> base::Resolver for Resolver<'a> {
                 Determinacy::Undetermined
             }
         })
-    }
-    fn resolve_derive_mode(&mut self, ident: ast::Ident) -> Option<Rc<MultiItemModifier>> {
-        self.derive_modes.get(&ident.name).cloned()
     }
 }
