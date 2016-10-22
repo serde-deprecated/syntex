@@ -339,19 +339,9 @@ impl<'a> StringReader<'a> {
                     self.peek_tok = token::Eof;
                     self.peek_span = syntax_pos::mk_sp(self.filemap.end_pos, self.filemap.end_pos);
                 } else {
-<<<<<<< HEAD
-                    let start_bytepos = self.last_pos;
-                    self.peek_tok = try!(self.next_token_inner());
-                    self.peek_span = syntax_pos::mk_sp(start_bytepos, self.last_pos);
-||||||| merged common ancestors
-                    let start_bytepos = self.last_pos;
-                    self.peek_tok = self.next_token_inner()?;
-                    self.peek_span = syntax_pos::mk_sp(start_bytepos, self.last_pos);
-=======
                     let start_bytepos = self.pos;
-                    self.peek_tok = self.next_token_inner()?;
+                    self.peek_tok = try!(self.next_token_inner());
                     self.peek_span = syntax_pos::mk_sp(start_bytepos, self.pos);
->>>>>>> origin/rust
                 };
             }
         }
@@ -790,21 +780,9 @@ impl<'a> StringReader<'a> {
         // might be a float, but don't be greedy if this is actually an
         // integer literal followed by field/method access or a range pattern
         // (`0..2` and `12.foo()`)
-<<<<<<< HEAD
-        if self.curr_is('.') && !self.nextch_is('.') &&
+        if self.ch_is('.') && !self.nextch_is('.') &&
             !UnicodeXID::is_xid_start(self.nextch().unwrap_or('\0'))
         {
-||||||| merged common ancestors
-        if self.curr_is('.') && !self.nextch_is('.') &&
-           !self.nextch()
-                .unwrap_or('\0')
-                .is_xid_start() {
-=======
-        if self.ch_is('.') && !self.nextch_is('.') &&
-           !self.nextch()
-                .unwrap_or('\0')
-                .is_xid_start() {
->>>>>>> origin/rust
             // might have stuff after the ., and if it does, it needs to start
             // with a number
             self.bump();

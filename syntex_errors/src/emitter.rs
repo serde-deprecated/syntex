@@ -517,44 +517,12 @@ impl EmitterWriter {
         let mut annotated_files = self.preprocess_annotations(msp);
 
         // Make sure our primary file comes first
-<<<<<<< HEAD
-        let primary_lo =
-            if let (Some(ref cm), Some(ref primary_span)) = (self.cm.as_ref(),
-                                                             msp.primary_span().as_ref()) {
-                if primary_span != &&DUMMY_SP && primary_span != &&COMMAND_LINE_SP {
-                    cm.lookup_char_pos(primary_span.lo)
-                }
-                else {
-                    try!(emit_to_destination(&buffer.render(), level, &mut self.dst));
-                    return Ok(());
-                }
-||||||| merged common ancestors
-        let primary_lo =
-            if let (Some(ref cm), Some(ref primary_span)) = (self.cm.as_ref(),
-                                                             msp.primary_span().as_ref()) {
-                if primary_span != &&DUMMY_SP && primary_span != &&COMMAND_LINE_SP {
-                    cm.lookup_char_pos(primary_span.lo)
-                }
-                else {
-                    emit_to_destination(&buffer.render(), level, &mut self.dst)?;
-                    return Ok(());
-                }
-=======
         let primary_lo = if let (Some(ref cm), Some(ref primary_span)) =
             (self.cm.as_ref(), msp.primary_span().as_ref()) {
             if primary_span != &&DUMMY_SP && primary_span != &&COMMAND_LINE_SP {
                 cm.lookup_char_pos(primary_span.lo)
->>>>>>> origin/rust
             } else {
-<<<<<<< HEAD
-                // If we don't have span information, emit and exit
                 try!(emit_to_destination(&buffer.render(), level, &mut self.dst));
-||||||| merged common ancestors
-                // If we don't have span information, emit and exit
-                emit_to_destination(&buffer.render(), level, &mut self.dst)?;
-=======
-                emit_to_destination(&buffer.render(), level, &mut self.dst)?;
->>>>>>> origin/rust
                 return Ok(());
             }
         } else {
@@ -960,46 +928,26 @@ impl Destination {
 
     fn start_attr(&mut self, attr: term::Attr) -> io::Result<()> {
         match *self {
-<<<<<<< HEAD
-            Terminal(ref mut t) => { try!(t.attr(attr)); }
-            BufferedTerminal(ref mut t) => { try!(t.attr(attr)); }
-            Raw(_) => { }
-||||||| merged common ancestors
-            Terminal(ref mut t) => { t.attr(attr)?; }
-            BufferedTerminal(ref mut t) => { t.attr(attr)?; }
-            Raw(_) => { }
-=======
             Terminal(ref mut t) => {
-                t.attr(attr)?;
+                try!(t.attr(attr));
             }
             BufferedTerminal(ref mut t) => {
-                t.attr(attr)?;
+                try!(t.attr(attr));
             }
             Raw(_) => {}
->>>>>>> origin/rust
         }
         Ok(())
     }
 
     fn reset_attrs(&mut self) -> io::Result<()> {
         match *self {
-<<<<<<< HEAD
-            Terminal(ref mut t) => { try!(t.reset()); }
-            BufferedTerminal(ref mut t) => { try!(t.reset()); }
-            Raw(_) => { }
-||||||| merged common ancestors
-            Terminal(ref mut t) => { t.reset()?; }
-            BufferedTerminal(ref mut t) => { t.reset()?; }
-            Raw(_) => { }
-=======
             Terminal(ref mut t) => {
-                t.reset()?;
+                try!(t.reset());
             }
             BufferedTerminal(ref mut t) => {
-                t.reset()?;
+                try!(t.reset());
             }
             Raw(_) => {}
->>>>>>> origin/rust
         }
         Ok(())
     }

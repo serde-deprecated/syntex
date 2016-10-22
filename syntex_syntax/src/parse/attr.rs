@@ -123,22 +123,10 @@ impl<'a> Parser<'a> {
                     ast::AttrStyle::Outer
                 };
 
-<<<<<<< HEAD
                 try!(self.expect(&token::OpenDelim(token::Bracket)));
                 let meta_item = try!(self.parse_meta_item());
                 try!(self.expect(&token::CloseDelim(token::Bracket)));
-                let hi = self.last_span.hi;
-||||||| merged common ancestors
-                self.expect(&token::OpenDelim(token::Bracket))?;
-                let meta_item = self.parse_meta_item()?;
-                self.expect(&token::CloseDelim(token::Bracket))?;
-                let hi = self.last_span.hi;
-=======
-                self.expect(&token::OpenDelim(token::Bracket))?;
-                let meta_item = self.parse_meta_item()?;
-                self.expect(&token::CloseDelim(token::Bracket))?;
                 let hi = self.prev_span.hi;
->>>>>>> origin/rust
 
                 (mk_sp(lo, hi), meta_item, style)
             }
@@ -242,29 +230,13 @@ impl<'a> Parser<'a> {
         match self.token {
             token::Eq => {
                 self.bump();
-<<<<<<< HEAD
                 let lit = try!(self.parse_unsuffixed_lit());
-                let hi = self.last_span.hi;
-||||||| merged common ancestors
-                let lit = self.parse_unsuffixed_lit()?;
-                let hi = self.last_span.hi;
-=======
-                let lit = self.parse_unsuffixed_lit()?;
                 let hi = self.prev_span.hi;
->>>>>>> origin/rust
                 Ok(P(spanned(lo, hi, ast::MetaItemKind::NameValue(name, lit))))
             }
             token::OpenDelim(token::Paren) => {
-<<<<<<< HEAD
                 let inner_items = try!(self.parse_meta_seq());
-                let hi = self.last_span.hi;
-||||||| merged common ancestors
-                let inner_items = self.parse_meta_seq()?;
-                let hi = self.last_span.hi;
-=======
-                let inner_items = self.parse_meta_seq()?;
                 let hi = self.prev_span.hi;
->>>>>>> origin/rust
                 Ok(P(spanned(lo, hi, ast::MetaItemKind::List(name, inner_items))))
             }
             _ => {

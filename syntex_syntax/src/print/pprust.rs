@@ -3008,30 +3008,10 @@ impl<'a> State<'a> {
         if let Some(ref cmnt) = self.next_comment() {
             if cmnt.style != comments::Trailing { return Ok(()) }
             let span_line = cm.lookup_char_pos(span.hi);
-<<<<<<< HEAD
-            let comment_line = cm.lookup_char_pos((*cmnt).pos);
-            let mut next = (*cmnt).pos + BytePos(1);
-            if let Some(p) = next_pos {
-                next = p;
-            }
-            if span.hi < (*cmnt).pos && (*cmnt).pos < next &&
-               span_line.line == comment_line.line {
-                try!(self.print_comment(cmnt));
-||||||| merged common ancestors
-            let comment_line = cm.lookup_char_pos((*cmnt).pos);
-            let mut next = (*cmnt).pos + BytePos(1);
-            if let Some(p) = next_pos {
-                next = p;
-            }
-            if span.hi < (*cmnt).pos && (*cmnt).pos < next &&
-               span_line.line == comment_line.line {
-                self.print_comment(cmnt)?;
-=======
             let comment_line = cm.lookup_char_pos(cmnt.pos);
             let next = next_pos.unwrap_or(cmnt.pos + BytePos(1));
             if span.hi < cmnt.pos && cmnt.pos < next && span_line.line == comment_line.line {
-                self.print_comment(cmnt)?;
->>>>>>> origin/rust
+                try!(self.print_comment(cmnt));
                 self.cur_cmnt_and_lit.cur_cmnt += 1;
             }
         }

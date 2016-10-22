@@ -524,17 +524,11 @@ pub trait Resolver {
     fn add_expansions_at_stmt(&mut self, id: ast::NodeId, macros: Vec<Mark>);
 
     fn find_attr_invoc(&mut self, attrs: &mut Vec<Attribute>) -> Option<Attribute>;
-<<<<<<< HEAD
     // FIXME(syntax): ignore unknown macros
     fn find_extension(&mut self, scope: Mark, name: ast::Name) -> Option<Rc<SyntaxExtension>>;
     // FIXME(syntax): ignore unknown macros
     fn find_mac(&mut self, scope: Mark, mac: &ast::Mac) -> Option<Rc<SyntaxExtension>>;
-    fn resolve_invoc(&mut self, scope: Mark, invoc: &Invocation, force: bool)
-||||||| merged common ancestors
-    fn resolve_invoc(&mut self, scope: Mark, invoc: &Invocation, force: bool)
-=======
     fn resolve_macro(&mut self, scope: Mark, path: &ast::Path, force: bool)
->>>>>>> origin/rust
                      -> Result<Rc<SyntaxExtension>, Determinacy>;
 }
 
@@ -556,19 +550,11 @@ impl Resolver for DummyResolver {
     fn add_expansions_at_stmt(&mut self, _id: ast::NodeId, _macros: Vec<Mark>) {}
 
     fn find_attr_invoc(&mut self, _attrs: &mut Vec<Attribute>) -> Option<Attribute> { None }
-<<<<<<< HEAD
     fn find_extension(&mut self, _scope: Mark, _name: ast::Name) -> Option<Rc<SyntaxExtension>> {
         None
     }
     fn find_mac(&mut self, _scope: Mark, _mac: &ast::Mac) -> Option<Rc<SyntaxExtension>> { None }
-    fn resolve_derive_mode(&mut self, _ident: ast::Ident) -> Option<Rc<MultiItemModifier>> { None }
-    fn resolve_invoc(&mut self, _scope: Mark, _invoc: &Invocation, _force: bool)
-||||||| merged common ancestors
-    fn resolve_derive_mode(&mut self, _ident: ast::Ident) -> Option<Rc<MultiItemModifier>> { None }
-    fn resolve_invoc(&mut self, _scope: Mark, _invoc: &Invocation, _force: bool)
-=======
     fn resolve_macro(&mut self, _scope: Mark, _path: &ast::Path, _force: bool)
->>>>>>> origin/rust
                      -> Result<Rc<SyntaxExtension>, Determinacy> {
         Err(Determinacy::Determined)
     }

@@ -17,27 +17,13 @@
 
 extern crate rustc_serialize as serialize;
 extern crate term;
-<<<<<<< HEAD
-#[macro_use] extern crate log;
-#[macro_use] extern crate libc;
-extern crate unicode_xid;
-extern crate rustc_serialize;
-extern crate syntex_pos as syntax_pos;
-||||||| merged common ancestors
-#[macro_use] extern crate log;
-#[macro_use] extern crate libc;
-extern crate rustc_unicode;
-extern crate serialize as rustc_serialize; // used by deriving
-extern crate syntax_pos;
-=======
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate libc;
-extern crate rustc_unicode;
-extern crate serialize as rustc_serialize; // used by deriving
-extern crate syntax_pos;
->>>>>>> origin/rust
+extern crate unicode_xid;
+extern crate rustc_serialize;
+extern crate syntex_pos as syntax_pos;
 
 pub use emitter::ColorConfig;
 

@@ -21,24 +21,6 @@
       html_root_url = "https://doc.rust-lang.org/nightly/")]
 #![cfg_attr(not(stage0), deny(warnings))]
 
-<<<<<<< HEAD
-||||||| merged common ancestors
-#![feature(custom_attribute)]
-#![allow(unused_attributes)]
-#![feature(rustc_private)]
-#![feature(staged_api)]
-#![feature(question_mark)]
-#![feature(specialization)]
-
-=======
-#![feature(custom_attribute)]
-#![allow(unused_attributes)]
-#![feature(rustc_private)]
-#![feature(staged_api)]
-#![cfg_attr(stage0, feature(question_mark))]
-#![feature(specialization)]
-
->>>>>>> origin/rust
 use std::cell::{Cell, RefCell};
 use std::ops::{Add, Sub};
 use std::rc::Rc;
