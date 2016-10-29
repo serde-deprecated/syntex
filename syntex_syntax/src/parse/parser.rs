@@ -258,6 +258,22 @@ enum PrevTokenKind {
     Other,
 }
 
+// Simple circular buffer used for keeping few next tokens.
+#[derive(Default)]
+struct LookaheadBuffer {
+    buffer: [TokenAndSpan; LOOKAHEAD_BUFFER_CAPACITY],
+    start: usize,
+    end: usize,
+}
+
+const LOOKAHEAD_BUFFER_CAPACITY: usize = 8;
+
+impl LookaheadBuffer {
+    fn len(&self) -> usize {
+        (LOOKAHEAD_BUFFER_CAPACITY + self.end - self.start) % LOOKAHEAD_BUFFER_CAPACITY
+    }
+}
+
 /* ident is handled by common.rs */
 
 pub struct Parser<'a> {
@@ -271,9 +287,7 @@ pub struct Parser<'a> {
     pub cfg: CrateConfig,
     /// the previous token kind
     prev_token_kind: PrevTokenKind,
-    pub buffer: [TokenAndSpan; 4],
-    pub buffer_start: isize,
-    pub buffer_end: isize,
+    lookahead_buffer: LookaheadBuffer,
     pub tokens_consumed: usize,
     pub restrictions: Restrictions,
     pub quote_depth: usize, // not (yet) related to the quasiquoter
@@ -369,10 +383,6 @@ impl<'a> Parser<'a> {
             _ => PathBuf::from(sess.codemap().span_to_filename(span)),
         };
         directory.pop();
-        let placeholder = TokenAndSpan {
-            tok: token::Underscore,
-            sp: span,
-        };
 
         Parser {
             reader: rdr,
@@ -382,14 +392,7 @@ impl<'a> Parser<'a> {
             span: span,
             prev_span: span,
             prev_token_kind: PrevTokenKind::Other,
-            buffer: [
-                placeholder.clone(),
-                placeholder.clone(),
-                placeholder.clone(),
-                placeholder.clone(),
-            ],
-            buffer_start: 0,
-            buffer_end: 0,
+            lookahead_buffer: Default::default(),
             tokens_consumed: 0,
             restrictions: Restrictions::empty(),
             quote_depth: 0,
@@ -950,19 +953,13 @@ impl<'a> Parser<'a> {
             _ => PrevTokenKind::Other,
         };
 
-        let next = if self.buffer_start == self.buffer_end {
+        let next = if self.lookahead_buffer.start == self.lookahead_buffer.end {
             self.reader.real_token()
         } else {
             // Avoid token copies with `replace`.
-            let buffer_start = self.buffer_start as usize;
-            let next_index = (buffer_start + 1) & 3;
-            self.buffer_start = next_index as isize;
-
-            let placeholder = TokenAndSpan {
-                tok: token::Underscore,
-                sp: self.span,
-            };
-            mem::replace(&mut self.buffer[buffer_start], placeholder)
+            let old_start = self.lookahead_buffer.start;
+            self.lookahead_buffer.start = (old_start + 1) % LOOKAHEAD_BUFFER_CAPACITY;
+            mem::replace(&mut self.lookahead_buffer.buffer[old_start], Default::default())
         };
         self.span = next.sp;
         self.token = next.tok;
@@ -995,21 +992,22 @@ impl<'a> Parser<'a> {
         self.expected_tokens.clear();
     }
 
-    pub fn buffer_length(&mut self) -> isize {
-        if self.buffer_start <= self.buffer_end {
-            return self.buffer_end - self.buffer_start;
-        }
-        return (4 - self.buffer_start) + self.buffer_end;
-    }
-    pub fn look_ahead<R, F>(&mut self, distance: usize, f: F) -> R where
+    pub fn look_ahead<R, F>(&mut self, dist: usize, f: F) -> R where
         F: FnOnce(&token::Token) -> R,
     {
-        let dist = distance as isize;
-        while self.buffer_length() < dist {
-            self.buffer[self.buffer_end as usize] = self.reader.real_token();
-            self.buffer_end = (self.buffer_end + 1) & 3;
+        if dist == 0 {
+            f(&self.token)
+        } else if dist < LOOKAHEAD_BUFFER_CAPACITY {
+            while self.lookahead_buffer.len() < dist {
+                self.lookahead_buffer.buffer[self.lookahead_buffer.end] = self.reader.real_token();
+                self.lookahead_buffer.end =
+                    (self.lookahead_buffer.end + 1) % LOOKAHEAD_BUFFER_CAPACITY;
+            }
+            let index = (self.lookahead_buffer.start + dist - 1) % LOOKAHEAD_BUFFER_CAPACITY;
+            f(&self.lookahead_buffer.buffer[index].tok)
+        } else {
+            self.bug("lookahead distance is too large");
         }
-        f(&self.buffer[((self.buffer_start + dist - 1) & 3) as usize].tok)
     }
     pub fn fatal(&self, m: &str) -> DiagnosticBuilder<'a> {
         self.sess.span_diagnostic.struct_span_fatal(self.span, m)
@@ -1130,7 +1128,6 @@ impl<'a> Parser<'a> {
 
         Ok(ast::TyKind::ImplTrait(bounds))
     }
-
 
     pub fn parse_ty_path(&mut self) -> PResult<'a, TyKind> {
         Ok(TyKind::Path(None, try!(self.parse_path(PathStyle::Type))))
@@ -2023,17 +2020,42 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parse ident COLON expr
+    /// Parse ident (COLON expr)?
     pub fn parse_field(&mut self) -> PResult<'a, Field> {
         let lo = self.span.lo;
+<<<<<<< HEAD
         let i = try!(self.parse_field_name());
         let hi = self.prev_span.hi;
         try!(self.expect(&token::Colon));
         let e = try!(self.parse_expr());
+||||||| merged common ancestors
+        let i = self.parse_field_name()?;
+        let hi = self.prev_span.hi;
+        self.expect(&token::Colon)?;
+        let e = self.parse_expr()?;
+=======
+        let hi;
+
+        // Check if a colon exists one ahead. This means we're parsing a fieldname.
+        let (fieldname, expr, is_shorthand) = if self.look_ahead(1, |t| t == &token::Colon) {
+            let fieldname = self.parse_field_name()?;
+            self.bump();
+            hi = self.prev_span.hi;
+            (fieldname, self.parse_expr()?, false)
+        } else {
+            let fieldname = self.parse_ident()?;
+            hi = self.prev_span.hi;
+
+            // Mimic `x: x` for the `x` field shorthand.
+            let path = ast::Path::from_ident(mk_sp(lo, hi), fieldname);
+            (fieldname, self.mk_expr(lo, hi, ExprKind::Path(None, path), ThinVec::new()), true)
+        };
+>>>>>>> origin/rust
         Ok(ast::Field {
-            ident: spanned(lo, hi, i),
-            span: mk_sp(lo, e.span.hi),
-            expr: e,
+            ident: spanned(lo, hi, fieldname),
+            span: mk_sp(lo, expr.span.hi),
+            expr: expr,
+            is_shorthand: is_shorthand,
         })
     }
 
@@ -3636,7 +3658,7 @@ impl<'a> Parser<'a> {
                 // Parse box pat
                 let subpat = try!(self.parse_pat());
                 pat = PatKind::Box(subpat);
-            } else if self.token.is_ident() && self.token.is_path_start() &&
+            } else if self.token.is_ident() && !self.token.is_any_keyword() &&
                       self.look_ahead(1, |t| match *t {
                           token::OpenDelim(token::Paren) | token::OpenDelim(token::Brace) |
                           token::DotDotDot | token::ModSep | token::Not => false,
@@ -3887,6 +3909,11 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn is_union_item(&mut self) -> bool {
+        self.token.is_keyword(keywords::Union) &&
+        self.look_ahead(1, |t| t.is_ident() && !t.is_any_keyword())
+    }
+
     fn parse_stmt_without_recovery(&mut self,
                                    macro_legacy_warnings: bool)
                                    -> PResult<'a, Option<Stmt>> {
@@ -3901,11 +3928,25 @@ impl<'a> Parser<'a> {
                 node: StmtKind::Local(try!(self.parse_local(attrs.into()))),
                 span: mk_sp(lo, self.prev_span.hi),
             }
+<<<<<<< HEAD
         } else if self.token.is_path_start() && self.token != token::Lt && {
             !self.check_keyword(keywords::Union) ||
             self.look_ahead(1, |t| *t == token::Not || *t == token::ModSep)
         } {
             let pth = try!(self.parse_path(PathStyle::Expr));
+||||||| merged common ancestors
+        } else if self.token.is_path_start() && self.token != token::Lt && {
+            !self.check_keyword(keywords::Union) ||
+            self.look_ahead(1, |t| *t == token::Not || *t == token::ModSep)
+        } {
+            let pth = self.parse_path(PathStyle::Expr)?;
+=======
+        // Starts like a simple path, but not a union item.
+        } else if self.token.is_path_start() &&
+                  !self.token.is_qpath_start() &&
+                  !self.is_union_item() {
+            let pth = self.parse_path(PathStyle::Expr)?;
+>>>>>>> origin/rust
 
             if !self.eat(&token::Not) {
                 let expr = if self.check(&token::OpenDelim(token::Brace)) {
@@ -4615,6 +4656,10 @@ impl<'a> Parser<'a> {
             token::Ident(ident) => { this.bump(); codemap::respan(this.prev_span, ident) }
             _ => unreachable!()
         };
+        let isolated_self = |this: &mut Self, n| {
+            this.look_ahead(n, |t| t.is_keyword(keywords::SelfValue)) &&
+            this.look_ahead(n + 1, |t| t != &token::ModSep)
+        };
 
         // Parse optional self parameter of a method.
         // Only a limited set of initial token sequences is considered self parameters, anything
@@ -4627,22 +4672,22 @@ impl<'a> Parser<'a> {
                 // &'lt self
                 // &'lt mut self
                 // &not_self
-                if self.look_ahead(1, |t| t.is_keyword(keywords::SelfValue)) {
+                if isolated_self(self, 1) {
                     self.bump();
                     (SelfKind::Region(None, Mutability::Immutable), expect_ident(self))
                 } else if self.look_ahead(1, |t| t.is_keyword(keywords::Mut)) &&
-                          self.look_ahead(2, |t| t.is_keyword(keywords::SelfValue)) {
+                          isolated_self(self, 2) {
                     self.bump();
                     self.bump();
                     (SelfKind::Region(None, Mutability::Mutable), expect_ident(self))
                 } else if self.look_ahead(1, |t| t.is_lifetime()) &&
-                          self.look_ahead(2, |t| t.is_keyword(keywords::SelfValue)) {
+                          isolated_self(self, 2) {
                     self.bump();
                     let lt = try!(self.parse_lifetime());
                     (SelfKind::Region(Some(lt), Mutability::Immutable), expect_ident(self))
                 } else if self.look_ahead(1, |t| t.is_lifetime()) &&
                           self.look_ahead(2, |t| t.is_keyword(keywords::Mut)) &&
-                          self.look_ahead(3, |t| t.is_keyword(keywords::SelfValue)) {
+                          isolated_self(self, 3) {
                     self.bump();
                     let lt = try!(self.parse_lifetime());
                     self.bump();
@@ -4657,12 +4702,12 @@ impl<'a> Parser<'a> {
                 // *mut self
                 // *not_self
                 // Emit special error for `self` cases.
-                if self.look_ahead(1, |t| t.is_keyword(keywords::SelfValue)) {
+                if isolated_self(self, 1) {
                     self.bump();
                     self.span_err(self.span, "cannot pass `self` by raw pointer");
                     (SelfKind::Value(Mutability::Immutable), expect_ident(self))
                 } else if self.look_ahead(1, |t| t.is_mutability()) &&
-                          self.look_ahead(2, |t| t.is_keyword(keywords::SelfValue)) {
+                          isolated_self(self, 2) {
                     self.bump();
                     self.bump();
                     self.span_err(self.span, "cannot pass `self` by raw pointer");
@@ -4672,7 +4717,7 @@ impl<'a> Parser<'a> {
                 }
             }
             token::Ident(..) => {
-                if self.token.is_keyword(keywords::SelfValue) {
+                if isolated_self(self, 0) {
                     // self
                     // self: TYPE
                     let eself_ident = expect_ident(self);
@@ -4683,7 +4728,7 @@ impl<'a> Parser<'a> {
                         (SelfKind::Value(Mutability::Immutable), eself_ident)
                     }
                 } else if self.token.is_keyword(keywords::Mut) &&
-                        self.look_ahead(1, |t| t.is_keyword(keywords::SelfValue)) {
+                          isolated_self(self, 1) {
                     // mut self
                     // mut self: TYPE
                     self.bump();
@@ -5139,7 +5184,17 @@ impl<'a> Parser<'a> {
         let mut fields = Vec::new();
         if self.eat(&token::OpenDelim(token::Brace)) {
             while self.token != token::CloseDelim(token::Brace) {
+<<<<<<< HEAD
                 fields.push(try!(self.parse_struct_decl_field()));
+||||||| merged common ancestors
+                fields.push(self.parse_struct_decl_field()?);
+=======
+                fields.push(self.parse_struct_decl_field().map_err(|e| {
+                    self.recover_stmt();
+                    self.eat(&token::CloseDelim(token::Brace));
+                    e
+                })?);
+>>>>>>> origin/rust
             }
 
             self.bump();
@@ -5667,7 +5722,17 @@ impl<'a> Parser<'a> {
         generics.where_clause = try!(self.parse_where_clause());
         try!(self.expect(&token::OpenDelim(token::Brace)));
 
+<<<<<<< HEAD
         let enum_definition = try!(self.parse_enum_def(&generics));
+||||||| merged common ancestors
+        let enum_definition = self.parse_enum_def(&generics)?;
+=======
+        let enum_definition = self.parse_enum_def(&generics).map_err(|e| {
+            self.recover_stmt();
+            self.eat(&token::CloseDelim(token::Brace));
+            e
+        })?;
+>>>>>>> origin/rust
         Ok((id, ItemKind::Enum(enum_definition, generics), None))
     }
 
@@ -5974,8 +6039,7 @@ impl<'a> Parser<'a> {
                                     maybe_append(attrs, extra_attrs));
             return Ok(Some(item));
         }
-        if self.check_keyword(keywords::Union) &&
-                self.look_ahead(1, |t| t.is_ident() && !t.is_any_keyword()) {
+        if self.is_union_item() {
             // UNION ITEM
             self.bump();
             let (ident, item_, extra_attrs) = try!(self.parse_item_union());
