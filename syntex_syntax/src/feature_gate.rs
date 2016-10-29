@@ -383,7 +383,7 @@ pub enum AttributeGate {
 impl AttributeGate {
     fn is_deprecated(&self) -> bool {
         match *self {
-            Gated(Stability::Deprecated(_), ..) => true,
+            Gated(Stability::Deprecated(_), _, _, _) => true,
             _ => false,
         }
     }
