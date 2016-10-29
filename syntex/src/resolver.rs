@@ -35,7 +35,7 @@ impl<'a> base::Resolver for Resolver<'a> {
     fn get_module_scope(&mut self, _id: ast::NodeId) -> Mark { Mark::root() }
 
     fn visit_expansion(&mut self, _invoc: Mark, _expansion: &Expansion) {}
-    fn add_macro(&mut self, _scope: Mark, def: ast::MacroDef) {
+    fn add_macro(&mut self, _scope: Mark, def: ast::MacroDef, _export: bool) {
         self.session.span_diagnostic.span_bug(
             def.span,
             "add_macro is not supported yet");
