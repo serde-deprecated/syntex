@@ -22,36 +22,7 @@
        test(attr(deny(warnings))))]
 #![cfg_attr(not(stage0), deny(warnings))]
 
-<<<<<<< HEAD
 extern crate rustc_serialize;
-||||||| merged common ancestors
-#![feature(associated_consts)]
-#![feature(const_fn)]
-#![feature(libc)]
-#![feature(rustc_private)]
-#![feature(staged_api)]
-#![feature(str_escape)]
-#![feature(unicode)]
-#![cfg_attr(stage0, feature(question_mark))]
-#![feature(rustc_diagnostic_macros)]
-#![feature(specialization)]
-
-extern crate serialize;
-=======
-#![feature(associated_consts)]
-#![feature(const_fn)]
-#![feature(libc)]
-#![feature(rustc_private)]
-#![feature(staged_api)]
-#![feature(str_escape)]
-#![feature(unicode)]
-#![cfg_attr(stage0, feature(question_mark))]
-#![feature(rustc_diagnostic_macros)]
-#![feature(specialization)]
-#![feature(dotdot_in_tuple_patterns)]
-
-extern crate serialize;
->>>>>>> origin/rust
 extern crate term;
 extern crate libc;
 #[macro_use] extern crate log;

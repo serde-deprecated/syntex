@@ -2023,34 +2023,22 @@ impl<'a> Parser<'a> {
     /// Parse ident (COLON expr)?
     pub fn parse_field(&mut self) -> PResult<'a, Field> {
         let lo = self.span.lo;
-<<<<<<< HEAD
-        let i = try!(self.parse_field_name());
-        let hi = self.prev_span.hi;
-        try!(self.expect(&token::Colon));
-        let e = try!(self.parse_expr());
-||||||| merged common ancestors
-        let i = self.parse_field_name()?;
-        let hi = self.prev_span.hi;
-        self.expect(&token::Colon)?;
-        let e = self.parse_expr()?;
-=======
         let hi;
 
         // Check if a colon exists one ahead. This means we're parsing a fieldname.
         let (fieldname, expr, is_shorthand) = if self.look_ahead(1, |t| t == &token::Colon) {
-            let fieldname = self.parse_field_name()?;
+            let fieldname = try!(self.parse_field_name());
             self.bump();
             hi = self.prev_span.hi;
-            (fieldname, self.parse_expr()?, false)
+            (fieldname, try!(self.parse_expr()), false)
         } else {
-            let fieldname = self.parse_ident()?;
+            let fieldname = try!(self.parse_ident());
             hi = self.prev_span.hi;
 
             // Mimic `x: x` for the `x` field shorthand.
             let path = ast::Path::from_ident(mk_sp(lo, hi), fieldname);
             (fieldname, self.mk_expr(lo, hi, ExprKind::Path(None, path), ThinVec::new()), true)
         };
->>>>>>> origin/rust
         Ok(ast::Field {
             ident: spanned(lo, hi, fieldname),
             span: mk_sp(lo, expr.span.hi),
@@ -3928,25 +3916,11 @@ impl<'a> Parser<'a> {
                 node: StmtKind::Local(try!(self.parse_local(attrs.into()))),
                 span: mk_sp(lo, self.prev_span.hi),
             }
-<<<<<<< HEAD
-        } else if self.token.is_path_start() && self.token != token::Lt && {
-            !self.check_keyword(keywords::Union) ||
-            self.look_ahead(1, |t| *t == token::Not || *t == token::ModSep)
-        } {
-            let pth = try!(self.parse_path(PathStyle::Expr));
-||||||| merged common ancestors
-        } else if self.token.is_path_start() && self.token != token::Lt && {
-            !self.check_keyword(keywords::Union) ||
-            self.look_ahead(1, |t| *t == token::Not || *t == token::ModSep)
-        } {
-            let pth = self.parse_path(PathStyle::Expr)?;
-=======
         // Starts like a simple path, but not a union item.
         } else if self.token.is_path_start() &&
                   !self.token.is_qpath_start() &&
                   !self.is_union_item() {
-            let pth = self.parse_path(PathStyle::Expr)?;
->>>>>>> origin/rust
+            let pth = try!(self.parse_path(PathStyle::Expr));
 
             if !self.eat(&token::Not) {
                 let expr = if self.check(&token::OpenDelim(token::Brace)) {
@@ -5184,17 +5158,11 @@ impl<'a> Parser<'a> {
         let mut fields = Vec::new();
         if self.eat(&token::OpenDelim(token::Brace)) {
             while self.token != token::CloseDelim(token::Brace) {
-<<<<<<< HEAD
-                fields.push(try!(self.parse_struct_decl_field()));
-||||||| merged common ancestors
-                fields.push(self.parse_struct_decl_field()?);
-=======
-                fields.push(self.parse_struct_decl_field().map_err(|e| {
+                fields.push(try!(self.parse_struct_decl_field().map_err(|e| {
                     self.recover_stmt();
                     self.eat(&token::CloseDelim(token::Brace));
                     e
-                })?);
->>>>>>> origin/rust
+                })));
             }
 
             self.bump();
@@ -5722,17 +5690,11 @@ impl<'a> Parser<'a> {
         generics.where_clause = try!(self.parse_where_clause());
         try!(self.expect(&token::OpenDelim(token::Brace)));
 
-<<<<<<< HEAD
-        let enum_definition = try!(self.parse_enum_def(&generics));
-||||||| merged common ancestors
-        let enum_definition = self.parse_enum_def(&generics)?;
-=======
-        let enum_definition = self.parse_enum_def(&generics).map_err(|e| {
+        let enum_definition = try!(self.parse_enum_def(&generics).map_err(|e| {
             self.recover_stmt();
             self.eat(&token::CloseDelim(token::Brace));
             e
-        })?;
->>>>>>> origin/rust
+        }));
         Ok((id, ItemKind::Enum(enum_definition, generics), None))
     }
 
