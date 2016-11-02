@@ -15,7 +15,7 @@ use ast::Unsafety;
 use ast::{Mod, Arg, Arm, Attribute, BindingMode, TraitItemKind};
 use ast::Block;
 use ast::{BlockCheckMode, CaptureBy};
-use ast::{Constness, Crate, CrateConfig};
+use ast::{Constness, Crate};
 use ast::Defaultness;
 use ast::EnumDef;
 use ast::{Expr, ExprKind, RangeLimits};
@@ -284,7 +284,6 @@ pub struct Parser<'a> {
     pub span: Span,
     /// the span of the previous token:
     pub prev_span: Span,
-    pub cfg: CrateConfig,
     /// the previous token kind
     prev_token_kind: PrevTokenKind,
     lookahead_buffer: LookaheadBuffer,
@@ -371,11 +370,7 @@ impl From<P<Expr>> for LhsExpr {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(sess: &'a ParseSess,
-               cfg: ast::CrateConfig,
-               mut rdr: Box<Reader+'a>)
-               -> Parser<'a>
-    {
+    pub fn new(sess: &'a ParseSess, mut rdr: Box<Reader+'a>) -> Self {
         let tok0 = rdr.real_token();
         let span = tok0.sp;
         let mut directory = match span {
@@ -387,7 +382,6 @@ impl<'a> Parser<'a> {
         Parser {
             reader: rdr,
             sess: sess,
-            cfg: cfg,
             token: tok0.tok,
             span: span,
             prev_span: span,
@@ -867,7 +861,7 @@ impl<'a> Parser<'a> {
               Fe: FnMut(DiagnosticBuilder)
     {
         let mut first: bool = true;
-        let mut v = vec!();
+        let mut v = vec![];
         while !kets.contains(&&self.token) {
             match sep.sep {
                 Some(ref t) => {
@@ -1770,6 +1764,17 @@ impl<'a> Parser<'a> {
             // First, parse an identifier.
             let identifier = try!(self.parse_path_segment_ident());
 
+            if self.check(&token::ModSep) && self.look_ahead(1, |t| *t == token::Lt) {
+                self.bump();
+                let prev_span = self.prev_span;
+
+                let mut err = self.diagnostic().struct_span_err(prev_span,
+                    "unexpected token: `::`");
+                err.help(
+                    "use `<...>` instead of `::<...>` if you meant to specify type arguments");
+                err.emit();
+            }
+
             // Parse types, optionally.
             let parameters = if self.eat_lt() {
                 let (lifetimes, types, bindings) = try!(self.parse_generic_values_after_lt());
@@ -2230,15 +2235,33 @@ impl<'a> Parser<'a> {
                         let remaining_exprs = try!(self.parse_seq_to_end(
                             &token::CloseDelim(token::Bracket),
                             SeqSep::trailing_allowed(token::Comma),
+<<<<<<< HEAD
                             |p| Ok(try!(p.parse_expr()))
                         ));
                         let mut exprs = vec!(first_expr);
+||||||| merged common ancestors
+                            |p| Ok(p.parse_expr()?)
+                        )?;
+                        let mut exprs = vec!(first_expr);
+=======
+                            |p| Ok(p.parse_expr()?)
+                        )?;
+                        let mut exprs = vec![first_expr];
+>>>>>>> origin/rust
                         exprs.extend(remaining_exprs);
                         ex = ExprKind::Vec(exprs);
                     } else {
                         // Vector with one element.
+<<<<<<< HEAD
                         try!(self.expect(&token::CloseDelim(token::Bracket)));
                         ex = ExprKind::Vec(vec!(first_expr));
+||||||| merged common ancestors
+                        self.expect(&token::CloseDelim(token::Bracket))?;
+                        ex = ExprKind::Vec(vec!(first_expr));
+=======
+                        self.expect(&token::CloseDelim(token::Bracket))?;
+                        ex = ExprKind::Vec(vec![first_expr]);
+>>>>>>> origin/rust
                     }
                 }
                 hi = self.prev_span.hi;
@@ -4232,7 +4255,7 @@ impl<'a> Parser<'a> {
                              mode: BoundParsingMode)
                              -> PResult<'a, TyParamBounds>
     {
-        let mut result = vec!();
+        let mut result = vec![];
         loop {
             let question_span = self.span;
             let ate_question = self.eat(&token::Question);
@@ -5330,7 +5353,6 @@ impl<'a> Parser<'a> {
     fn parse_item_mod(&mut self, outer_attrs: &[Attribute]) -> PResult<'a, ItemInfo> {
         let (in_cfg, outer_attrs) = {
             let mut strip_unconfigured = ::config::StripUnconfigured {
-                config: &self.cfg,
                 sess: self.sess,
                 should_test: false, // irrelevant
                 features: None, // don't perform gated feature checking
@@ -5498,12 +5520,7 @@ impl<'a> Parser<'a> {
         included_mod_stack.push(path.clone());
         drop(included_mod_stack);
 
-        let mut p0 = new_sub_parser_from_file(self.sess,
-                                              self.cfg.clone(),
-                                              &path,
-                                              owns_directory,
-                                              Some(name),
-                                              id_sp);
+        let mut p0 = new_sub_parser_from_file(self.sess, &path, owns_directory, Some(name), id_sp);
         let mod_inner_lo = p0.span.lo;
         let mod_attrs = try!(p0.parse_inner_attributes());
         let m0 = try!(p0.parse_mod_items(&token::Eof, mod_inner_lo));
@@ -6147,15 +6164,28 @@ impl<'a> Parser<'a> {
     /// MOD_SEP? LBRACE item_seq RBRACE
     fn parse_view_path(&mut self) -> PResult<'a, P<ViewPath>> {
         let lo = self.span.lo;
-        if self.check(&token::OpenDelim(token::Brace)) || self.is_import_coupler() {
-            // `{foo, bar}` or `::{foo, bar}`
+        if self.check(&token::OpenDelim(token::Brace)) || self.check(&token::BinOp(token::Star)) ||
+           self.is_import_coupler() {
+            // `{foo, bar}`, `::{foo, bar}`, `*`, or `::*`.
             let prefix = ast::Path {
                 global: self.eat(&token::ModSep),
                 segments: Vec::new(),
                 span: mk_sp(lo, self.span.hi),
             };
+<<<<<<< HEAD
             let items = try!(self.parse_path_list_items());
             Ok(P(spanned(lo, self.span.hi, ViewPathList(prefix, items))))
+||||||| merged common ancestors
+            let items = self.parse_path_list_items()?;
+            Ok(P(spanned(lo, self.span.hi, ViewPathList(prefix, items))))
+=======
+            let view_path_kind = if self.eat(&token::BinOp(token::Star)) {
+                ViewPathGlob(prefix)
+            } else {
+                ViewPathList(prefix, self.parse_path_list_items()?)
+            };
+            Ok(P(spanned(lo, self.span.hi, view_path_kind)))
+>>>>>>> origin/rust
         } else {
             let prefix = try!(self.parse_path(PathStyle::Mod));
             if self.is_import_coupler() {
@@ -6190,9 +6220,18 @@ impl<'a> Parser<'a> {
     pub fn parse_crate_mod(&mut self) -> PResult<'a, Crate> {
         let lo = self.span.lo;
         Ok(ast::Crate {
+<<<<<<< HEAD
             attrs: try!(self.parse_inner_attributes()),
             module: try!(self.parse_mod_items(&token::Eof, lo)),
             config: self.cfg.clone(),
+||||||| merged common ancestors
+            attrs: self.parse_inner_attributes()?,
+            module: self.parse_mod_items(&token::Eof, lo)?,
+            config: self.cfg.clone(),
+=======
+            attrs: self.parse_inner_attributes()?,
+            module: self.parse_mod_items(&token::Eof, lo)?,
+>>>>>>> origin/rust
             span: mk_sp(lo, self.span.lo),
             exported_macros: Vec::new(),
         })
