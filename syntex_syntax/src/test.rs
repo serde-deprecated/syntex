@@ -274,7 +274,7 @@ fn generate_test_harness(sess: &ParseSess,
     let mut cx: TestCtxt = TestCtxt {
         sess: sess,
         span_diagnostic: sd,
-        ext_cx: ExtCtxt::new(sess, vec![], ExpansionConfig::default("test".to_string()), resolver),
+        ext_cx: ExtCtxt::new(sess, ExpansionConfig::default("test".to_string()), resolver),
         path: Vec::new(),
         testfns: Vec::new(),
         reexport_test_harness_main: reexport_test_harness_main,
@@ -430,7 +430,7 @@ fn mk_std(cx: &TestCtxt) -> P<ast::Item> {
     let (vi, vis, ident) = if cx.is_test_crate {
         (ast::ItemKind::Use(
             P(nospan(ast::ViewPathSimple(id_test,
-                                         path_node(vec!(id_test)))))),
+                                         path_node(vec![id_test]))))),
          ast::Visibility::Public, keywords::Invalid.ident())
     } else {
         (ast::ItemKind::ExternCrate(None), ast::Visibility::Inherited, id_test)
