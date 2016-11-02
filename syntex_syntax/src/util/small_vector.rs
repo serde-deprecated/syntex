@@ -11,7 +11,7 @@
 use self::SmallVectorRepr::*;
 use self::IntoIterRepr::*;
 
-use core::ops;
+use std::ops;
 use std::iter::{IntoIterator, FromIterator};
 use std::mem;
 use std::slice;
