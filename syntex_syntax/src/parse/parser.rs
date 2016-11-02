@@ -2235,33 +2235,15 @@ impl<'a> Parser<'a> {
                         let remaining_exprs = try!(self.parse_seq_to_end(
                             &token::CloseDelim(token::Bracket),
                             SeqSep::trailing_allowed(token::Comma),
-<<<<<<< HEAD
                             |p| Ok(try!(p.parse_expr()))
                         ));
-                        let mut exprs = vec!(first_expr);
-||||||| merged common ancestors
-                            |p| Ok(p.parse_expr()?)
-                        )?;
-                        let mut exprs = vec!(first_expr);
-=======
-                            |p| Ok(p.parse_expr()?)
-                        )?;
                         let mut exprs = vec![first_expr];
->>>>>>> origin/rust
                         exprs.extend(remaining_exprs);
                         ex = ExprKind::Vec(exprs);
                     } else {
                         // Vector with one element.
-<<<<<<< HEAD
                         try!(self.expect(&token::CloseDelim(token::Bracket)));
-                        ex = ExprKind::Vec(vec!(first_expr));
-||||||| merged common ancestors
-                        self.expect(&token::CloseDelim(token::Bracket))?;
-                        ex = ExprKind::Vec(vec!(first_expr));
-=======
-                        self.expect(&token::CloseDelim(token::Bracket))?;
                         ex = ExprKind::Vec(vec![first_expr]);
->>>>>>> origin/rust
                     }
                 }
                 hi = self.prev_span.hi;
@@ -6172,20 +6154,12 @@ impl<'a> Parser<'a> {
                 segments: Vec::new(),
                 span: mk_sp(lo, self.span.hi),
             };
-<<<<<<< HEAD
-            let items = try!(self.parse_path_list_items());
-            Ok(P(spanned(lo, self.span.hi, ViewPathList(prefix, items))))
-||||||| merged common ancestors
-            let items = self.parse_path_list_items()?;
-            Ok(P(spanned(lo, self.span.hi, ViewPathList(prefix, items))))
-=======
             let view_path_kind = if self.eat(&token::BinOp(token::Star)) {
                 ViewPathGlob(prefix)
             } else {
-                ViewPathList(prefix, self.parse_path_list_items()?)
+                ViewPathList(prefix, try!(self.parse_path_list_items()))
             };
             Ok(P(spanned(lo, self.span.hi, view_path_kind)))
->>>>>>> origin/rust
         } else {
             let prefix = try!(self.parse_path(PathStyle::Mod));
             if self.is_import_coupler() {
@@ -6220,18 +6194,8 @@ impl<'a> Parser<'a> {
     pub fn parse_crate_mod(&mut self) -> PResult<'a, Crate> {
         let lo = self.span.lo;
         Ok(ast::Crate {
-<<<<<<< HEAD
             attrs: try!(self.parse_inner_attributes()),
             module: try!(self.parse_mod_items(&token::Eof, lo)),
-            config: self.cfg.clone(),
-||||||| merged common ancestors
-            attrs: self.parse_inner_attributes()?,
-            module: self.parse_mod_items(&token::Eof, lo)?,
-            config: self.cfg.clone(),
-=======
-            attrs: self.parse_inner_attributes()?,
-            module: self.parse_mod_items(&token::Eof, lo)?,
->>>>>>> origin/rust
             span: mk_sp(lo, self.span.lo),
             exported_macros: Vec::new(),
         })
