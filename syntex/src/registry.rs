@@ -52,7 +52,6 @@ impl Registry {
         let meta_item = parse::parse_meta_from_source_str(
             "cfgspec".to_string(),
             cfg.to_string(),
-            Vec::new(),
             &parse_sess).unwrap();
 
         self.cfg.push(meta_item);
@@ -63,7 +62,6 @@ impl Registry {
         let meta_item = parse::parse_meta_from_source_str(
             "attrspec".to_string(),
             attr.to_string(),
-            Vec::new(),
             &parse_sess).unwrap();
 
         self.attrs.push(respan(DUMMY_SP, ast::Attribute_ {
@@ -133,7 +131,6 @@ impl Registry {
 
         let krate = try!(parse::parse_crate_from_file(
             src,
-            self.cfg.clone(),
             &sess));
 
         if sess.span_diagnostic.has_errors() {
@@ -170,7 +167,6 @@ impl Registry {
         let krate = try!(parse::parse_crate_from_source_str(
             src_name.clone(),
             src.to_owned(),
-            self.cfg.clone(),
             &sess));
 
         let out = try!(self.expand_crate(crate_name, &sess, src_name, krate));
@@ -195,7 +191,6 @@ impl Registry {
         let mut ecfg = expand::ExpansionConfig::default(crate_name.to_owned());
         ecfg.features = Some(&features);
 
-        let cfg = Vec::new();
         let mut resolver = resolver::Resolver::new(sess);
 
         for (name, ext) in self.syntax_exts {
@@ -203,7 +198,7 @@ impl Registry {
             resolver.add_ext(ident, Rc::new(ext));
         }
 
-        let mut ecx = ExtCtxt::new(&sess, cfg, ecfg, &mut resolver);
+        let mut ecx = ExtCtxt::new(&sess, ecfg, &mut resolver);
         let krate = ecx.monotonic_expander().expand_crate(krate);
 
         let krate = self.post_expansion_passes.iter()
