@@ -47,6 +47,7 @@ impl<'a> base::Resolver for Resolver<'a> {
     }
     fn add_expansions_at_stmt(&mut self, _id: ast::NodeId, _macros: Vec<Mark>) {}
 
+    fn resolve_imports(&mut self) {}
     fn find_attr_invoc(&mut self, attrs: &mut Vec<Attribute>) -> Option<Attribute> {
         for i in 0..attrs.len() {
             let name = intern(&attrs[i].name());
