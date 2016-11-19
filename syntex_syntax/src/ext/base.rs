@@ -524,6 +524,7 @@ pub trait Resolver {
     fn add_ext(&mut self, ident: ast::Ident, ext: Rc<SyntaxExtension>);
     fn add_expansions_at_stmt(&mut self, id: ast::NodeId, macros: Vec<Mark>);
 
+    fn resolve_imports(&mut self);
     fn find_attr_invoc(&mut self, attrs: &mut Vec<Attribute>) -> Option<Attribute>;
     // FIXME(syntax): ignore unknown macros
     fn find_extension(&mut self, scope: Mark, name: ast::Name) -> Option<Rc<SyntaxExtension>>;
@@ -551,6 +552,7 @@ impl Resolver for DummyResolver {
     fn add_ext(&mut self, _ident: ast::Ident, _ext: Rc<SyntaxExtension>) {}
     fn add_expansions_at_stmt(&mut self, _id: ast::NodeId, _macros: Vec<Mark>) {}
 
+    fn resolve_imports(&mut self) {}
     fn find_attr_invoc(&mut self, _attrs: &mut Vec<Attribute>) -> Option<Attribute> { None }
     fn find_extension(&mut self, _scope: Mark, _name: ast::Name) -> Option<Rc<SyntaxExtension>> {
         None

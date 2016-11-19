@@ -226,6 +226,7 @@ impl<'a, 'b> MacroExpander<'a, 'b> {
         self.cx.current_expansion.depth = 0;
 
         let (expansion, mut invocations) = self.collect_invocations(expansion);
+        self.resolve_imports();
         invocations.reverse();
 
         let mut expansions = Vec::new();
@@ -234,9 +235,9 @@ impl<'a, 'b> MacroExpander<'a, 'b> {
         loop {
             let invoc = if let Some(invoc) = invocations.pop() {
                 invoc
-            } else if undetermined_invocations.is_empty() {
-                break
             } else {
+                self.resolve_imports();
+                if undetermined_invocations.is_empty() { break }
                 invocations = mem::replace(&mut undetermined_invocations, Vec::new());
                 force = !mem::replace(&mut progress, false);
                 continue
@@ -294,6 +295,14 @@ impl<'a, 'b> MacroExpander<'a, 'b> {
         }
 
         expansion.fold_with(&mut placeholder_expander)
+    }
+
+    fn resolve_imports(&mut self) {
+        if self.monotonic {
+            let err_count = self.cx.parse_sess.span_diagnostic.err_count();
+            self.cx.resolver.resolve_imports();
+            self.cx.resolve_err_count += self.cx.parse_sess.span_diagnostic.err_count() - err_count;
+        }
     }
 
     fn collect_invocations(&mut self, expansion: Expansion) -> (Expansion, Vec<Invocation>) {
