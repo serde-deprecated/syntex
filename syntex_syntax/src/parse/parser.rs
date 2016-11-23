@@ -5306,16 +5306,8 @@ impl<'a> Parser<'a> {
 
     fn push_directory(&mut self, id: Ident, attrs: &[Attribute]) -> Restrictions {
         if let Some(path) = ::attr::first_attr_value_str_by_name(attrs, "path") {
-<<<<<<< HEAD
-            self.directory.push(&*path);
-            self.restrictions - Restrictions::no_noninline_mod()
-||||||| merged common ancestors
-            self.directory.push(&*path);
-            self.restrictions - Restrictions::NO_NONINLINE_MOD
-=======
             self.directory.push(&*path.as_str());
-            self.restrictions - Restrictions::NO_NONINLINE_MOD
->>>>>>> origin/rust
+            self.restrictions - Restrictions::no_noninline_mod()
         } else {
             self.directory.push(&*id.name.as_str());
             self.restrictions

@@ -358,16 +358,8 @@ impl<'a, 'b> MacroExpander<'a, 'b> {
 
         match *ext {
             MultiModifier(ref mac) => {
-<<<<<<< HEAD
-                let items = mac.expand(self.cx, attr.span, &attr.node.value, item);
+                let items = mac.expand(self.cx, attr.span, &attr.value, item);
                 kind.expect_from_annotatables(items)
-||||||| merged common ancestors
-                let item = mac.expand(self.cx, attr.span, &attr.node.value, item);
-                kind.expect_from_annotatables(item)
-=======
-                let item = mac.expand(self.cx, attr.span, &attr.value, item);
-                kind.expect_from_annotatables(item)
->>>>>>> origin/rust
             }
             MultiDecorator(ref mac) => {
                 let mut items = Vec::new();

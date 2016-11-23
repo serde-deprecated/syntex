@@ -15,13 +15,7 @@ use errors::{FatalError, Handler, DiagnosticBuilder};
 use ext::tt::transcribe::tt_next_token;
 use parse::token;
 use str::char_at;
-<<<<<<< HEAD
-||||||| merged common ancestors
-use rustc_unicode::property::Pattern_White_Space;
-=======
 use symbol::{Symbol, keywords};
-use rustc_unicode::property::Pattern_White_Space;
->>>>>>> origin/rust
 
 use std::borrow::Cow;
 use std::char;

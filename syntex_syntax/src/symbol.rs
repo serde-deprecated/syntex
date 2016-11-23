@@ -21,8 +21,9 @@ use std::fmt;
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Symbol(u32);
 
+// FIXME syntex
 // The interner in thread-local, so `Symbol` shouldn't move between threads.
-impl !Send for Symbol { }
+// impl !Send for Symbol { }
 
 impl Symbol {
     /// Maps a string to its interned representation.
@@ -129,6 +130,7 @@ macro_rules! declare_keywords {(
 ) => {
     pub mod keywords {
         use ast;
+        use ext;
         #[derive(Clone, Copy, PartialEq, Eq)]
         pub struct Keyword {
             ident: ast::Ident,
@@ -140,7 +142,10 @@ macro_rules! declare_keywords {(
         $(
             #[allow(non_upper_case_globals)]
             pub const $konst: Keyword = Keyword {
-                ident: ast::Ident::with_empty_ctxt(ast::Name($index))
+                ident: ast::Ident {
+                    name: ast::Name($index),
+                    ctxt: ext::hygiene::SyntaxContext(0),
+                }
             };
         )*
     }
@@ -245,7 +250,8 @@ pub struct InternedString {
     string: &'static str,
 }
 
-impl !Send for InternedString { }
+// FIXME syntex
+// impl !Send for InternedString { }
 
 impl ::std::ops::Deref for InternedString {
     type Target = str;

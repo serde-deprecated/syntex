@@ -164,16 +164,8 @@ impl<'a> Parser<'a> {
                         break;
                     }
 
-<<<<<<< HEAD
                     let attr = try!(self.parse_attribute(true));
-                    assert!(attr.node.style == ast::AttrStyle::Inner);
-||||||| merged common ancestors
-                    let attr = self.parse_attribute(true)?;
-                    assert!(attr.node.style == ast::AttrStyle::Inner);
-=======
-                    let attr = self.parse_attribute(true)?;
                     assert!(attr.style == ast::AttrStyle::Inner);
->>>>>>> origin/rust
                     attrs.push(attr);
                 }
                 token::DocComment(s) => {
@@ -228,58 +220,16 @@ impl<'a> Parser<'a> {
         }
 
         let lo = self.span.lo;
-<<<<<<< HEAD
         let ident = try!(self.parse_ident());
-        let name = self.id_to_interned_str(ident);
-        match self.token {
-            token::Eq => {
-                self.bump();
-                let lit = try!(self.parse_unsuffixed_lit());
-                let hi = self.prev_span.hi;
-                Ok(P(spanned(lo, hi, ast::MetaItemKind::NameValue(name, lit))))
-            }
-            token::OpenDelim(token::Paren) => {
-                let inner_items = try!(self.parse_meta_seq());
-                let hi = self.prev_span.hi;
-                Ok(P(spanned(lo, hi, ast::MetaItemKind::List(name, inner_items))))
-            }
-            _ => {
-                let hi = self.prev_span.hi;
-                Ok(P(spanned(lo, hi, ast::MetaItemKind::Word(name))))
-            }
-        }
-||||||| merged common ancestors
-        let ident = self.parse_ident()?;
-        let name = self.id_to_interned_str(ident);
-        match self.token {
-            token::Eq => {
-                self.bump();
-                let lit = self.parse_unsuffixed_lit()?;
-                let hi = self.prev_span.hi;
-                Ok(P(spanned(lo, hi, ast::MetaItemKind::NameValue(name, lit))))
-            }
-            token::OpenDelim(token::Paren) => {
-                let inner_items = self.parse_meta_seq()?;
-                let hi = self.prev_span.hi;
-                Ok(P(spanned(lo, hi, ast::MetaItemKind::List(name, inner_items))))
-            }
-            _ => {
-                let hi = self.prev_span.hi;
-                Ok(P(spanned(lo, hi, ast::MetaItemKind::Word(name))))
-            }
-        }
-=======
-        let ident = self.parse_ident()?;
         let node = if self.eat(&token::Eq) {
-            ast::MetaItemKind::NameValue(self.parse_unsuffixed_lit()?)
+            ast::MetaItemKind::NameValue(try!(self.parse_unsuffixed_lit()))
         } else if self.token == token::OpenDelim(token::Paren) {
-            ast::MetaItemKind::List(self.parse_meta_seq()?)
+            ast::MetaItemKind::List(try!(self.parse_meta_seq()))
         } else {
             ast::MetaItemKind::Word
         };
         let hi = self.prev_span.hi;
         Ok(ast::MetaItem { name: ident.name, node: node, span: mk_sp(lo, hi) })
->>>>>>> origin/rust
     }
 
     /// matches meta_item_inner : (meta_item | UNSUFFIXED_LIT) ;
