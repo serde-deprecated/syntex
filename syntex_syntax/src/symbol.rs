@@ -69,7 +69,7 @@ impl Encodable for Symbol {
 
 impl Decodable for Symbol {
     fn decode<D: Decoder>(d: &mut D) -> Result<Symbol, D::Error> {
-        Ok(Symbol::intern(&d.read_str()?))
+        Ok(Symbol::intern(&try!(d.read_str())))
     }
 }
 
@@ -272,7 +272,7 @@ impl fmt::Display for InternedString {
 
 impl Decodable for InternedString {
     fn decode<D: Decoder>(d: &mut D) -> Result<InternedString, D::Error> {
-        Ok(Symbol::intern(&d.read_str()?).as_str())
+        Ok(Symbol::intern(&try!(d.read_str())).as_str())
     }
 }
 
