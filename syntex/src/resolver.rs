@@ -11,7 +11,6 @@ use syntex_syntax::ext::base::{
 };
 use syntex_syntax::ext::expand::Expansion;
 use syntex_syntax::ext::hygiene::Mark;
-use syntex_syntax::parse::token::intern;
 use syntex_syntax::parse::ParseSess;
 use syntex_syntax::ptr::P;
 
@@ -50,9 +49,7 @@ impl<'a> base::Resolver for Resolver<'a> {
     fn resolve_imports(&mut self) {}
     fn find_attr_invoc(&mut self, attrs: &mut Vec<Attribute>) -> Option<Attribute> {
         for i in 0..attrs.len() {
-            let name = intern(&attrs[i].name());
-
-            if let Some(ext) = self.extensions.get(&name) {
+            if let Some(ext) = self.extensions.get(&attrs[i].value.name) {
                 match **ext {
                     MultiModifier(..) | MultiDecorator(..) => return Some(attrs.remove(i)),
                     _ => {}
