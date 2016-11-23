@@ -8,13 +8,20 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use ast;
+use ast::{self, Ident};
 use syntax_pos::{self, BytePos, CharPos, Pos, Span};
 use codemap::CodeMap;
 use errors::{FatalError, Handler, DiagnosticBuilder};
 use ext::tt::transcribe::tt_next_token;
-use parse::token::{self, keywords, str_to_ident};
+use parse::token;
 use str::char_at;
+<<<<<<< HEAD
+||||||| merged common ancestors
+use rustc_unicode::property::Pattern_White_Space;
+=======
+use symbol::{Symbol, keywords};
+use rustc_unicode::property::Pattern_White_Space;
+>>>>>>> origin/rust
 
 use std::borrow::Cow;
 use std::char;
@@ -351,13 +358,13 @@ impl<'a> StringReader<'a> {
     /// single-byte delimiter).
     pub fn name_from(&self, start: BytePos) -> ast::Name {
         debug!("taking an ident from {:?} to {:?}", start, self.pos);
-        self.with_str_from(start, token::intern)
+        self.with_str_from(start, Symbol::intern)
     }
 
     /// As name_from, with an explicit endpoint.
     pub fn name_from_to(&self, start: BytePos, end: BytePos) -> ast::Name {
         debug!("taking an ident from {:?} to {:?}", start, end);
-        self.with_str_from_to(start, end, token::intern)
+        self.with_str_from_to(start, end, Symbol::intern)
     }
 
     /// Calls `f` with a string slice of the source text spanning from `start`
@@ -493,7 +500,7 @@ impl<'a> StringReader<'a> {
             if string == "_" {
                 None
             } else {
-                Some(token::intern(string))
+                Some(Symbol::intern(string))
             }
         })
     }
@@ -541,7 +548,7 @@ impl<'a> StringReader<'a> {
                         self.with_str_from(start_bpos, |string| {
                             // comments with only more "/"s are not doc comments
                             let tok = if is_doc_comment(string) {
-                                token::DocComment(token::intern(string))
+                                token::DocComment(Symbol::intern(string))
                             } else {
                                 token::Comment
                             };
@@ -670,7 +677,7 @@ impl<'a> StringReader<'a> {
                 } else {
                     string.into()
                 };
-                token::DocComment(token::intern(&string[..]))
+                token::DocComment(Symbol::intern(&string[..]))
             } else {
                 token::Comment
             };
@@ -759,7 +766,7 @@ impl<'a> StringReader<'a> {
             self.err_span_(start_bpos,
                            self.pos,
                            "no valid digits found for number");
-            return token::Integer(token::intern("0"));
+            return token::Integer(Symbol::intern("0"));
         }
 
         // might be a float, but don't be greedy if this is actually an
@@ -1097,7 +1104,7 @@ impl<'a> StringReader<'a> {
                     token::Underscore
                 } else {
                     // FIXME: perform NFKC normalization here. (Issue #2253)
-                    token::Ident(str_to_ident(string))
+                    token::Ident(Ident::from_str(string))
                 }
             }));
         }
@@ -1277,13 +1284,13 @@ impl<'a> StringReader<'a> {
                     // expansion purposes. See #12512 for the gory details of why
                     // this is necessary.
                     let ident = self.with_str_from(start, |lifetime_name| {
-                        str_to_ident(&format!("'{}", lifetime_name))
+                        Ident::from_str(&format!("'{}", lifetime_name))
                     });
 
                     // Conjure up a "keyword checking ident" to make sure that
                     // the lifetime name is not a keyword.
                     let keyword_checking_ident = self.with_str_from(start, |lifetime_name| {
-                        str_to_ident(lifetime_name)
+                        Ident::from_str(lifetime_name)
                     });
                     let keyword_checking_token = &token::Ident(keyword_checking_ident);
                     let last_bpos = self.pos;
@@ -1310,7 +1317,7 @@ impl<'a> StringReader<'a> {
                 let id = if valid {
                     self.name_from(start)
                 } else {
-                    token::intern("0")
+                    Symbol::intern("0")
                 };
                 self.bump(); // advance ch past token
                 let suffix = self.scan_optional_raw_name();
@@ -1352,7 +1359,7 @@ impl<'a> StringReader<'a> {
                 let id = if valid {
                     self.name_from(start_bpos + BytePos(1))
                 } else {
-                    token::intern("??")
+                    Symbol::intern("??")
                 };
                 self.bump();
                 let suffix = self.scan_optional_raw_name();
@@ -1424,7 +1431,7 @@ impl<'a> StringReader<'a> {
                 let id = if valid {
                     self.name_from_to(content_start_bpos, content_end_bpos)
                 } else {
-                    token::intern("??")
+                    Symbol::intern("??")
                 };
                 let suffix = self.scan_optional_raw_name();
                 return Ok(token::Literal(token::StrRaw(id, hash_count), suffix));
@@ -1551,7 +1558,7 @@ impl<'a> StringReader<'a> {
         let id = if valid {
             self.name_from(start)
         } else {
-            token::intern("?")
+            Symbol::intern("?")
         };
         self.bump(); // advance ch past token
         return token::Byte(id);
@@ -1584,7 +1591,7 @@ impl<'a> StringReader<'a> {
         let id = if valid {
             self.name_from(start)
         } else {
-            token::intern("??")
+            Symbol::intern("??")
         };
         self.bump();
         return token::ByteStr(id);
@@ -1705,11 +1712,12 @@ fn ident_continue(c: Option<char>) -> bool {
 mod tests {
     use super::*;
 
+    use ast::Ident;
+    use symbol::Symbol;
     use syntax_pos::{BytePos, Span, NO_EXPANSION};
     use codemap::CodeMap;
     use errors;
     use parse::token;
-    use parse::token::str_to_ident;
     use std::io;
     use std::rc::Rc;
 
@@ -1737,7 +1745,7 @@ mod tests {
                                       &sh,
                                       "/* my source file */ fn main() { println!(\"zebra\"); }\n"
                                           .to_string());
-        let id = str_to_ident("fn");
+        let id = Ident::from_str("fn");
         assert_eq!(string_reader.next_token().tok, token::Comment);
         assert_eq!(string_reader.next_token().tok, token::Whitespace);
         let tok1 = string_reader.next_token();
@@ -1756,7 +1764,7 @@ mod tests {
         // read another token:
         let tok3 = string_reader.next_token();
         let tok4 = TokenAndSpan {
-            tok: token::Ident(str_to_ident("main")),
+            tok: token::Ident(Ident::from_str("main")),
             sp: Span {
                 lo: BytePos(24),
                 hi: BytePos(28),
@@ -1778,7 +1786,7 @@ mod tests {
 
     // make the identifier by looking up the string in the interner
     fn mk_ident(id: &str) -> token::Token {
-        token::Ident(str_to_ident(id))
+        token::Ident(Ident::from_str(id))
     }
 
     #[test]
@@ -1818,7 +1826,7 @@ mod tests {
         let cm = Rc::new(CodeMap::new());
         let sh = mk_sh(cm.clone());
         assert_eq!(setup(&cm, &sh, "'a'".to_string()).next_token().tok,
-                   token::Literal(token::Char(token::intern("a")), None));
+                   token::Literal(token::Char(Symbol::intern("a")), None));
     }
 
     #[test]
@@ -1826,7 +1834,7 @@ mod tests {
         let cm = Rc::new(CodeMap::new());
         let sh = mk_sh(cm.clone());
         assert_eq!(setup(&cm, &sh, "' '".to_string()).next_token().tok,
-                   token::Literal(token::Char(token::intern(" ")), None));
+                   token::Literal(token::Char(Symbol::intern(" ")), None));
     }
 
     #[test]
@@ -1834,7 +1842,7 @@ mod tests {
         let cm = Rc::new(CodeMap::new());
         let sh = mk_sh(cm.clone());
         assert_eq!(setup(&cm, &sh, "'\\n'".to_string()).next_token().tok,
-                   token::Literal(token::Char(token::intern("\\n")), None));
+                   token::Literal(token::Char(Symbol::intern("\\n")), None));
     }
 
     #[test]
@@ -1842,7 +1850,7 @@ mod tests {
         let cm = Rc::new(CodeMap::new());
         let sh = mk_sh(cm.clone());
         assert_eq!(setup(&cm, &sh, "'abc".to_string()).next_token().tok,
-                   token::Lifetime(token::str_to_ident("'abc")));
+                   token::Lifetime(Ident::from_str("'abc")));
     }
 
     #[test]
@@ -1852,7 +1860,7 @@ mod tests {
         assert_eq!(setup(&cm, &sh, "r###\"\"#a\\b\x00c\"\"###".to_string())
                        .next_token()
                        .tok,
-                   token::Literal(token::StrRaw(token::intern("\"#a\\b\x00c\""), 3), None));
+                   token::Literal(token::StrRaw(Symbol::intern("\"#a\\b\x00c\""), 3), None));
     }
 
     #[test]
@@ -1862,11 +1870,11 @@ mod tests {
         macro_rules! test {
             ($input: expr, $tok_type: ident, $tok_contents: expr) => {{
                 assert_eq!(setup(&cm, &sh, format!("{}suffix", $input)).next_token().tok,
-                           token::Literal(token::$tok_type(token::intern($tok_contents)),
-                                          Some(token::intern("suffix"))));
+                           token::Literal(token::$tok_type(Symbol::intern($tok_contents)),
+                                          Some(Symbol::intern("suffix"))));
                 // with a whitespace separator:
                 assert_eq!(setup(&cm, &sh, format!("{} suffix", $input)).next_token().tok,
-                           token::Literal(token::$tok_type(token::intern($tok_contents)),
+                           token::Literal(token::$tok_type(Symbol::intern($tok_contents)),
                                           None));
             }}
         }
@@ -1882,14 +1890,14 @@ mod tests {
         test!("1.0e10", Float, "1.0e10");
 
         assert_eq!(setup(&cm, &sh, "2us".to_string()).next_token().tok,
-                   token::Literal(token::Integer(token::intern("2")),
-                                  Some(token::intern("us"))));
+                   token::Literal(token::Integer(Symbol::intern("2")),
+                                  Some(Symbol::intern("us"))));
         assert_eq!(setup(&cm, &sh, "r###\"raw\"###suffix".to_string()).next_token().tok,
-                   token::Literal(token::StrRaw(token::intern("raw"), 3),
-                                  Some(token::intern("suffix"))));
+                   token::Literal(token::StrRaw(Symbol::intern("raw"), 3),
+                                  Some(Symbol::intern("suffix"))));
         assert_eq!(setup(&cm, &sh, "br###\"raw\"###suffix".to_string()).next_token().tok,
-                   token::Literal(token::ByteStrRaw(token::intern("raw"), 3),
-                                  Some(token::intern("suffix"))));
+                   token::Literal(token::ByteStrRaw(Symbol::intern("raw"), 3),
+                                  Some(Symbol::intern("suffix"))));
     }
 
     #[test]
@@ -1909,7 +1917,7 @@ mod tests {
             _ => panic!("expected a comment!"),
         }
         assert_eq!(lexer.next_token().tok,
-                   token::Literal(token::Char(token::intern("a")), None));
+                   token::Literal(token::Char(Symbol::intern("a")), None));
     }
 
     #[test]
@@ -1922,6 +1930,6 @@ mod tests {
         assert_eq!(comment.sp, ::syntax_pos::mk_sp(BytePos(0), BytePos(7)));
         assert_eq!(lexer.next_token().tok, token::Whitespace);
         assert_eq!(lexer.next_token().tok,
-                   token::DocComment(token::intern("/// test")));
+                   token::DocComment(Symbol::intern("/// test")));
     }
 }
