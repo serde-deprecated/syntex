@@ -18,7 +18,7 @@ use errors::DiagnosticBuilder;
 use ext::expand::{self, Expansion};
 use ext::hygiene::Mark;
 use fold::{self, Folder};
-use parse::{self, parser};
+use parse::{self, parser, DirectoryOwnership};
 use parse::token;
 use ptr::P;
 use symbol::Symbol;
@@ -576,9 +576,7 @@ pub struct ExpansionData {
     pub depth: usize,
     pub backtrace: ExpnId,
     pub module: Rc<ModuleData>,
-
-    // True if non-inline modules without a `#[path]` are forbidden at the root of this expansion.
-    pub no_noninline_mod: bool,
+    pub directory_ownership: DirectoryOwnership,
 }
 
 /// One of these is made during expansion and incrementally updated as we go;
@@ -609,7 +607,7 @@ impl<'a> ExtCtxt<'a> {
                 depth: 0,
                 backtrace: NO_EXPANSION,
                 module: Rc::new(ModuleData { mod_path: Vec::new(), directory: PathBuf::new() }),
-                no_noninline_mod: false,
+                directory_ownership: DirectoryOwnership::Owned,
             },
         }
     }
