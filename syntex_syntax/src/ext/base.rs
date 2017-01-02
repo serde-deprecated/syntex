@@ -217,8 +217,7 @@ pub trait IdentMacroExpander {
                    cx: &'cx mut ExtCtxt,
                    sp: Span,
                    ident: ast::Ident,
-                   token_tree: Vec<tokenstream::TokenTree>,
-                   attrs: Vec<ast::Attribute>)
+                   token_tree: Vec<tokenstream::TokenTree>)
                    -> Box<MacResult+'cx>;
 }
 
@@ -234,8 +233,7 @@ impl<F> IdentMacroExpander for F
                    cx: &'cx mut ExtCtxt,
                    sp: Span,
                    ident: ast::Ident,
-                   token_tree: Vec<tokenstream::TokenTree>,
-                   _attrs: Vec<ast::Attribute>)
+                   token_tree: Vec<tokenstream::TokenTree>)
                    -> Box<MacResult+'cx>
     {
         (*self)(cx, sp, ident, token_tree)
@@ -518,9 +516,9 @@ pub trait Resolver {
     fn next_node_id(&mut self) -> ast::NodeId;
     fn get_module_scope(&mut self, id: ast::NodeId) -> Mark;
     fn eliminate_crate_var(&mut self, item: P<ast::Item>) -> P<ast::Item>;
+    fn is_whitelisted_legacy_custom_derive(&self, name: Name) -> bool;
 
     fn visit_expansion(&mut self, mark: Mark, expansion: &Expansion);
-    fn add_macro(&mut self, scope: Mark, def: ast::MacroDef, export: bool);
     fn add_ext(&mut self, ident: ast::Ident, ext: Rc<SyntaxExtension>);
     fn add_expansions_at_stmt(&mut self, id: ast::NodeId, macros: Vec<Mark>);
 
@@ -528,8 +526,6 @@ pub trait Resolver {
     fn find_attr_invoc(&mut self, attrs: &mut Vec<Attribute>) -> Option<Attribute>;
     // FIXME(syntax): ignore unknown macros
     fn find_extension(&mut self, scope: Mark, name: ast::Name) -> Option<Rc<SyntaxExtension>>;
-    // FIXME(syntax): ignore unknown macros
-    fn find_mac(&mut self, scope: Mark, mac: &ast::Mac) -> Option<Rc<SyntaxExtension>>;
     fn resolve_macro(&mut self, scope: Mark, path: &ast::Path, force: bool)
                      -> Result<Rc<SyntaxExtension>, Determinacy>;
 }
@@ -546,9 +542,9 @@ impl Resolver for DummyResolver {
     fn next_node_id(&mut self) -> ast::NodeId { ast::DUMMY_NODE_ID }
     fn get_module_scope(&mut self, _id: ast::NodeId) -> Mark { Mark::root() }
     fn eliminate_crate_var(&mut self, item: P<ast::Item>) -> P<ast::Item> { item }
+    fn is_whitelisted_legacy_custom_derive(&self, _name: Name) -> bool { false }
 
     fn visit_expansion(&mut self, _invoc: Mark, _expansion: &Expansion) {}
-    fn add_macro(&mut self, _scope: Mark, _def: ast::MacroDef, _export: bool) {}
     fn add_ext(&mut self, _ident: ast::Ident, _ext: Rc<SyntaxExtension>) {}
     fn add_expansions_at_stmt(&mut self, _id: ast::NodeId, _macros: Vec<Mark>) {}
 
@@ -557,7 +553,6 @@ impl Resolver for DummyResolver {
     fn find_extension(&mut self, _scope: Mark, _name: ast::Name) -> Option<Rc<SyntaxExtension>> {
         None
     }
-    fn find_mac(&mut self, _scope: Mark, _mac: &ast::Mac) -> Option<Rc<SyntaxExtension>> { None }
     fn resolve_macro(&mut self, _scope: Mark, _path: &ast::Path, _force: bool)
                      -> Result<Rc<SyntaxExtension>, Determinacy> {
         Err(Determinacy::Determined)
