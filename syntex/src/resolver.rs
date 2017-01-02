@@ -72,12 +72,11 @@ impl<'a> base::Resolver for Resolver<'a> {
 
         if path.len() > 1 {
             // FIXME(syntex): Pass macros with module separators through to the generated source.
-            self.session.span_diagnostic.span_err(path.span,
-                                                    "expected macro name without module separators");
+            self.session.span_diagnostic.span_err(span, "expected macro name without module separators");
             return Err(Determinacy::Determined);
         }        
 
-        let name = path.segments[0].identifier.name;
+        let name = path[0].name;
 
         self.find_extension(scope, name).ok_or_else(|| {
             if force {
