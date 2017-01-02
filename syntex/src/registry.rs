@@ -190,6 +190,7 @@ impl Registry {
 
         let mut ecfg = expand::ExpansionConfig::default(crate_name.to_owned());
         ecfg.features = Some(&features);
+        ecfg.keep_macs = true;
 
         let mut resolver = resolver::Resolver::new(sess);
 
