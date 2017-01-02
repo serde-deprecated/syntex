@@ -88,13 +88,6 @@ pub enum PathStyle {
     Expr,
 }
 
-/// How to parse a bound, whether to allow bound modifiers such as `?`.
-#[derive(Copy, Clone, PartialEq)]
-pub enum BoundParsingMode {
-    Bare,
-    Modified,
-}
-
 #[derive(Clone, Copy, PartialEq)]
 pub enum SemiColonMode {
     Break,
@@ -274,12 +267,11 @@ impl From<P<Expr>> for LhsExpr {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(sess: &'a ParseSess, rdr: Box<Reader+'a>) -> Self {
-        Parser::new_with_doc_flag(sess, rdr, false)
-    }
-
-    pub fn new_with_doc_flag(sess: &'a ParseSess, rdr: Box<Reader+'a>, desugar_doc_comments: bool)
-                             -> Self {
+    pub fn new(sess: &'a ParseSess,
+               rdr: Box<Reader+'a>,
+               directory: Option<Directory>,
+               desugar_doc_comments: bool)
+               -> Self {
         let mut parser = Parser {
             reader: rdr,
             sess: sess,
@@ -305,7 +297,9 @@ impl<'a> Parser<'a> {
         let tok = parser.next_tok();
         parser.token = tok.tok;
         parser.span = tok.sp;
-        if parser.span != syntax_pos::DUMMY_SP {
+        if let Some(directory) = directory {
+            parser.directory = directory;
+        } else if parser.span != syntax_pos::DUMMY_SP {
             parser.directory.path = PathBuf::from(sess.codemap().span_to_filename(parser.span));
             parser.directory.path.pop();
         }
@@ -1041,7 +1035,7 @@ impl<'a> Parser<'a> {
                                                      trait_ref: trait_ref,
                                                      span: mk_sp(lo, hi)};
             let other_bounds = if self.eat(&token::BinOp(token::Plus)) {
-                self.parse_ty_param_bounds(BoundParsingMode::Bare)?
+                self.parse_ty_param_bounds()?
             } else {
                 P::new()
             };
@@ -1059,7 +1053,7 @@ impl<'a> Parser<'a> {
         The `impl` has already been consumed.
         */
 
-        let bounds = self.parse_ty_param_bounds(BoundParsingMode::Modified)?;
+        let bounds = self.parse_ty_param_bounds()?;
 
         if !bounds.iter().any(|b| if let TraitTyParamBound(..) = *b { true } else { false }) {
             self.span_err(self.prev_span, "at least one trait must be specified");
@@ -1271,7 +1265,7 @@ impl<'a> Parser<'a> {
             return Ok(lhs);
         }
 
-        let bounds = self.parse_ty_param_bounds(BoundParsingMode::Bare)?;
+        let bounds = self.parse_ty_param_bounds()?;
 
         // In type grammar, `+` is treated like a binary operator,
         // and hence both L and R side are required.
@@ -1620,7 +1614,6 @@ impl<'a> Parser<'a> {
         } else {
             ast::Path {
                 span: span,
-                global: false,
                 segments: vec![]
             }
         };
@@ -1664,7 +1657,7 @@ impl<'a> Parser<'a> {
         // Parse any number of segments and bound sets. A segment is an
         // identifier followed by an optional lifetime and a set of types.
         // A bound set is a set of type parameter bounds.
-        let segments = match mode {
+        let mut segments = match mode {
             PathStyle::Type => {
                 self.parse_path_segments_without_colons()?
             }
@@ -1676,13 +1669,16 @@ impl<'a> Parser<'a> {
             }
         };
 
+        if is_global {
+            segments.insert(0, ast::PathSegment::crate_root());
+        }
+
         // Assemble the span.
         let span = mk_sp(lo, self.prev_span.hi);
 
         // Assemble the result.
         Ok(ast::Path {
             span: span,
-            global: is_global,
             segments: segments,
         })
     }
@@ -1711,12 +1707,11 @@ impl<'a> Parser<'a> {
             // Parse types, optionally.
             let parameters = if self.eat_lt() {
                 let (lifetimes, types, bindings) = self.parse_generic_values_after_lt()?;
-
-                ast::PathParameters::AngleBracketed(ast::AngleBracketedParameterData {
+                ast::AngleBracketedParameterData {
                     lifetimes: lifetimes,
                     types: P::from_vec(types),
                     bindings: P::from_vec(bindings),
-                })
+                }.into()
             } else if self.eat(&token::OpenDelim(token::Paren)) {
                 let lo = self.prev_span.lo;
 
@@ -1733,18 +1728,17 @@ impl<'a> Parser<'a> {
 
                 let hi = self.prev_span.hi;
 
-                ast::PathParameters::Parenthesized(ast::ParenthesizedParameterData {
+                Some(P(ast::PathParameters::Parenthesized(ast::ParenthesizedParameterData {
                     span: mk_sp(lo, hi),
                     inputs: inputs,
                     output: output_ty,
-                })
+                })))
             } else {
-                ast::PathParameters::none()
+                None
             };
 
             // Assemble and push the result.
-            segments.push(ast::PathSegment { identifier: identifier,
-                                             parameters: parameters });
+            segments.push(ast::PathSegment { identifier: identifier, parameters: parameters });
 
             // Continue only if we see a `::`
             if !self.eat(&token::ModSep) {
@@ -1763,10 +1757,7 @@ impl<'a> Parser<'a> {
 
             // If we do not see a `::`, stop.
             if !self.eat(&token::ModSep) {
-                segments.push(ast::PathSegment {
-                    identifier: identifier,
-                    parameters: ast::PathParameters::none()
-                });
+                segments.push(identifier.into());
                 return Ok(segments);
             }
 
@@ -1774,14 +1765,13 @@ impl<'a> Parser<'a> {
             if self.eat_lt() {
                 // Consumed `a::b::<`, go look for types
                 let (lifetimes, types, bindings) = self.parse_generic_values_after_lt()?;
-                let parameters = ast::AngleBracketedParameterData {
-                    lifetimes: lifetimes,
-                    types: P::from_vec(types),
-                    bindings: P::from_vec(bindings),
-                };
                 segments.push(ast::PathSegment {
                     identifier: identifier,
-                    parameters: ast::PathParameters::AngleBracketed(parameters),
+                    parameters: ast::AngleBracketedParameterData {
+                        lifetimes: lifetimes,
+                        types: P::from_vec(types),
+                        bindings: P::from_vec(bindings),
+                    }.into(),
                 });
 
                 // Consumed `a::b::<T,U>`, check for `::` before proceeding
@@ -1790,10 +1780,7 @@ impl<'a> Parser<'a> {
                 }
             } else {
                 // Consumed `a::`, go look for `b`
-                segments.push(ast::PathSegment {
-                    identifier: identifier,
-                    parameters: ast::PathParameters::none(),
-                });
+                segments.push(identifier.into());
             }
         }
     }
@@ -1808,10 +1795,7 @@ impl<'a> Parser<'a> {
             let identifier = self.parse_path_segment_ident()?;
 
             // Assemble and push the result.
-            segments.push(ast::PathSegment {
-                identifier: identifier,
-                parameters: ast::PathParameters::none()
-            });
+            segments.push(identifier.into());
 
             // If we do not see a `::` or see `::{`/`::*`, stop.
             if !self.check(&token::ModSep) || self.is_import_coupler() {
@@ -4148,14 +4132,12 @@ impl<'a> Parser<'a> {
 
     // Parses a sequence of bounds if a `:` is found,
     // otherwise returns empty list.
-    fn parse_colon_then_ty_param_bounds(&mut self,
-                                        mode: BoundParsingMode)
-                                        -> PResult<'a, TyParamBounds>
+    fn parse_colon_then_ty_param_bounds(&mut self) -> PResult<'a, TyParamBounds>
     {
         if !self.eat(&token::Colon) {
             Ok(P::new())
         } else {
-            self.parse_ty_param_bounds(mode)
+            self.parse_ty_param_bounds()
         }
     }
 
@@ -4163,9 +4145,7 @@ impl<'a> Parser<'a> {
     // where   boundseq  = ( polybound + boundseq ) | polybound
     // and     polybound = ( 'for' '<' 'region '>' )? bound
     // and     bound     = 'region | trait_ref
-    fn parse_ty_param_bounds(&mut self,
-                             mode: BoundParsingMode)
-                             -> PResult<'a, TyParamBounds>
+    fn parse_ty_param_bounds(&mut self) -> PResult<'a, TyParamBounds>
     {
         let mut result = vec![];
         loop {
@@ -4184,16 +4164,10 @@ impl<'a> Parser<'a> {
                     }));
                     self.bump();
                 }
-                token::ModSep | token::Ident(..) => {
+                _ if self.token.is_path_start() || self.token.is_keyword(keywords::For) => {
                     let poly_trait_ref = self.parse_poly_trait_ref()?;
                     let modifier = if ate_question {
-                        if mode == BoundParsingMode::Modified {
-                            TraitBoundModifier::Maybe
-                        } else {
-                            self.span_err(question_span,
-                                          "unexpected `?`");
-                            TraitBoundModifier::None
-                        }
+                        TraitBoundModifier::Maybe
                     } else {
                         TraitBoundModifier::None
                     };
@@ -4215,7 +4189,7 @@ impl<'a> Parser<'a> {
         let span = self.span;
         let ident = self.parse_ident()?;
 
-        let bounds = self.parse_colon_then_ty_param_bounds(BoundParsingMode::Modified)?;
+        let bounds = self.parse_colon_then_ty_param_bounds()?;
 
         let default = if self.check(&token::Eq) {
             self.bump();
@@ -4394,6 +4368,23 @@ impl<'a> Parser<'a> {
             return Ok(where_clause);
         }
 
+        // This is a temporary hack.
+        //
+        // We are considering adding generics to the `where` keyword as an alternative higher-rank
+        // parameter syntax (as in `where<'a>` or `where<T>`. To avoid that being a breaking
+        // change, for now we refuse to parse `where < (ident | lifetime) (> | , | :)`.
+        if token::Lt == self.token {
+            let ident_or_lifetime = self.look_ahead(1, |t| t.is_ident() || t.is_lifetime());
+            if ident_or_lifetime {
+                let gt_comma_or_colon = self.look_ahead(2, |t| {
+                    *t == token::Gt || *t == token::Comma || *t == token::Colon
+                });
+                if gt_comma_or_colon {
+                    self.span_err(self.span, "syntax `where<T>` is reserved for future use");
+                }
+            }
+        }
+
         let mut parsed_something = false;
         loop {
             let lo = self.span.lo;
@@ -4439,7 +4430,7 @@ impl<'a> Parser<'a> {
                     let bounded_ty = self.parse_ty()?;
 
                     if self.eat(&token::Colon) {
-                        let bounds = self.parse_ty_param_bounds(BoundParsingMode::Bare)?;
+                        let bounds = self.parse_ty_param_bounds()?;
                         let hi = self.prev_span.hi;
                         let span = mk_sp(lo, hi);
 
@@ -4901,7 +4892,7 @@ impl<'a> Parser<'a> {
         let mut tps = self.parse_generics()?;
 
         // Parse supertrait bounds.
-        let bounds = self.parse_colon_then_ty_param_bounds(BoundParsingMode::Bare)?;
+        let bounds = self.parse_colon_then_ty_param_bounds()?;
 
         tps.where_clause = self.parse_where_clause()?;
 
@@ -5208,7 +5199,7 @@ impl<'a> Parser<'a> {
         } else if self.eat_keyword(keywords::Crate) {
             pub_crate(self)
         } else {
-            let path = self.parse_path(PathStyle::Mod)?;
+            let path = self.parse_path(PathStyle::Mod)?.default_to_global();
             self.expect(&token::CloseDelim(token::Paren))?;
             Ok(Visibility::Restricted { path: P(path), id: ast::DUMMY_NODE_ID })
         }
@@ -6096,9 +6087,9 @@ impl<'a> Parser<'a> {
         if self.check(&token::OpenDelim(token::Brace)) || self.check(&token::BinOp(token::Star)) ||
            self.is_import_coupler() {
             // `{foo, bar}`, `::{foo, bar}`, `*`, or `::*`.
+            self.eat(&token::ModSep);
             let prefix = ast::Path {
-                global: self.eat(&token::ModSep),
-                segments: Vec::new(),
+                segments: vec![ast::PathSegment::crate_root()],
                 span: mk_sp(lo, self.span.hi),
             };
             let view_path_kind = if self.eat(&token::BinOp(token::Star)) {
@@ -6108,7 +6099,7 @@ impl<'a> Parser<'a> {
             };
             Ok(P(spanned(lo, self.span.hi, view_path_kind)))
         } else {
-            let prefix = self.parse_path(PathStyle::Mod)?;
+            let prefix = self.parse_path(PathStyle::Mod)?.default_to_global();
             if self.is_import_coupler() {
                 // `foo::bar::{a, b}` or `foo::bar::*`
                 self.bump();
