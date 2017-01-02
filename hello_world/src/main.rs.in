@@ -1,16 +1,23 @@
 use std::fmt::Debug;
 
-// #[syntex_modifier] turns into #[derive(Clone)]
+// #[syntex_modifier] turns into #[derive(Debug)]
 #[syntex_modifier]
 struct S<'a>(&'a str);
 
+// Macro rules still work.
+macro_rules! world {
+    () => { "world" }
+}
+
 fn main() {
-    // syntex_macro!() turns into "hello world"
+    // syntex_macro!() turns into "hello"
     let s = S(syntex_macro!());
 
     assert_debug::<S>();
 
-    println!("{}", s.0);
+    let world = world!();
+
+    println!("{} {}", s.0, world);
 }
 
 fn assert_debug<T: Debug>() {}
