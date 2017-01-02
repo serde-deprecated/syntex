@@ -17,13 +17,13 @@ pub fn register(registry: &mut Registry) {
 }
 
 // syntex_macro!()
-// returns "hello world"
+// returns "hello"
 fn expand_macro<'cx>(
     cx: &'cx mut ExtCtxt,
     sp: Span,
     _: &[TokenTree]
 ) -> Box<MacResult + 'cx> {
-    let expr = cx.expr_str(sp, Symbol::intern("hello world"));
+    let expr = cx.expr_str(sp, Symbol::intern("hello"));
     MacEager::expr(expr)
 }
 
