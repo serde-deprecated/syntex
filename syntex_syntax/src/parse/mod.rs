@@ -28,8 +28,6 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str;
 
-use rustc_i128::u128;
-
 pub type PResult<'a, T> = Result<T, DiagnosticBuilder<'a>>;
 
 #[macro_use]
@@ -591,7 +589,7 @@ pub fn integer_lit(s: &str, suffix: Option<Symbol>, sd: &Handler, sp: Span) -> a
     debug!("integer_lit: the type is {:?}, base {:?}, the new string is {:?}, the original \
            string was {:?}, the original suffix was {:?}", ty, base, s, orig, suffix);
 
-    match u128::from_str_radix(s, base) {
+    match u64::from_str_radix(s, base) {
         Ok(r) => ast::LitKind::Int(r, ty),
         Err(_) => {
             // small bases are lexed as if they were base 10, e.g, the string

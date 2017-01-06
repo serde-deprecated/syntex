@@ -30,8 +30,6 @@ use std_inject;
 use symbol::{Symbol, keywords};
 use tokenstream::{self, TokenTree};
 
-use rustc_i128::i128;
-
 use std::ascii;
 use std::io::{self, Write, Read};
 use std::iter;
@@ -649,7 +647,7 @@ pub trait PrintState<'a> {
             ast::LitKind::Int(i, t) => {
                 match t {
                     ast::LitIntType::Signed(st) => {
-                        word(self.writer(), &st.val_to_string(i as i128))
+                        word(self.writer(), &st.val_to_string(i as i64))
                     }
                     ast::LitIntType::Unsigned(ut) => {
                         word(self.writer(), &ut.val_to_string(i))

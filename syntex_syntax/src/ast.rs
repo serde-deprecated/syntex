@@ -33,8 +33,6 @@ use std::u32;
 
 use serialize::{self, Encodable, Decodable, Encoder, Decoder};
 
-use rustc_i128::{u128, i128};
-
 /// An identifier contains a Name (index into the interner
 /// table) and a SyntaxContext to track renaming and
 /// macro expansion per Flatt et al., "Macros That Work Together"
@@ -1064,7 +1062,7 @@ pub enum LitKind {
     /// A character literal (`'a'`)
     Char(char),
     /// An integer literal (`1`)
-    Int(u128, LitIntType),
+    Int(u64, LitIntType),
     /// A float literal (`1f64` or `1E10f64`)
     Float(Symbol, FloatTy),
     /// A float literal without a suffix (`1.0 or 1.0E10`)
@@ -1200,11 +1198,11 @@ impl IntTy {
         }
     }
 
-    pub fn val_to_string(&self, val: i128) -> String {
-        // cast to a u128 so we can correctly print INT128_MIN. All integral types
-        // are parsed as u128, so we wouldn't want to print an extra negative
+    pub fn val_to_string(&self, val: i64) -> String {
+        // cast to a u64 so we can correctly print INT64_MIN. All integral types
+        // are parsed as u64, so we wouldn't want to print an extra negative
         // sign.
-        format!("{}{}", val as u128, self.ty_to_string())
+        format!("{}{}", val as u64, self.ty_to_string())
     }
 
     pub fn bit_width(&self) -> Option<usize> {
@@ -1241,7 +1239,7 @@ impl UintTy {
         }
     }
 
-    pub fn val_to_string(&self, val: u128) -> String {
+    pub fn val_to_string(&self, val: u64) -> String {
         format!("{}{}", val, self.ty_to_string())
     }
 
