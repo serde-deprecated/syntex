@@ -279,9 +279,6 @@ declare_features! (
     // instead of just the platforms on which it is the C ABI
     (active, abi_sysv64, "1.13.0", Some(36167)),
 
-    // Macros 1.1
-    (active, proc_macro, "1.13.0", Some(35900)),
-
     // Allows untagged unions `union U { ... }`
     (active, untagged_unions, "1.13.0", Some(32836)),
 
@@ -318,6 +315,15 @@ declare_features! (
 
     // Allow safe suggestions for potential type conversions.
     (active, safe_suggestion, "1.0.0", Some(37384)),
+
+    // `extern "ptx-*" fn()`
+    (active, abi_ptx, "1.15.0", None),
+
+    // The `i128` type
+    (active, i128_type, "1.16.0", Some(35118)),
+
+    // The `unadjusted` ABI. Perma unstable.
+    (active, abi_unadjusted, "1.16.0", None),
 );
 
 declare_features! (
@@ -368,6 +374,8 @@ declare_features! (
     // Allows `..` in tuple (struct) patterns
     (accepted, dotdot_in_tuple_patterns, "1.14.0", Some(33627)),
     (accepted, item_like_imports, "1.14.0", Some(35120)),
+    // Macros 1.1
+    (accepted, proc_macro, "1.15.0", Some(35900)),
 );
 // (changing above list without updating src/doc/reference.md makes @cmr sad)
 
@@ -641,11 +649,7 @@ pub const BUILTIN_ATTRIBUTES: &'static [(&'static str, AttributeType, AttributeG
                                         is an experimental feature",
                                        cfg_fn!(fundamental))),
 
-    ("proc_macro_derive", Normal, Gated(Stability::Unstable,
-                                        "proc_macro",
-                                        "the `#[proc_macro_derive]` attribute \
-                                         is an experimental feature",
-                                        cfg_fn!(proc_macro))),
+    ("proc_macro_derive", Normal, Ungated),
 
     ("rustc_copy_clone_marker", Whitelisted, Gated(Stability::Unstable,
                                                    "rustc_attrs",
@@ -751,7 +755,6 @@ const GATED_CFGS: &'static [(&'static str, &'static str, fn(&Features) -> bool)]
     ("target_vendor", "cfg_target_vendor", cfg_fn!(cfg_target_vendor)),
     ("target_thread_local", "cfg_target_thread_local", cfg_fn!(cfg_target_thread_local)),
     ("target_has_atomic", "cfg_target_has_atomic", cfg_fn!(cfg_target_has_atomic)),
-    ("proc_macro", "proc_macro", cfg_fn!(proc_macro)),
 ];
 
 #[derive(Debug, Eq, PartialEq)]
@@ -986,7 +989,23 @@ impl<'a> PostExpansionVisitor<'a> {
                 gate_feature_post!(&self, abi_sysv64, span,
                                    "sysv64 ABI is experimental and subject to change");
             },
-            _ => {}
+            Abi::PtxKernel => {
+                gate_feature_post!(&self, abi_ptx, span,
+                                   "PTX ABIs are experimental and subject to change");
+            },
+            Abi::Unadjusted => {
+                gate_feature_post!(&self, abi_unadjusted, span,
+                                   "unadjusted ABI is an implementation detail and perma-unstable");
+            },
+            // Stable
+            Abi::Cdecl |
+            Abi::Stdcall |
+            Abi::Fastcall |
+            Abi::Aapcs |
+            Abi::Win64 |
+            Abi::Rust |
+            Abi::C |
+            Abi::System => {}
         }
     }
 }
@@ -1199,6 +1218,18 @@ impl<'a> Visitor<'a> for PostExpansionVisitor<'a> {
             ast::ExprKind::Break(_, Some(_)) => {
                 gate_feature_post!(&self, loop_break_value, e.span,
                                    "`break` with a value is experimental");
+            }
+            ast::ExprKind::Lit(ref lit) => {
+                if let ast::LitKind::Int(_, ref ty) = lit.node {
+                    match *ty {
+                        ast::LitIntType::Signed(ast::IntTy::I128) |
+                        ast::LitIntType::Unsigned(ast::UintTy::U128) => {
+                            gate_feature_post!(&self, i128_type, e.span,
+                                               "128-bit integers are not stable");
+                        }
+                        _ => {}
+                    }
+                }
             }
             _ => {}
         }
