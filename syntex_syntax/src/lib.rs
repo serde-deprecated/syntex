@@ -30,16 +30,8 @@ extern crate libc;
 extern crate syntex_errors as errors;
 extern crate syntex_pos as syntax_pos;
 
-<<<<<<< HEAD
 extern crate rustc_serialize as serialize;
 extern crate unicode_xid;
-||||||| merged common ancestors
-extern crate serialize as rustc_serialize; // used by deriving
-=======
-extern crate rustc_i128;
->>>>>>> origin/rust
-
-extern crate serialize as rustc_serialize; // used by deriving
 
 // A variant of 'try!' that panics on an Err. This is used as a crutch on the
 // way towards a non-panic!-prone parser. It should be used for fatal parsing

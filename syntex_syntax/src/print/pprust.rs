@@ -1641,16 +1641,8 @@ impl<'a> State<'a> {
                     self.word_space("=")?;
                     self.print_expr(&init)?;
                 }
-<<<<<<< HEAD
                 try!(word(&mut self.s, ";"));
                 try!(self.end());
-||||||| merged common ancestors
-                try!(word(&mut self.s, ";"));
-                self.end()?;
-=======
-                word(&mut self.s, ";")?;
-                self.end()?;
->>>>>>> origin/rust
             }
             ast::StmtKind::Item(ref item) => try!(self.print_item(&item)),
             ast::StmtKind::Expr(ref expr) => {
