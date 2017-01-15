@@ -1954,7 +1954,7 @@ impl<'a> Parser<'a> {
 
     /// Parse ident (COLON expr)?
     pub fn parse_field(&mut self) -> PResult<'a, Field> {
-        let attrs = self.parse_outer_attributes()?;
+        let attrs = try!(self.parse_outer_attributes());
         let lo = self.span.lo;
         let hi;
 
@@ -3446,7 +3446,7 @@ impl<'a> Parser<'a> {
                 if self.check(&token::CloseDelim(token::Brace)) { break }
             }
 
-            let attrs = self.parse_outer_attributes()?;
+            let attrs = try!(self.parse_outer_attributes());
             let lo = self.span.lo;
             let hi;
 
