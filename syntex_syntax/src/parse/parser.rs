@@ -1954,6 +1954,7 @@ impl<'a> Parser<'a> {
 
     /// Parse ident (COLON expr)?
     pub fn parse_field(&mut self) -> PResult<'a, Field> {
+        let attrs = self.parse_outer_attributes()?;
         let lo = self.span.lo;
         let hi;
 
@@ -1976,6 +1977,7 @@ impl<'a> Parser<'a> {
             span: mk_sp(lo, expr.span.hi),
             expr: expr,
             is_shorthand: is_shorthand,
+            attrs: attrs.into(),
         })
     }
 
@@ -3444,6 +3446,7 @@ impl<'a> Parser<'a> {
                 if self.check(&token::CloseDelim(token::Brace)) { break }
             }
 
+            let attrs = self.parse_outer_attributes()?;
             let lo = self.span.lo;
             let hi;
 
@@ -3501,9 +3504,13 @@ impl<'a> Parser<'a> {
             };
 
             fields.push(codemap::Spanned { span: mk_sp(lo, hi),
-                                              node: ast::FieldPat { ident: fieldname,
-                                                                    pat: subpat,
-                                                                    is_shorthand: is_shorthand }});
+                                           node: ast::FieldPat {
+                                               ident: fieldname,
+                                               pat: subpat,
+                                               is_shorthand: is_shorthand,
+                                               attrs: attrs.into(),
+                                           }
+            });
         }
         return Ok((fields, etc));
     }
