@@ -1009,7 +1009,7 @@ impl<'a> State<'a> {
             ast::TyKind::BareFn(ref f) => {
                 let generics = ast::Generics {
                     lifetimes: f.lifetimes.clone(),
-                    ty_params: P::new(),
+                    ty_params: Vec::new(),
                     where_clause: ast::WhereClause {
                         id: ast::DUMMY_NODE_ID,
                         predicates: Vec::new(),
@@ -1028,11 +1028,7 @@ impl<'a> State<'a> {
             ast::TyKind::Path(Some(ref qself), ref path) => {
                 self.print_qpath(path, qself, false)?
             }
-            ast::TyKind::ObjectSum(ref ty, ref bounds) => {
-                self.print_type(&ty)?;
-                self.print_bounds("+", &bounds[..])?;
-            }
-            ast::TyKind::PolyTraitRef(ref bounds) => {
+            ast::TyKind::TraitObject(ref bounds) => {
                 self.print_bounds("", &bounds[..])?;
             }
             ast::TyKind::ImplTrait(ref bounds) => {
@@ -2018,7 +2014,7 @@ impl<'a> State<'a> {
             ast::ExprKind::InPlace(ref place, ref expr) => {
                 self.print_expr_in_place(place, expr)?;
             }
-            ast::ExprKind::Vec(ref exprs) => {
+            ast::ExprKind::Array(ref exprs) => {
                 self.print_expr_vec(&exprs[..], attrs)?;
             }
             ast::ExprKind::Repeat(ref element, ref count) => {
@@ -2849,11 +2845,13 @@ impl<'a> State<'a> {
                                                                                ..}) => {
                     self.print_lifetime_bounds(lifetime, bounds)?;
                 }
-                ast::WherePredicate::EqPredicate(ast::WhereEqPredicate{ref path, ref ty, ..}) => {
-                    self.print_path(path, false, 0, false)?;
+                ast::WherePredicate::EqPredicate(ast::WhereEqPredicate{ref lhs_ty,
+                                                                       ref rhs_ty,
+                                                                       ..}) => {
+                    self.print_type(lhs_ty)?;
                     space(&mut self.s)?;
                     self.word_space("=")?;
-                    self.print_type(&ty)?;
+                    self.print_type(rhs_ty)?;
                 }
             }
         }
@@ -2975,7 +2973,7 @@ impl<'a> State<'a> {
         }
         let generics = ast::Generics {
             lifetimes: Vec::new(),
-            ty_params: P::new(),
+            ty_params: Vec::new(),
             where_clause: ast::WhereClause {
                 id: ast::DUMMY_NODE_ID,
                 predicates: Vec::new(),
