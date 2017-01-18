@@ -1026,24 +1026,8 @@ impl<'a> State<'a> {
             ast::TyKind::Path(Some(ref qself), ref path) => {
                 try!(self.print_qpath(path, qself, false))
             }
-<<<<<<< HEAD
-            ast::TyKind::ObjectSum(ref ty, ref bounds) => {
-                try!(self.print_type(&ty));
-                try!(self.print_bounds("+", &bounds[..]));
-            }
-            ast::TyKind::PolyTraitRef(ref bounds) => {
-                try!(self.print_bounds("", &bounds[..]));
-||||||| merged common ancestors
-            ast::TyKind::ObjectSum(ref ty, ref bounds) => {
-                self.print_type(&ty)?;
-                self.print_bounds("+", &bounds[..])?;
-            }
-            ast::TyKind::PolyTraitRef(ref bounds) => {
-                self.print_bounds("", &bounds[..])?;
-=======
             ast::TyKind::TraitObject(ref bounds) => {
-                self.print_bounds("", &bounds[..])?;
->>>>>>> origin/rust
+                try!(self.print_bounds("", &bounds[..]));
             }
             ast::TyKind::ImplTrait(ref bounds) => {
                 try!(self.print_bounds("impl ", &bounds[..]));
@@ -2028,16 +2012,8 @@ impl<'a> State<'a> {
             ast::ExprKind::InPlace(ref place, ref expr) => {
                 try!(self.print_expr_in_place(place, expr));
             }
-<<<<<<< HEAD
-            ast::ExprKind::Vec(ref exprs) => {
-                try!(self.print_expr_vec(&exprs[..], attrs));
-||||||| merged common ancestors
-            ast::ExprKind::Vec(ref exprs) => {
-                self.print_expr_vec(&exprs[..], attrs)?;
-=======
             ast::ExprKind::Array(ref exprs) => {
-                self.print_expr_vec(&exprs[..], attrs)?;
->>>>>>> origin/rust
+                try!(self.print_expr_vec(&exprs[..], attrs));
             }
             ast::ExprKind::Repeat(ref element, ref count) => {
                 try!(self.print_expr_repeat(&element, &count, attrs));
@@ -2867,27 +2843,13 @@ impl<'a> State<'a> {
                                                                                ..}) => {
                     try!(self.print_lifetime_bounds(lifetime, bounds));
                 }
-<<<<<<< HEAD
-                ast::WherePredicate::EqPredicate(ast::WhereEqPredicate{ref path, ref ty, ..}) => {
-                    try!(self.print_path(path, false, 0, false));
-                    try!(space(&mut self.s));
-                    try!(self.word_space("="));
-                    try!(self.print_type(&ty));
-||||||| merged common ancestors
-                ast::WherePredicate::EqPredicate(ast::WhereEqPredicate{ref path, ref ty, ..}) => {
-                    self.print_path(path, false, 0, false)?;
-                    space(&mut self.s)?;
-                    self.word_space("=")?;
-                    self.print_type(&ty)?;
-=======
                 ast::WherePredicate::EqPredicate(ast::WhereEqPredicate{ref lhs_ty,
                                                                        ref rhs_ty,
                                                                        ..}) => {
-                    self.print_type(lhs_ty)?;
-                    space(&mut self.s)?;
-                    self.word_space("=")?;
-                    self.print_type(rhs_ty)?;
->>>>>>> origin/rust
+                    try!(self.print_type(lhs_ty));
+                    try!(space(&mut self.s));
+                    try!(self.word_space("="));
+                    try!(self.print_type(rhs_ty));
                 }
             }
         }
