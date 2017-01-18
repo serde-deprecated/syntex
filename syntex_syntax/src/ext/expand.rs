@@ -542,10 +542,22 @@ impl<'a> Parser<'a> {
                 }
                 Expansion::Stmts(stmts)
             }
+<<<<<<< HEAD
             ExpansionKind::Expr => Expansion::Expr(try!(self.parse_expr())),
             ExpansionKind::OptExpr => Expansion::OptExpr(Some(try!(self.parse_expr()))),
             ExpansionKind::Ty => Expansion::Ty(try!(self.parse_ty())),
             ExpansionKind::Pat => Expansion::Pat(try!(self.parse_pat())),
+||||||| merged common ancestors
+            ExpansionKind::Expr => Expansion::Expr(self.parse_expr()?),
+            ExpansionKind::OptExpr => Expansion::OptExpr(Some(self.parse_expr()?)),
+            ExpansionKind::Ty => Expansion::Ty(self.parse_ty()?),
+            ExpansionKind::Pat => Expansion::Pat(self.parse_pat()?),
+=======
+            ExpansionKind::Expr => Expansion::Expr(self.parse_expr()?),
+            ExpansionKind::OptExpr => Expansion::OptExpr(Some(self.parse_expr()?)),
+            ExpansionKind::Ty => Expansion::Ty(self.parse_ty_no_plus()?),
+            ExpansionKind::Pat => Expansion::Pat(self.parse_pat()?),
+>>>>>>> origin/rust
         })
     }
 
@@ -978,7 +990,6 @@ impl<'feat> ExpansionConfig<'feat> {
         fn enable_trace_macros = trace_macros,
         fn enable_allow_internal_unstable = allow_internal_unstable,
         fn enable_custom_derive = custom_derive,
-        fn enable_pushpop_unsafe = pushpop_unsafe,
     }
 }
 

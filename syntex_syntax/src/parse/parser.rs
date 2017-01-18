@@ -40,7 +40,7 @@ use ast::{Visibility, WhereClause};
 use ast::{BinOpKind, UnOp};
 use {ast, attr};
 use codemap::{self, CodeMap, Spanned, spanned, respan};
-use syntax_pos::{self, Span, BytePos, mk_sp};
+use syntax_pos::{self, Span, Pos, BytePos, mk_sp};
 use errors::{self, DiagnosticBuilder};
 use ext::tt::macro_parser;
 use parse;
@@ -213,6 +213,8 @@ pub struct Parser<'a> {
     pub tts: Vec<(TokenTree, usize)>,
     pub desugar_doc_comments: bool,
     pub allow_interpolated_tts: bool,
+    /// Whether we should configure out of line modules as we parse.
+    pub cfg_mods: bool,
 }
 
 #[derive(PartialEq, Eq, Clone)]
@@ -302,6 +304,7 @@ impl<'a> Parser<'a> {
             tts: Vec::new(),
             desugar_doc_comments: desugar_doc_comments,
             allow_interpolated_tts: true,
+            cfg_mods: true,
         };
 
         let tok = parser.next_tok();
@@ -693,7 +696,7 @@ impl<'a> Parser<'a> {
     pub fn parse_seq_to_before_gt_or_return<T, F>(&mut self,
                                                   sep: Option<token::Token>,
                                                   mut f: F)
-                                                  -> PResult<'a, (P<[T]>, bool)>
+                                                  -> PResult<'a, (Vec<T>, bool)>
         where F: FnMut(&mut Parser<'a>) -> PResult<'a, Option<T>>,
     {
         let mut v = Vec::new();
@@ -714,7 +717,7 @@ impl<'a> Parser<'a> {
             if i % 2 == 0 {
                 match try!(f(self)) {
                     Some(result) => v.push(result),
-                    None => return Ok((P::from_vec(v), true))
+                    None => return Ok((v, true))
                 }
             } else {
                 if let Some(t) = sep.as_ref() {
@@ -723,7 +726,7 @@ impl<'a> Parser<'a> {
 
             }
         }
-        return Ok((P::from_vec(v), false));
+        return Ok((v, false));
     }
 
     /// Parse a sequence bracketed by '<' and '>', stopping
@@ -731,7 +734,7 @@ impl<'a> Parser<'a> {
     pub fn parse_seq_to_before_gt<T, F>(&mut self,
                                         sep: Option<token::Token>,
                                         mut f: F)
-                                        -> PResult<'a, P<[T]>> where
+                                        -> PResult<'a, Vec<T>> where
         F: FnMut(&mut Parser<'a>) -> PResult<'a, T>,
     {
         let (result, returned) = try!(self.parse_seq_to_before_gt_or_return(sep,
@@ -743,7 +746,7 @@ impl<'a> Parser<'a> {
     pub fn parse_seq_to_gt<T, F>(&mut self,
                                  sep: Option<token::Token>,
                                  f: F)
-                                 -> PResult<'a, P<[T]>> where
+                                 -> PResult<'a, Vec<T>> where
         F: FnMut(&mut Parser<'a>) -> PResult<'a, T>,
     {
         let v = try!(self.parse_seq_to_before_gt(sep, f));
@@ -754,7 +757,7 @@ impl<'a> Parser<'a> {
     pub fn parse_seq_to_gt_or_return<T, F>(&mut self,
                                            sep: Option<token::Token>,
                                            f: F)
-                                           -> PResult<'a, (P<[T]>, bool)> where
+                                           -> PResult<'a, (Vec<T>, bool)> where
         F: FnMut(&mut Parser<'a>) -> PResult<'a, Option<T>>,
     {
         let (v, returned) = try!(self.parse_seq_to_before_gt_or_return(sep, f));
@@ -1047,13 +1050,13 @@ impl<'a> Parser<'a> {
             let other_bounds = if self.eat(&token::BinOp(token::Plus)) {
                 try!(self.parse_ty_param_bounds())
             } else {
-                P::new()
+                Vec::new()
             };
             let all_bounds =
                 Some(TraitTyParamBound(poly_trait_ref, TraitBoundModifier::None)).into_iter()
-                .chain(other_bounds.into_vec())
+                .chain(other_bounds)
                 .collect();
-            Ok(ast::TyKind::PolyTraitRef(all_bounds))
+            Ok(ast::TyKind::TraitObject(all_bounds))
         }
     }
 
@@ -1133,10 +1136,22 @@ impl<'a> Parser<'a> {
             try!(self.expect(&token::Semi));
             (ident, TraitItemKind::Type(bounds, default))
         } else if self.is_const_item() {
+<<<<<<< HEAD
                 try!(self.expect_keyword(keywords::Const));
             let ident = try!(self.parse_ident());
             try!(self.expect(&token::Colon));
             let ty = try!(self.parse_ty_sum());
+||||||| merged common ancestors
+                self.expect_keyword(keywords::Const)?;
+            let ident = self.parse_ident()?;
+            self.expect(&token::Colon)?;
+            let ty = self.parse_ty_sum()?;
+=======
+                self.expect_keyword(keywords::Const)?;
+            let ident = self.parse_ident()?;
+            self.expect(&token::Colon)?;
+            let ty = self.parse_ty()?;
+>>>>>>> origin/rust
             let default = if self.check(&token::Eq) {
                 self.bump();
                 let expr = try!(self.parse_expr());
@@ -1251,31 +1266,57 @@ impl<'a> Parser<'a> {
 
     /// Parse a possibly mutable type
     pub fn parse_mt(&mut self) -> PResult<'a, MutTy> {
+<<<<<<< HEAD
         let mutbl = try!(self.parse_mutability());
         let t = try!(self.parse_ty());
+||||||| merged common ancestors
+        let mutbl = self.parse_mutability()?;
+        let t = self.parse_ty()?;
+=======
+        let mutbl = self.parse_mutability()?;
+        let t = self.parse_ty_no_plus()?;
+>>>>>>> origin/rust
         Ok(MutTy { ty: t, mutbl: mutbl })
     }
 
     /// Parse optional return type [ -> TY ] in function decl
     pub fn parse_ret_ty(&mut self) -> PResult<'a, FunctionRetTy> {
         if self.eat(&token::RArrow) {
+<<<<<<< HEAD
             Ok(FunctionRetTy::Ty(try!(self.parse_ty())))
+||||||| merged common ancestors
+            Ok(FunctionRetTy::Ty(self.parse_ty()?))
+=======
+            Ok(FunctionRetTy::Ty(self.parse_ty_no_plus()?))
+>>>>>>> origin/rust
         } else {
             let pos = self.span.lo;
             Ok(FunctionRetTy::Default(mk_sp(pos, pos)))
         }
     }
 
-    /// Parse a type in a context where `T1+T2` is allowed.
-    pub fn parse_ty_sum(&mut self) -> PResult<'a, P<Ty>> {
+    /// Parse a type.
+    pub fn parse_ty(&mut self) -> PResult<'a, P<Ty>> {
         let lo = self.span.lo;
+<<<<<<< HEAD
         let lhs = try!(self.parse_ty());
+||||||| merged common ancestors
+        let lhs = self.parse_ty()?;
+=======
+        let lhs = self.parse_ty_no_plus()?;
+>>>>>>> origin/rust
 
         if !self.eat(&token::BinOp(token::Plus)) {
             return Ok(lhs);
         }
 
+<<<<<<< HEAD
         let bounds = try!(self.parse_ty_param_bounds());
+||||||| merged common ancestors
+        let bounds = self.parse_ty_param_bounds()?;
+=======
+        let mut bounds = self.parse_ty_param_bounds()?;
+>>>>>>> origin/rust
 
         // In type grammar, `+` is treated like a binary operator,
         // and hence both L and R side are required.
@@ -1285,14 +1326,66 @@ impl<'a> Parser<'a> {
                           "at least one type parameter bound \
                           must be specified");
         }
+        if let TyKind::Path(None, ref path) = lhs.node {
+            let poly_trait_ref = PolyTraitRef {
+                bound_lifetimes: Vec::new(),
+                trait_ref: TraitRef { path: path.clone(), ref_id: lhs.id },
+                span: lhs.span,
+            };
+            let poly_trait_ref = TraitTyParamBound(poly_trait_ref, TraitBoundModifier::None);
+            bounds.insert(0, poly_trait_ref);
+        } else {
+            let mut err = struct_span_err!(self.sess.span_diagnostic, lhs.span, E0178,
+                                            "expected a path on the left-hand side \
+                                            of `+`, not `{}`",
+                                            pprust::ty_to_string(&lhs));
+            err.span_label(lhs.span, &format!("expected a path"));
+            let hi = bounds.iter().map(|x| match *x {
+                ast::TraitTyParamBound(ref tr, _) => tr.span.hi,
+                ast::RegionTyParamBound(ref r) => r.span.hi,
+            }).max_by_key(|x| x.to_usize());
+            let full_span = hi.map(|hi| Span {
+                lo: lhs.span.lo,
+                hi: hi,
+                expn_id: lhs.span.expn_id,
+            });
+            match (&lhs.node, full_span) {
+                (&TyKind::Rptr(ref lifetime, ref mut_ty), Some(full_span)) => {
+                    let ty_str = pprust::to_string(|s| {
+                        use print::pp::word;
+                        use print::pprust::PrintState;
+
+                        word(&mut s.s, "&")?;
+                        s.print_opt_lifetime(lifetime)?;
+                        s.print_mutability(mut_ty.mutbl)?;
+                        s.popen()?;
+                        s.print_type(&mut_ty.ty)?;
+                        s.print_bounds(" +", &bounds)?;
+                        s.pclose()
+                    });
+                    err.span_suggestion(full_span, "try adding parentheses (per RFC 438):",
+                                        ty_str);
+                }
+
+                _ => {
+                    help!(&mut err,
+                                "perhaps you forgot parentheses? (per RFC 438)");
+                }
+            }
+            err.emit();
+        }
 
         let sp = mk_sp(lo, self.prev_span.hi);
-        let sum = ast::TyKind::ObjectSum(lhs, bounds);
+        let sum = TyKind::TraitObject(bounds);
         Ok(P(Ty {id: ast::DUMMY_NODE_ID, node: sum, span: sp}))
     }
 
-    /// Parse a type.
-    pub fn parse_ty(&mut self) -> PResult<'a, P<Ty>> {
+    /// Parse a type in restricted contexts where `+` is not permitted.
+    /// Example 1: `&'a TYPE`
+    ///     `+` is prohibited to maintain operator priority (P(+) < P(&)).
+    /// Example 2: `value1 as TYPE + value2`
+    ///     `+` is prohibited to avoid interactions with expression grammar.
+    pub fn parse_ty_no_plus(&mut self) -> PResult<'a, P<Ty>> {
         maybe_whole!(self, NtTy, |x| x);
 
         let lo = self.span.lo;
@@ -1306,7 +1399,13 @@ impl<'a> Parser<'a> {
             let mut ts = vec![];
             let mut last_comma = false;
             while self.token != token::CloseDelim(token::Paren) {
+<<<<<<< HEAD
                 ts.push(try!(self.parse_ty_sum()));
+||||||| merged common ancestors
+                ts.push(self.parse_ty_sum()?);
+=======
+                ts.push(self.parse_ty()?);
+>>>>>>> origin/rust
                 if self.check(&token::Comma) {
                     last_comma = true;
                     self.bump();
@@ -1330,8 +1429,16 @@ impl<'a> Parser<'a> {
             TyKind::Ptr(try!(self.parse_ptr()))
         } else if self.check(&token::OpenDelim(token::Bracket)) {
             // VECTOR
+<<<<<<< HEAD
             try!(self.expect(&token::OpenDelim(token::Bracket)));
             let t = try!(self.parse_ty_sum());
+||||||| merged common ancestors
+            self.expect(&token::OpenDelim(token::Bracket))?;
+            let t = self.parse_ty_sum()?;
+=======
+            self.expect(&token::OpenDelim(token::Bracket))?;
+            let t = self.parse_ty()?;
+>>>>>>> origin/rust
 
             // Parse the `; e` in `[ i32; e ]`
             // where `e` is a const expression
@@ -1412,7 +1519,13 @@ impl<'a> Parser<'a> {
                            `*mut T` or `*const T` as appropriate)");
             Mutability::Immutable
         };
+<<<<<<< HEAD
         let t = try!(self.parse_ty());
+||||||| merged common ancestors
+        let t = self.parse_ty()?;
+=======
+        let t = self.parse_ty_no_plus()?;
+>>>>>>> origin/rust
         Ok(MutTy { ty: t, mutbl: mutbl })
     }
 
@@ -1459,7 +1572,13 @@ impl<'a> Parser<'a> {
             })
         };
 
+<<<<<<< HEAD
         let t = try!(self.parse_ty_sum());
+||||||| merged common ancestors
+        let t = self.parse_ty_sum()?;
+=======
+        let t = self.parse_ty()?;
+>>>>>>> origin/rust
 
         Ok(Arg {
             ty: t,
@@ -1477,7 +1596,13 @@ impl<'a> Parser<'a> {
     pub fn parse_fn_block_arg(&mut self) -> PResult<'a, Arg> {
         let pat = try!(self.parse_pat());
         let t = if self.eat(&token::Colon) {
+<<<<<<< HEAD
             try!(self.parse_ty_sum())
+||||||| merged common ancestors
+            self.parse_ty_sum()?
+=======
+            self.parse_ty()?
+>>>>>>> origin/rust
         } else {
             P(Ty {
                 id: ast::DUMMY_NODE_ID,
@@ -1618,7 +1743,13 @@ impl<'a> Parser<'a> {
     pub fn parse_qualified_path(&mut self, mode: PathStyle)
                                 -> PResult<'a, (QSelf, ast::Path)> {
         let span = self.prev_span;
+<<<<<<< HEAD
         let self_type = try!(self.parse_ty_sum());
+||||||| merged common ancestors
+        let self_type = self.parse_ty_sum()?;
+=======
+        let self_type = self.parse_ty()?;
+>>>>>>> origin/rust
         let mut path = if self.eat_keyword(keywords::As) {
             try!(self.parse_path(PathStyle::Type))
         } else {
@@ -1719,8 +1850,8 @@ impl<'a> Parser<'a> {
                 let (lifetimes, types, bindings) = try!(self.parse_generic_values_after_lt());
                 ast::AngleBracketedParameterData {
                     lifetimes: lifetimes,
-                    types: P::from_vec(types),
-                    bindings: P::from_vec(bindings),
+                    types: types,
+                    bindings: bindings,
                 }.into()
             } else if self.eat(&token::OpenDelim(token::Paren)) {
                 let lo = self.prev_span.lo;
@@ -1728,10 +1859,22 @@ impl<'a> Parser<'a> {
                 let inputs = try!(self.parse_seq_to_end(
                     &token::CloseDelim(token::Paren),
                     SeqSep::trailing_allowed(token::Comma),
+<<<<<<< HEAD
                     |p| p.parse_ty_sum()));
+||||||| merged common ancestors
+                    |p| p.parse_ty_sum())?;
+=======
+                    |p| p.parse_ty())?;
+>>>>>>> origin/rust
 
                 let output_ty = if self.eat(&token::RArrow) {
+<<<<<<< HEAD
                     Some(try!(self.parse_ty()))
+||||||| merged common ancestors
+                    Some(self.parse_ty()?)
+=======
+                    Some(self.parse_ty_no_plus()?)
+>>>>>>> origin/rust
                 } else {
                     None
                 };
@@ -1779,8 +1922,8 @@ impl<'a> Parser<'a> {
                     identifier: identifier,
                     parameters: ast::AngleBracketedParameterData {
                         lifetimes: lifetimes,
-                        types: P::from_vec(types),
-                        bindings: P::from_vec(bindings),
+                        types: types,
+                        bindings: bindings,
                     }.into(),
                 });
 
@@ -2148,7 +2291,7 @@ impl<'a> Parser<'a> {
                 if self.check(&token::CloseDelim(token::Bracket)) {
                     // Empty vector.
                     self.bump();
-                    ex = ExprKind::Vec(Vec::new());
+                    ex = ExprKind::Array(Vec::new());
                 } else {
                     // Nonempty vector.
                     let first_expr = try!(self.parse_expr());
@@ -2168,11 +2311,19 @@ impl<'a> Parser<'a> {
                         ));
                         let mut exprs = vec![first_expr];
                         exprs.extend(remaining_exprs);
-                        ex = ExprKind::Vec(exprs);
+                        ex = ExprKind::Array(exprs);
                     } else {
                         // Vector with one element.
+<<<<<<< HEAD
                         try!(self.expect(&token::CloseDelim(token::Bracket)));
                         ex = ExprKind::Vec(vec![first_expr]);
+||||||| merged common ancestors
+                        self.expect(&token::CloseDelim(token::Bracket))?;
+                        ex = ExprKind::Vec(vec![first_expr]);
+=======
+                        self.expect(&token::CloseDelim(token::Bracket))?;
+                        ex = ExprKind::Array(vec![first_expr]);
+>>>>>>> origin/rust
                     }
                 }
                 hi = self.prev_span.hi;
@@ -2941,12 +3092,24 @@ impl<'a> Parser<'a> {
             }
             // Special cases:
             if op == AssocOp::As {
+<<<<<<< HEAD
                 let rhs = try!(self.parse_ty());
+||||||| merged common ancestors
+                let rhs = self.parse_ty()?;
+=======
+                let rhs = self.parse_ty_no_plus()?;
+>>>>>>> origin/rust
                 let (lo, hi) = (lhs_span.lo, rhs.span.hi);
                 lhs = self.mk_expr(lo, hi, ExprKind::Cast(lhs, rhs), ThinVec::new());
                 continue
             } else if op == AssocOp::Colon {
+<<<<<<< HEAD
                 let rhs = try!(self.parse_ty());
+||||||| merged common ancestors
+                let rhs = self.parse_ty()?;
+=======
+                let rhs = self.parse_ty_no_plus()?;
+>>>>>>> origin/rust
                 let (lo, hi) = (lhs_span.lo, rhs.span.hi);
                 lhs = self.mk_expr(lo, hi, ExprKind::Type(lhs, rhs), ThinVec::new());
                 continue
@@ -3714,7 +3877,13 @@ impl<'a> Parser<'a> {
 
         let mut ty = None;
         if self.eat(&token::Colon) {
+<<<<<<< HEAD
             ty = Some(try!(self.parse_ty_sum()));
+||||||| merged common ancestors
+            ty = Some(self.parse_ty_sum()?);
+=======
+            ty = Some(self.parse_ty()?);
+>>>>>>> origin/rust
         }
         let init = try!(self.parse_initializer());
         Ok(P(ast::Local {
@@ -3733,9 +3902,19 @@ impl<'a> Parser<'a> {
                          vis: Visibility,
                          attrs: Vec<Attribute>)
                          -> PResult<'a, StructField> {
+<<<<<<< HEAD
         let name = try!(self.parse_ident());
         try!(self.expect(&token::Colon));
         let ty = try!(self.parse_ty_sum());
+||||||| merged common ancestors
+        let name = self.parse_ident()?;
+        self.expect(&token::Colon)?;
+        let ty = self.parse_ty_sum()?;
+=======
+        let name = self.parse_ident()?;
+        self.expect(&token::Colon)?;
+        let ty = self.parse_ty()?;
+>>>>>>> origin/rust
         Ok(StructField {
             span: mk_sp(lo, self.prev_span.hi),
             ident: Some(name),
@@ -4152,7 +4331,7 @@ impl<'a> Parser<'a> {
     fn parse_colon_then_ty_param_bounds(&mut self) -> PResult<'a, TyParamBounds>
     {
         if !self.eat(&token::Colon) {
-            Ok(P::new())
+            Ok(Vec::new())
         } else {
             self.parse_ty_param_bounds()
         }
@@ -4198,7 +4377,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        return Ok(P::from_vec(result));
+        return Ok(result);
     }
 
     /// Matches typaram = IDENT (`?` unbound)? optbounds ( EQ ty )?
@@ -4210,7 +4389,13 @@ impl<'a> Parser<'a> {
 
         let default = if self.check(&token::Eq) {
             self.bump();
+<<<<<<< HEAD
             Some(try!(self.parse_ty_sum()))
+||||||| merged common ancestors
+            Some(self.parse_ty_sum()?)
+=======
+            Some(self.parse_ty()?)
+>>>>>>> origin/rust
         } else {
             None
         };
@@ -4305,7 +4490,7 @@ impl<'a> Parser<'a> {
             let mut err = self.diagnostic().struct_span_err(self.span, &msg);
 
             let span_hi = self.span.hi;
-            let span_hi = match self.parse_ty() {
+            let span_hi = match self.parse_ty_no_plus() {
                 Ok(..) => self.span.hi,
                 Err(ref mut err) => {
                     self.cancel(err);
@@ -4328,14 +4513,20 @@ impl<'a> Parser<'a> {
                 if p.look_ahead(1, |t| t == &token::Eq) {
                     Ok(None)
                 } else {
+<<<<<<< HEAD
                     Ok(Some(try!(p.parse_ty_sum())))
+||||||| merged common ancestors
+                    Ok(Some(p.parse_ty_sum()?))
+=======
+                    Ok(Some(p.parse_ty()?))
+>>>>>>> origin/rust
                 }
             }
         ));
 
         // If we found the `>`, don't continue.
         if !returned {
-            return Ok((lifetimes, types.into_vec(), Vec::new()));
+            return Ok((lifetimes, types, Vec::new()));
         }
 
         // Then parse type bindings.
@@ -4344,9 +4535,19 @@ impl<'a> Parser<'a> {
             |p| {
                 try!(p.forbid_lifetime());
                 let lo = p.span.lo;
+<<<<<<< HEAD
                 let ident = try!(p.parse_ident());
                 try!(p.expect(&token::Eq));
                 let ty = try!(p.parse_ty());
+||||||| merged common ancestors
+                let ident = p.parse_ident()?;
+                p.expect(&token::Eq)?;
+                let ty = p.parse_ty()?;
+=======
+                let ident = p.parse_ident()?;
+                p.expect(&token::Eq)?;
+                let ty = p.parse_ty_no_plus()?;
+>>>>>>> origin/rust
                 let hi = ty.span.hi;
                 let span = mk_sp(lo, hi);
                 return Ok(TypeBinding{id: ast::DUMMY_NODE_ID,
@@ -4355,8 +4556,16 @@ impl<'a> Parser<'a> {
                     span: span,
                 });
             }
+<<<<<<< HEAD
         ));
         Ok((lifetimes, types.into_vec(), bindings.into_vec()))
+||||||| merged common ancestors
+        )?;
+        Ok((lifetimes, types.into_vec(), bindings.into_vec()))
+=======
+        )?;
+        Ok((lifetimes, types, bindings))
+>>>>>>> origin/rust
     }
 
     fn forbid_lifetime(&mut self) -> PResult<'a, ()> {
@@ -4444,7 +4653,13 @@ impl<'a> Parser<'a> {
                         vec![]
                     };
 
+<<<<<<< HEAD
                     let bounded_ty = try!(self.parse_ty());
+||||||| merged common ancestors
+                    let bounded_ty = self.parse_ty()?;
+=======
+                    let bounded_ty = self.parse_ty_no_plus()?;
+>>>>>>> origin/rust
 
                     if self.eat(&token::Colon) {
                         let bounds = try!(self.parse_ty_param_bounds());
@@ -4467,7 +4682,7 @@ impl<'a> Parser<'a> {
 
                         parsed_something = true;
                     } else if self.eat(&token::Eq) {
-                        // let ty = try!(self.parse_ty());
+                        // let ty = try!(self.parse_ty_no_plus());
                         let hi = self.prev_span.hi;
                         let span = mk_sp(lo, hi);
                         // where_clause.predicates.push(
@@ -4639,7 +4854,13 @@ impl<'a> Parser<'a> {
                     // self: TYPE
                     let eself_ident = expect_ident(self);
                     if self.eat(&token::Colon) {
+<<<<<<< HEAD
                         let ty = try!(self.parse_ty_sum());
+||||||| merged common ancestors
+                        let ty = self.parse_ty_sum()?;
+=======
+                        let ty = self.parse_ty()?;
+>>>>>>> origin/rust
                         (SelfKind::Explicit(ty, Mutability::Immutable), eself_ident)
                     } else {
                         (SelfKind::Value(Mutability::Immutable), eself_ident)
@@ -4651,7 +4872,13 @@ impl<'a> Parser<'a> {
                     self.bump();
                     let eself_ident = expect_ident(self);
                     if self.eat(&token::Colon) {
+<<<<<<< HEAD
                         let ty = try!(self.parse_ty_sum());
+||||||| merged common ancestors
+                        let ty = self.parse_ty_sum()?;
+=======
+                        let ty = self.parse_ty()?;
+>>>>>>> origin/rust
                         (SelfKind::Explicit(ty, Mutability::Mutable), eself_ident)
                     } else {
                         (SelfKind::Value(Mutability::Mutable), eself_ident)
@@ -4806,12 +5033,25 @@ impl<'a> Parser<'a> {
         let vis = try!(self.parse_visibility(true));
         let defaultness = try!(self.parse_defaultness());
         let (name, node) = if self.eat_keyword(keywords::Type) {
+<<<<<<< HEAD
             let name = try!(self.parse_ident());
             try!(self.expect(&token::Eq));
             let typ = try!(self.parse_ty_sum());
             try!(self.expect(&token::Semi));
+||||||| merged common ancestors
+            let name = self.parse_ident()?;
+            self.expect(&token::Eq)?;
+            let typ = self.parse_ty_sum()?;
+            self.expect(&token::Semi)?;
+=======
+            let name = self.parse_ident()?;
+            self.expect(&token::Eq)?;
+            let typ = self.parse_ty()?;
+            self.expect(&token::Semi)?;
+>>>>>>> origin/rust
             (name, ast::ImplItemKind::Type(typ))
         } else if self.is_const_item() {
+<<<<<<< HEAD
             try!(self.expect_keyword(keywords::Const));
             let name = try!(self.parse_ident());
             try!(self.expect(&token::Colon));
@@ -4819,6 +5059,23 @@ impl<'a> Parser<'a> {
             try!(self.expect(&token::Eq));
             let expr = try!(self.parse_expr());
             try!(self.expect(&token::Semi));
+||||||| merged common ancestors
+            self.expect_keyword(keywords::Const)?;
+            let name = self.parse_ident()?;
+            self.expect(&token::Colon)?;
+            let typ = self.parse_ty_sum()?;
+            self.expect(&token::Eq)?;
+            let expr = self.parse_expr()?;
+            self.expect(&token::Semi)?;
+=======
+            self.expect_keyword(keywords::Const)?;
+            let name = self.parse_ident()?;
+            self.expect(&token::Colon)?;
+            let typ = self.parse_ty()?;
+            self.expect(&token::Eq)?;
+            let expr = self.parse_expr()?;
+            self.expect(&token::Semi)?;
+>>>>>>> origin/rust
             (name, ast::ImplItemKind::Const(typ, expr))
         } else {
             let (name, inner_attrs, node) = try!(self.parse_impl_method(&vis));
@@ -4939,7 +5196,13 @@ impl<'a> Parser<'a> {
         };
 
         // Parse the trait.
+<<<<<<< HEAD
         let mut ty = try!(self.parse_ty_sum());
+||||||| merged common ancestors
+        let mut ty = self.parse_ty_sum()?;
+=======
+        let mut ty = self.parse_ty()?;
+>>>>>>> origin/rust
 
         // Parse traits, if necessary.
         let opt_trait = if could_be_trait && self.eat_keyword(keywords::For) {
@@ -4980,7 +5243,13 @@ impl<'a> Parser<'a> {
              ItemKind::DefaultImpl(unsafety, opt_trait.unwrap()), None))
         } else {
             if opt_trait.is_some() {
+<<<<<<< HEAD
                 ty = try!(self.parse_ty_sum());
+||||||| merged common ancestors
+                ty = self.parse_ty_sum()?;
+=======
+                ty = self.parse_ty()?;
+>>>>>>> origin/rust
             }
             generics.where_clause = try!(self.parse_where_clause());
 
@@ -5132,7 +5401,13 @@ impl<'a> Parser<'a> {
                 let mut vis = try!(p.parse_visibility(false));
                 let ty_is_interpolated =
                     p.token.is_interpolated() || p.look_ahead(1, |t| t.is_interpolated());
+<<<<<<< HEAD
                 let mut ty = try!(p.parse_ty_sum());
+||||||| merged common ancestors
+                let mut ty = p.parse_ty_sum()?;
+=======
+                let mut ty = p.parse_ty()?;
+>>>>>>> origin/rust
 
                 // Handle `pub(path) type`, in which `vis` will be `pub` and `ty` will be `(path)`.
                 if vis == Visibility::Public && !ty_is_interpolated &&
@@ -5140,7 +5415,13 @@ impl<'a> Parser<'a> {
                     ty = if let TyKind::Paren(ref path_ty) = ty.node {
                         if let TyKind::Path(None, ref path) = path_ty.node {
                             vis = Visibility::Restricted { path: P(path.clone()), id: path_ty.id };
+<<<<<<< HEAD
                             Some(try!(p.parse_ty_sum()))
+||||||| merged common ancestors
+                            Some(p.parse_ty_sum()?)
+=======
+                            Some(p.parse_ty()?)
+>>>>>>> origin/rust
                         } else {
                             None
                         }
@@ -5256,12 +5537,28 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_item_const(&mut self, m: Option<Mutability>) -> PResult<'a, ItemInfo> {
+<<<<<<< HEAD
         let id = try!(self.parse_ident());
         try!(self.expect(&token::Colon));
         let ty = try!(self.parse_ty_sum());
         try!(self.expect(&token::Eq));
         let e = try!(self.parse_expr());
         try!(self.expect(&token::Semi));
+||||||| merged common ancestors
+        let id = self.parse_ident()?;
+        self.expect(&token::Colon)?;
+        let ty = self.parse_ty_sum()?;
+        self.expect(&token::Eq)?;
+        let e = self.parse_expr()?;
+        self.expect(&token::Semi)?;
+=======
+        let id = self.parse_ident()?;
+        self.expect(&token::Colon)?;
+        let ty = self.parse_ty()?;
+        self.expect(&token::Eq)?;
+        let e = self.parse_expr()?;
+        self.expect(&token::Semi)?;
+>>>>>>> origin/rust
         let item = match m {
             Some(m) => ItemKind::Static(ty, m, e),
             None => ItemKind::Const(ty, e),
@@ -5278,7 +5575,7 @@ impl<'a> Parser<'a> {
                 features: None, // don't perform gated feature checking
             };
             let outer_attrs = strip_unconfigured.process_cfg_attrs(outer_attrs.to_owned());
-            (strip_unconfigured.in_cfg(&outer_attrs), outer_attrs)
+            (self.cfg_mods && strip_unconfigured.in_cfg(&outer_attrs), outer_attrs)
         };
 
         let id_span = self.span;
@@ -5497,9 +5794,19 @@ impl<'a> Parser<'a> {
         try!(self.expect_keyword(keywords::Static));
         let mutbl = self.eat_keyword(keywords::Mut);
 
+<<<<<<< HEAD
         let ident = try!(self.parse_ident());
         try!(self.expect(&token::Colon));
         let ty = try!(self.parse_ty_sum());
+||||||| merged common ancestors
+        let ident = self.parse_ident()?;
+        self.expect(&token::Colon)?;
+        let ty = self.parse_ty_sum()?;
+=======
+        let ident = self.parse_ident()?;
+        self.expect(&token::Colon)?;
+        let ty = self.parse_ty()?;
+>>>>>>> origin/rust
         let hi = self.span.hi;
         try!(self.expect(&token::Semi));
         Ok(ForeignItem {
@@ -5584,12 +5891,28 @@ impl<'a> Parser<'a> {
 
     /// Parse type Foo = Bar;
     fn parse_item_type(&mut self) -> PResult<'a, ItemInfo> {
+<<<<<<< HEAD
         let ident = try!(self.parse_ident());
         let mut tps = try!(self.parse_generics());
         tps.where_clause = try!(self.parse_where_clause());
         try!(self.expect(&token::Eq));
         let ty = try!(self.parse_ty_sum());
         try!(self.expect(&token::Semi));
+||||||| merged common ancestors
+        let ident = self.parse_ident()?;
+        let mut tps = self.parse_generics()?;
+        tps.where_clause = self.parse_where_clause()?;
+        self.expect(&token::Eq)?;
+        let ty = self.parse_ty_sum()?;
+        self.expect(&token::Semi)?;
+=======
+        let ident = self.parse_ident()?;
+        let mut tps = self.parse_generics()?;
+        tps.where_clause = self.parse_where_clause()?;
+        self.expect(&token::Eq)?;
+        let ty = self.parse_ty()?;
+        self.expect(&token::Semi)?;
+>>>>>>> origin/rust
         Ok((ident, ItemKind::Ty(ty, tps), None))
     }
 
