@@ -5511,6 +5511,7 @@ impl<'a> Parser<'a> {
 
         let mut p0 =
             new_sub_parser_from_file(self.sess, &path, directory_ownership, Some(name), id_sp);
+        p0.cfg_mods = self.cfg_mods;
         let mod_inner_lo = p0.span.lo;
         let mod_attrs = p0.parse_inner_attributes()?;
         let m0 = p0.parse_mod_items(&token::Eof, mod_inner_lo)?;
