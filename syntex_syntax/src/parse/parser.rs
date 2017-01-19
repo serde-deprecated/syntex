@@ -5333,7 +5333,7 @@ impl<'a> Parser<'a> {
                 features: None, // don't perform gated feature checking
             };
             let outer_attrs = strip_unconfigured.process_cfg_attrs(outer_attrs.to_owned());
-            (self.cfg_mods && strip_unconfigured.in_cfg(&outer_attrs), outer_attrs)
+            (!self.cfg_mods || strip_unconfigured.in_cfg(&outer_attrs), outer_attrs)
         };
 
         let id_span = self.span;
