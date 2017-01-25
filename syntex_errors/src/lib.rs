@@ -17,7 +17,6 @@
 
 extern crate rustc_serialize as serialize;
 extern crate term;
-extern crate log;
 extern crate libc;
 extern crate unicode_xid as std_unicode;
 extern crate rustc_serialize; // used by deriving
