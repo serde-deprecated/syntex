@@ -818,8 +818,8 @@ pub type ThinAttributes = Option<Box<Vec<Attribute>>>;
 pub trait ThinAttributesExt {
     fn map_thin_attrs<F>(self, f: F) -> Self
         where F: FnOnce(Vec<Attribute>) -> Vec<Attribute>;
-    fn prepend(mut self, attrs: Self) -> Self;
-    fn append(mut self, attrs: Self) -> Self;
+    fn prepend(self, attrs: Self) -> Self;
+    fn append(self, attrs: Self) -> Self;
     fn update<F>(&mut self, f: F)
         where Self: Sized,
               F: FnOnce(Self) -> Self;
