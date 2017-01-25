@@ -62,7 +62,6 @@ use ptr::P;
 use parse::PResult;
 
 use std::collections::HashSet;
-use std::io::prelude::*;
 use std::mem;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
