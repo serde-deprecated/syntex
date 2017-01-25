@@ -26,7 +26,6 @@
 
 #![feature(associated_consts)]
 #![feature(const_fn)]
-#![feature(libc)]
 #![feature(optin_builtin_traits)]
 #![feature(rustc_private)]
 #![feature(staged_api)]
@@ -35,10 +34,7 @@
 #![feature(rustc_diagnostic_macros)]
 #![feature(specialization)]
 
-extern crate core;
 extern crate serialize;
-extern crate term;
-extern crate libc;
 #[macro_use] extern crate log;
 #[macro_use] #[no_link] extern crate rustc_bitflags;
 extern crate std_unicode;
@@ -93,6 +89,9 @@ pub mod util {
 
     mod thin_vec;
     pub use self::thin_vec::ThinVec;
+
+    mod rc_slice;
+    pub use self::rc_slice::RcSlice;
 }
 
 pub mod json;
@@ -133,7 +132,6 @@ pub mod ext {
     pub mod expand;
     pub mod placeholders;
     pub mod hygiene;
-    pub mod proc_macro_shim;
     pub mod quote;
     pub mod source_util;
 

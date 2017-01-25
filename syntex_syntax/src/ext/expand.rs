@@ -21,7 +21,7 @@ use ext::base::*;
 use feature_gate::{self, Features};
 use fold;
 use fold::*;
-use parse::{ParseSess, DirectoryOwnership, PResult, lexer};
+use parse::{ParseSess, DirectoryOwnership, PResult, filemap_to_tts};
 use parse::parser::Parser;
 use parse::token;
 use print::pprust;
@@ -364,8 +364,8 @@ impl<'a, 'b> MacroExpander<'a, 'b> {
                 kind.expect_from_annotatables(items)
             }
             SyntaxExtension::AttrProcMacro(ref mac) => {
-                let attr_toks = TokenStream::from_tts(tts_for_attr(&attr, &self.cx.parse_sess));
-                let item_toks = TokenStream::from_tts(tts_for_item(&item, &self.cx.parse_sess));
+                let attr_toks = tts_for_attr_args(&attr, &self.cx.parse_sess).into_iter().collect();
+                let item_toks = tts_for_item(&item, &self.cx.parse_sess).into_iter().collect();
 
                 let tok_result = mac.expand(self.cx, attr.span, attr_toks, item_toks);
                 self.parse_expansion(tok_result, kind, name, attr.span)
@@ -465,7 +465,7 @@ impl<'a, 'b> MacroExpander<'a, 'b> {
                     },
                 });
 
-                let toks = TokenStream::from_tts(marked_tts);
+                let toks = marked_tts.into_iter().collect();
                 let tok_result = expandfun.expand(self.cx, span, toks);
                 Some(self.parse_expansion(tok_result, kind, extname, span))
             }
@@ -488,7 +488,7 @@ impl<'a, 'b> MacroExpander<'a, 'b> {
 
     fn parse_expansion(&mut self, toks: TokenStream, kind: ExpansionKind, name: Name, span: Span)
                        -> Expansion {
-        let mut parser = self.cx.new_parser_from_tts(&toks.to_tts());
+        let mut parser = self.cx.new_parser_from_tts(&toks.trees().cloned().collect::<Vec<_>>());
         let expansion = match parser.parse_expansion(kind, false) {
             Ok(expansion) => expansion,
             Err(mut err) => {
@@ -640,17 +640,35 @@ fn tts_for_item(item: &Annotatable, parse_sess: &ParseSess) -> Vec<TokenTree> {
     string_to_tts(text, parse_sess)
 }
 
-fn tts_for_attr(attr: &ast::Attribute, parse_sess: &ParseSess) -> Vec<TokenTree> {
-    string_to_tts(pprust::attr_to_string(attr), parse_sess)
+fn tts_for_attr_args(attr: &ast::Attribute, parse_sess: &ParseSess) -> Vec<TokenTree> {
+    use ast::MetaItemKind::*;
+    use print::pp::Breaks;
+    use print::pprust::PrintState;
+
+    let token_string = match attr.value.node {
+        // For `#[foo]`, an empty token
+        Word => return vec![],
+        // For `#[foo(bar, baz)]`, returns `(bar, baz)`
+        List(ref items) => pprust::to_string(|s| {
+            s.popen()?;
+            s.commasep(Breaks::Consistent,
+                       &items[..],
+                       |s, i| s.print_meta_list_item(&i))?;
+            s.pclose()
+        }),
+        // For `#[foo = "bar"]`, returns `= "bar"`
+        NameValue(ref lit) => pprust::to_string(|s| {
+            s.word_space("=")?;
+            s.print_literal(lit)
+        }),
+    };
+
+    string_to_tts(token_string, parse_sess)
 }
 
 fn string_to_tts(text: String, parse_sess: &ParseSess) -> Vec<TokenTree> {
-    let filemap = parse_sess.codemap()
-                            .new_filemap(String::from("<macro expansion>"), None, text);
-
-    let lexer = lexer::StringReader::new(&parse_sess.span_diagnostic, filemap);
-    let mut parser = Parser::new(parse_sess, Box::new(lexer), None, false);
-    panictry!(parser.parse_all_token_trees())
+    let filename = String::from("<macro expansion>");
+    filemap_to_tts(parse_sess, parse_sess.codemap().new_filemap(filename, None, text))
 }
 
 impl<'a, 'b> Folder for InvocationCollector<'a, 'b> {
