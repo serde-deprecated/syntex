@@ -11,7 +11,7 @@
 pub use self::AnnNode::*;
 
 use abi::{self, Abi};
-use ast::{self, BlockCheckMode, PatKind};
+use ast::{self, BlockCheckMode, PatKind, RangeEnd};
 use ast::{SelfKind, RegionTyParamBound, TraitTyParamBound, TraitBoundModifier};
 use ast::Attribute;
 use util::parser::AssocOp;
@@ -2542,10 +2542,13 @@ impl<'a> State<'a> {
                 try!(self.print_pat(&inner));
             }
             PatKind::Lit(ref e) => try!(self.print_expr(&**e)),
-            PatKind::Range(ref begin, ref end) => {
+            PatKind::Range(ref begin, ref end, ref end_kind) => {
                 try!(self.print_expr(&begin));
                 try!(space(&mut self.s));
-                try!(word(&mut self.s, "..."));
+                match *end_kind {
+                    RangeEnd::Included => try!(word(&mut self.s, "...")),
+                    RangeEnd::Excluded => try!(word(&mut self.s, "..")),
+                }
                 try!(self.print_expr(&end));
             }
             PatKind::Slice(ref before, ref slice, ref after) => {
