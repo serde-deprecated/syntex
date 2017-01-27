@@ -1,6 +1,6 @@
 [package]
 name = "syntex_pos"
-version = "0.57.0"
+version = "0.58.0"
 authors = [ "erick.tryzelaar@gmail.com" ]
 license = "MIT/Apache-2.0"
 description = "Export of libsyntax_pos for code generation"
@@ -8,4 +8,4 @@ repository = "https://github.com/serde-rs/syntex"
 include = ["Cargo.toml", "src/**/*.rs"]
 
 [dependencies]
-rustc-serialize = "^0.3.16"
+rustc-serialize = "0.3.16"
