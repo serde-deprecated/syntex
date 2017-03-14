@@ -8,6 +8,8 @@ Syntex Code Generation Framework
 This allows users to use libraries like [serde](https://github.com/serde-rs/serde)
 on stable Rust.
 
+[API Documentation](https://docs.rs/syntex_syntax/)
+
 Configuring with Cargo
 ======================
 
