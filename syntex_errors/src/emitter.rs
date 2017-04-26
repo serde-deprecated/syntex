@@ -1281,10 +1281,14 @@ impl Destination {
     fn start_attr(&mut self, attr: term::Attr) -> io::Result<()> {
         match *self {
             Terminal(ref mut t) => {
-                try!(t.attr(attr));
+                if t.supports_attr(attr) {
+                    try!(t.attr(attr));
+                }
             }
             BufferedTerminal(ref mut t) => {
-                try!(t.attr(attr));
+                if t.supports_attr(attr) {
+                    try!(t.attr(attr));
+                }
             }
             Raw(_) => {}
         }
@@ -1294,10 +1298,14 @@ impl Destination {
     fn reset_attrs(&mut self) -> io::Result<()> {
         match *self {
             Terminal(ref mut t) => {
-                try!(t.reset());
+                if t.supports_reset() {
+                    try!(t.reset());
+                }
             }
             BufferedTerminal(ref mut t) => {
-                try!(t.reset());
+                if t.supports_reset() {
+                    try!(t.reset());
+                }
             }
             Raw(_) => {}
         }
