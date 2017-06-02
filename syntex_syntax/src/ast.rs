@@ -223,14 +223,14 @@ impl fmt::Display for NodeId {
     }
 }
 
-impl serialize::UseSpecializedEncodable for NodeId {
-    fn default_encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+impl serialize::Encodable for NodeId {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
         s.emit_u32(self.0)
     }
 }
 
-impl serialize::UseSpecializedDecodable for NodeId {
-    fn default_decode<D: Decoder>(d: &mut D) -> Result<NodeId, D::Error> {
+impl serialize::Decodable for NodeId {
+    fn decode<D: Decoder>(d: &mut D) -> Result<NodeId, D::Error> {
         d.read_u32().map(NodeId)
     }
 }
@@ -1065,7 +1065,7 @@ pub enum LitKind {
     /// A character literal (`'a'`)
     Char(char),
     /// An integer literal (`1`)
-    Int(u128, LitIntType),
+    Int(u64, LitIntType),
     /// A float literal (`1f64` or `1E10f64`)
     Float(Symbol, FloatTy),
     /// A float literal without a suffix (`1.0 or 1.0E10`)
@@ -1201,11 +1201,11 @@ impl IntTy {
         }
     }
 
-    pub fn val_to_string(&self, val: i128) -> String {
-        // cast to a u128 so we can correctly print INT128_MIN. All integral types
-        // are parsed as u128, so we wouldn't want to print an extra negative
+    pub fn val_to_string(&self, val: i64) -> String {
+        // cast to a u64 so we can correctly print INT64_MIN. All integral types
+        // are parsed as u64, so we wouldn't want to print an extra negative
         // sign.
-        format!("{}{}", val as u128, self.ty_to_string())
+        format!("{}{}", val as u64, self.ty_to_string())
     }
 
     pub fn bit_width(&self) -> Option<usize> {
@@ -1242,7 +1242,7 @@ impl UintTy {
         }
     }
 
-    pub fn val_to_string(&self, val: u128) -> String {
+    pub fn val_to_string(&self, val: u64) -> String {
         format!("{}{}", val, self.ty_to_string())
     }
 

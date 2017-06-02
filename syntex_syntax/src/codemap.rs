@@ -103,7 +103,7 @@ impl FileLoader for RealFileLoader {
 //
 
 pub struct CodeMap {
-    pub(super) files: RefCell<Vec<Rc<FileMap>>>,
+    pub files: RefCell<Vec<Rc<FileMap>>>,
     file_loader: Box<FileLoader>,
     // This is used to apply the file path remapping as specified via
     // -Zremap-path-prefix to all FileMaps allocated within this CodeMap.

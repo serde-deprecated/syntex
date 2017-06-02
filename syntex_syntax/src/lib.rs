@@ -14,32 +14,23 @@
 //!
 //! This API is completely unstable and subject to change.
 
-#![crate_name = "syntax"]
-#![crate_type = "dylib"]
-#![crate_type = "rlib"]
 #![doc(html_logo_url = "https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "https://doc.rust-lang.org/favicon.ico",
        html_root_url = "https://doc.rust-lang.org/nightly/",
        test(attr(deny(warnings))))]
-#![deny(warnings)]
+//#![deny(warnings)]
 
-#![feature(unicode)]
-#![feature(rustc_diagnostic_macros)]
-#![feature(i128_type)]
-
-#![cfg_attr(stage0, unstable(feature = "rustc_private", issue = "27812"))]
-#![cfg_attr(stage0, feature(rustc_private))]
-#![cfg_attr(stage0, feature(staged_api))]
-
-extern crate serialize;
+extern crate rustc_serialize as serialize;
 #[macro_use] extern crate log;
 #[macro_use] extern crate bitflags;
-extern crate std_unicode;
-pub extern crate rustc_errors as errors;
-extern crate syntax_pos;
-extern crate rustc_data_structures;
+pub extern crate syntex_errors as errors;
+extern crate syntex_pos as syntax_pos;
+mod rustc_data_structures;
 
-extern crate serialize as rustc_serialize; // used by deriving
+extern crate rustc_serialize; // used by deriving
+
+extern crate extprim;
+extern crate unicode_xid;
 
 // A variant of 'try!' that panics on an Err. This is used as a crutch on the
 // way towards a non-panic!-prone parser. It should be used for fatal parsing

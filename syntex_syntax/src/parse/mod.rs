@@ -620,7 +620,7 @@ pub fn integer_lit(s: &str, suffix: Option<Symbol>, diag: Option<(Span, &Handler
     debug!("integer_lit: the type is {:?}, base {:?}, the new string is {:?}, the original \
            string was {:?}, the original suffix was {:?}", ty, base, s, orig, suffix);
 
-    Some(match u128::from_str_radix(s, base) {
+    Some(match u64::from_str_radix(s, base) {
         Ok(r) => ast::LitKind::Int(r, ty),
         Err(_) => {
             // small bases are lexed as if they were base 10, e.g, the string

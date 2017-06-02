@@ -15,3 +15,4 @@ rustc-serialize = "0.3.16"
 syntex_errors = { version = "0.58", path = "../syntex_errors" }
 syntex_pos = { version = "0.58", path = "../syntex_pos" }
 unicode-xid = "0.0.4"
+extprim = "1.2"
