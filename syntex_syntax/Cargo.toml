@@ -1,6 +1,6 @@
 [package]
 name = "syntex_syntax"
-version = "0.58.1"
+version = "0.59.0"
 authors = ["Erick Tryzelaar <erick.tryzelaar@gmail.com>", "David Tolnay <dtolnay@gmail.com>"]
 license = "MIT/Apache-2.0"
 description = "Backport of libsyntax"
@@ -16,6 +16,6 @@ log = "0.3"
 serde = { version = "1.0", features = ["rc"] }
 serde_derive = "1.0"
 serde_json = "1.0"
-syntex_errors = { version = "0.58", path = "../syntex_errors" }
-syntex_pos = { version = "0.58", path = "../syntex_pos" }
+syntex_errors = { version = "0.59", path = "../syntex_errors" }
+syntex_pos = { version = "0.59", path = "../syntex_pos" }
 unicode-xid = "0.1"
