@@ -31,7 +31,7 @@ impl<'ast> Visitor<'ast> for NodeCounter {
         self.count += 1;
         walk_ident(self, span, ident);
     }
-    fn visit_mod(&mut self, m: &Mod, _s: Span, _n: NodeId) {
+    fn visit_mod(&mut self, m: &Mod, _s: Span, _a: &[Attribute], _n: NodeId) {
         self.count += 1;
         walk_mod(self, m)
     }
@@ -148,9 +148,4 @@ impl<'ast> Visitor<'ast> for NodeCounter {
     fn visit_attribute(&mut self, _attr: &Attribute) {
         self.count += 1;
     }
-    fn visit_macro_def(&mut self, macro_def: &MacroDef) {
-        self.count += 1;
-        walk_macro_def(self, macro_def)
-    }
-
 }

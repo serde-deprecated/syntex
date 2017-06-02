@@ -12,10 +12,68 @@
 //! allows bidirectional lookup; i.e. given a value, one can easily find the
 //! type, and vice versa.
 
+use hygiene::SyntaxContext;
+
 use serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct Ident {
+    pub name: Symbol,
+    pub ctxt: SyntaxContext,
+}
+
+impl Ident {
+    pub const fn with_empty_ctxt(name: Symbol) -> Ident {
+        Ident { name: name, ctxt: SyntaxContext::empty() }
+    }
+
+    /// Maps a string to an identifier with an empty syntax context.
+    pub fn from_str(string: &str) -> Ident {
+        Ident::with_empty_ctxt(Symbol::intern(string))
+    }
+
+    pub fn modern(self) -> Ident {
+        Ident { name: self.name, ctxt: self.ctxt.modern() }
+    }
+}
+
+impl fmt::Debug for Ident {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}{:?}", self.name, self.ctxt)
+    }
+}
+
+impl fmt::Display for Ident {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(&self.name, f)
+    }
+}
+
+impl Encodable for Ident {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        if self.ctxt.modern() == SyntaxContext::empty() {
+            s.emit_str(&self.name.as_str())
+        } else { // FIXME(jseyfried) intercrate hygiene
+            let mut string = "#".to_owned();
+            string.push_str(&self.name.as_str());
+            s.emit_str(&string)
+        }
+    }
+}
+
+impl Decodable for Ident {
+    fn decode<D: Decoder>(d: &mut D) -> Result<Ident, D::Error> {
+        let string = d.read_str()?;
+        Ok(if !string.starts_with('#') {
+            Ident::from_str(&string)
+        } else { // FIXME(jseyfried) intercrate hygiene
+            Ident::with_empty_ctxt(Symbol::gensym(&string[1..]))
+        })
+    }
+}
 
 /// A symbol is an interned or gensymed string.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -30,9 +88,17 @@ impl Symbol {
         with_interner(|interner| interner.intern(string))
     }
 
+    pub fn interned(self) -> Self {
+        with_interner(|interner| interner.interned(self))
+    }
+
     /// gensym's a new usize, using the current interner.
     pub fn gensym(string: &str) -> Self {
         with_interner(|interner| interner.gensym(string))
+    }
+
+    pub fn gensymed(self) -> Self {
+        with_interner(|interner| interner.gensymed(self))
     }
 
     pub fn as_str(self) -> InternedString {
@@ -72,9 +138,9 @@ impl Decodable for Symbol {
     }
 }
 
-impl<'a> PartialEq<&'a str> for Symbol {
-    fn eq(&self, other: &&str) -> bool {
-        *self.as_str() == **other
+impl<T: ::std::ops::Deref<Target=str>> PartialEq<T> for Symbol {
+    fn eq(&self, other: &T) -> bool {
+        self.as_str() == other.deref()
     }
 }
 
@@ -82,6 +148,7 @@ impl<'a> PartialEq<&'a str> for Symbol {
 pub struct Interner {
     names: HashMap<Box<str>, Symbol>,
     strings: Vec<Box<str>>,
+    gensyms: Vec<Symbol>,
 }
 
 impl Interner {
@@ -109,15 +176,29 @@ impl Interner {
         name
     }
 
-    fn gensym(&mut self, string: &str) -> Symbol {
-        let gensym = Symbol(self.strings.len() as u32);
-        // leave out of `names` to avoid colliding
-        self.strings.push(string.to_string().into_boxed_str());
-        gensym
+    pub fn interned(&self, symbol: Symbol) -> Symbol {
+        if (symbol.0 as usize) < self.strings.len() {
+            symbol
+        } else {
+            self.interned(self.gensyms[(!0 - symbol.0) as usize])
+        }
     }
 
-    pub fn get(&self, name: Symbol) -> &str {
-        &self.strings[name.0 as usize]
+    fn gensym(&mut self, string: &str) -> Symbol {
+        let symbol = self.intern(string);
+        self.gensymed(symbol)
+    }
+
+    fn gensymed(&mut self, symbol: Symbol) -> Symbol {
+        self.gensyms.push(symbol);
+        Symbol(!0 - self.gensyms.len() as u32 + 1)
+    }
+
+    pub fn get(&self, symbol: Symbol) -> &str {
+        match self.strings.get(symbol.0 as usize) {
+            Some(ref string) => string,
+            None => self.get(self.gensyms[(!0 - symbol.0) as usize]),
+        }
     }
 }
 
@@ -128,19 +209,19 @@ macro_rules! declare_keywords {(
     $( ($index: expr, $konst: ident, $string: expr) )*
 ) => {
     pub mod keywords {
-        use ast;
+        use super::{Symbol, Ident};
         #[derive(Clone, Copy, PartialEq, Eq)]
         pub struct Keyword {
-            ident: ast::Ident,
+            ident: Ident,
         }
         impl Keyword {
-            #[inline] pub fn ident(self) -> ast::Ident { self.ident }
-            #[inline] pub fn name(self) -> ast::Name { self.ident.name }
+            #[inline] pub fn ident(self) -> Ident { self.ident }
+            #[inline] pub fn name(self) -> Symbol { self.ident.name }
         }
         $(
             #[allow(non_upper_case_globals)]
             pub const $konst: Keyword = Keyword {
-                ident: ast::Ident::with_empty_ctxt(super::Symbol($index))
+                ident: Ident::with_empty_ctxt(super::Symbol($index))
             };
         )*
     }
@@ -221,9 +302,10 @@ declare_keywords! {
     (53, Default,        "default")
     (54, StaticLifetime, "'static")
     (55, Union,          "union")
+    (56, Catch,          "catch")
 
     // A virtual keyword that resolves to the crate root when used in a lexical scope.
-    (56, CrateRoot, "{{root}}")
+    (57, CrateRoot, "{{root}}")
 }
 
 // If an interner exists in TLS, return it. Otherwise, prepare a fresh one.
@@ -243,9 +325,45 @@ fn with_interner<T, F: FnOnce(&mut Interner) -> T>(f: F) -> T {
 /// destroyed. In particular, they must not access string contents. This can
 /// be fixed in the future by just leaking all strings until thread death
 /// somehow.
-#[derive(Clone, PartialEq, Hash, PartialOrd, Eq, Ord)]
+#[derive(Clone, Hash, PartialOrd, Eq, Ord)]
 pub struct InternedString {
     string: &'static str,
+}
+
+impl<U: ?Sized> ::std::convert::AsRef<U> for InternedString where str: ::std::convert::AsRef<U> {
+    fn as_ref(&self) -> &U {
+        self.string.as_ref()
+    }
+}
+
+impl<T: ::std::ops::Deref<Target = str>> ::std::cmp::PartialEq<T> for InternedString {
+    fn eq(&self, other: &T) -> bool {
+        self.string == other.deref()
+    }
+}
+
+impl ::std::cmp::PartialEq<InternedString> for str {
+    fn eq(&self, other: &InternedString) -> bool {
+        self == other.string
+    }
+}
+
+impl<'a> ::std::cmp::PartialEq<InternedString> for &'a str {
+    fn eq(&self, other: &InternedString) -> bool {
+        *self == other.string
+    }
+}
+
+impl ::std::cmp::PartialEq<InternedString> for String {
+    fn eq(&self, other: &InternedString) -> bool {
+        self == other.string
+    }
+}
+
+impl<'a> ::std::cmp::PartialEq<InternedString> for &'a String {
+    fn eq(&self, other: &InternedString) -> bool {
+        *self == other.string
+    }
 }
 
 impl !Send for InternedString { }
@@ -295,11 +413,10 @@ mod tests {
         assert_eq!(i.intern("cat"), Symbol(1));
         // dog is still at zero
         assert_eq!(i.intern("dog"), Symbol(0));
-        // gensym gets 3
-        assert_eq!(i.gensym("zebra"), Symbol(2));
+        assert_eq!(i.gensym("zebra"), Symbol(4294967295));
         // gensym of same string gets new number :
-        assert_eq!(i.gensym("zebra"), Symbol(3));
+        assert_eq!(i.gensym("zebra"), Symbol(4294967294));
         // gensym of *existing* string gets new number:
-        assert_eq!(i.gensym("dog"), Symbol(4));
+        assert_eq!(i.gensym("dog"), Symbol(4294967293));
     }
 }

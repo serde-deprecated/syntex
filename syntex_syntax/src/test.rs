@@ -31,6 +31,7 @@ use entry::{self, EntryPointType};
 use ext::base::{ExtCtxt, Resolver};
 use ext::build::AstBuilder;
 use ext::expand::ExpansionConfig;
+use ext::hygiene::{Mark, SyntaxContext};
 use fold::Folder;
 use util::move_map::MoveMap;
 use fold;
@@ -62,6 +63,7 @@ struct TestCtxt<'a> {
     testfns: Vec<Test>,
     reexport_test_harness_main: Option<Symbol>,
     is_test_crate: bool,
+    ctxt: SyntaxContext,
 
     // top-level re-export submodule, filled out after folding is finished
     toplevel_reexport: Option<Ident>,
@@ -104,9 +106,8 @@ impl<'a> fold::Folder for TestHarnessGenerator<'a> {
         // Add a special __test module to the crate that will contain code
         // generated for the test harness
         let (mod_, reexport) = mk_test_module(&mut self.cx);
-        match reexport {
-            Some(re) => folded.module.items.push(re),
-            None => {}
+        if let Some(re) = reexport {
+            folded.module.items.push(re)
         }
         folded.module.items.push(mod_);
         folded
@@ -195,7 +196,8 @@ impl fold::Folder for EntryPointCleaner {
                     let dead_code_str = Symbol::intern("dead_code");
                     let word_vec = vec![attr::mk_list_word_item(dead_code_str)];
                     let allow_dead_code_item = attr::mk_list_item(allow_str, word_vec);
-                    let allow_dead_code = attr::mk_attr_outer(attr::mk_attr_id(),
+                    let allow_dead_code = attr::mk_attr_outer(DUMMY_SP,
+                                                              attr::mk_attr_id(),
                                                               allow_dead_code_item);
 
                     ast::Item {
@@ -229,20 +231,12 @@ fn mk_reexport_mod(cx: &mut TestCtxt,
                    -> (P<ast::Item>, Ident) {
     let super_ = Ident::from_str("super");
 
-    // Generate imports with `#[allow(private_in_public)]` to work around issue #36768.
-    let allow_private_in_public = cx.ext_cx.attribute(DUMMY_SP, cx.ext_cx.meta_list(
-        DUMMY_SP,
-        Symbol::intern("allow"),
-        vec![cx.ext_cx.meta_list_item_word(DUMMY_SP, Symbol::intern("private_in_public"))],
-    ));
     let items = tests.into_iter().map(|r| {
         cx.ext_cx.item_use_simple(DUMMY_SP, ast::Visibility::Public,
                                   cx.ext_cx.path(DUMMY_SP, vec![super_, r]))
-            .map_attrs(|_| vec![allow_private_in_public.clone()])
     }).chain(tested_submods.into_iter().map(|(r, sym)| {
         let path = cx.ext_cx.path(DUMMY_SP, vec![super_, r, sym]);
         cx.ext_cx.item_use_simple_(DUMMY_SP, ast::Visibility::Public, r, path)
-            .map_attrs(|_| vec![allow_private_in_public.clone()])
     })).collect();
 
     let reexport_mod = ast::Mod {
@@ -254,7 +248,7 @@ fn mk_reexport_mod(cx: &mut TestCtxt,
     let parent = if parent == ast::DUMMY_NODE_ID { ast::CRATE_NODE_ID } else { parent };
     cx.ext_cx.current_expansion.mark = cx.ext_cx.resolver.get_module_scope(parent);
     let it = cx.ext_cx.monotonic_expander().fold_item(P(ast::Item {
-        ident: sym.clone(),
+        ident: sym,
         attrs: Vec::new(),
         id: ast::DUMMY_NODE_ID,
         node: ast::ItemKind::Mod(reexport_mod),
@@ -274,6 +268,7 @@ fn generate_test_harness(sess: &ParseSess,
     let mut cleaner = EntryPointCleaner { depth: 0 };
     let krate = cleaner.fold_crate(krate);
 
+    let mark = Mark::fresh(Mark::root());
     let mut cx: TestCtxt = TestCtxt {
         sess: sess,
         span_diagnostic: sd,
@@ -283,15 +278,16 @@ fn generate_test_harness(sess: &ParseSess,
         reexport_test_harness_main: reexport_test_harness_main,
         is_test_crate: is_test_crate(&krate),
         toplevel_reexport: None,
+        ctxt: SyntaxContext::empty().apply_mark(mark),
     };
     cx.ext_cx.crate_root = Some("std");
 
-    cx.ext_cx.bt_push(ExpnInfo {
+    mark.set_expn_info(ExpnInfo {
         call_site: DUMMY_SP,
         callee: NameAndSpan {
             format: MacroAttribute(Symbol::intern("test")),
             span: None,
-            allow_internal_unstable: false,
+            allow_internal_unstable: true,
         }
     });
 
@@ -303,21 +299,10 @@ fn generate_test_harness(sess: &ParseSess,
 }
 
 /// Craft a span that will be ignored by the stability lint's
-/// call to codemap's is_internal check.
+/// call to codemap's `is_internal` check.
 /// The expanded code calls some unstable functions in the test crate.
 fn ignored_span(cx: &TestCtxt, sp: Span) -> Span {
-    let info = ExpnInfo {
-        call_site: sp,
-        callee: NameAndSpan {
-            format: MacroAttribute(Symbol::intern("test")),
-            span: None,
-            allow_internal_unstable: true,
-        }
-    };
-    let expn_id = cx.sess.codemap().record_expansion(info);
-    let mut sp = sp;
-    sp.expn_id = expn_id;
-    return sp;
+    Span { ctxt: cx.ctxt, ..sp }
 }
 
 #[derive(PartialEq)]
@@ -360,7 +345,7 @@ fn is_test_fn(cx: &TestCtxt, i: &ast::Item) -> bool {
         }
     }
 
-    return has_test_attr && has_test_signature(i) == Yes;
+    has_test_attr && has_test_signature(i) == Yes
 }
 
 fn is_bench_fn(cx: &TestCtxt, i: &ast::Item) -> bool {
@@ -391,7 +376,7 @@ fn is_bench_fn(cx: &TestCtxt, i: &ast::Item) -> bool {
                       `fn(&mut Bencher) -> ()`");
     }
 
-    return has_bench_attr && has_test_signature(i);
+    has_bench_attr && has_test_signature(i)
 }
 
 fn is_ignored(i: &ast::Item) -> bool {
@@ -448,7 +433,7 @@ We're going to be building a module that looks more or less like:
 mod __test {
   extern crate test (name = "test", vers = "...");
   fn main() {
-    test::test_main_static(&::os::args()[], tests)
+    test::test_main_static(&::os::args()[], tests, test::Options::new())
   }
 
   static tests : &'static [test::TestDescAndFn] = &[
@@ -484,7 +469,7 @@ fn mk_main(cx: &mut TestCtxt) -> P<ast::Item> {
     //        pub fn main() {
     //            #![main]
     //            use std::slice::AsSlice;
-    //            test::test_main_static(::std::os::args().as_slice(), TESTS);
+    //            test::test_main_static(::std::os::args().as_slice(), TESTS, test::Options::new());
     //        }
 
     let sp = ignored_span(cx, DUMMY_SP);
@@ -510,16 +495,14 @@ fn mk_main(cx: &mut TestCtxt) -> P<ast::Item> {
                            ast::Unsafety::Normal,
                            dummy_spanned(ast::Constness::NotConst),
                            ::abi::Abi::Rust, ast::Generics::default(), main_body);
-    let main = P(ast::Item {
+    P(ast::Item {
         ident: Ident::from_str("main"),
         attrs: vec![main_attr],
         id: ast::DUMMY_NODE_ID,
         node: main,
         vis: ast::Visibility::Public,
         span: sp
-    });
-
-    return main;
+    })
 }
 
 fn mk_test_module(cx: &mut TestCtxt) -> (P<ast::Item>, Option<P<ast::Item>>) {
@@ -579,7 +562,7 @@ fn nospan<T>(t: T) -> codemap::Spanned<T> {
 fn path_node(ids: Vec<Ident>) -> ast::Path {
     ast::Path {
         span: DUMMY_SP,
-        segments: ids.into_iter().map(Into::into).collect(),
+        segments: ids.into_iter().map(|id| ast::PathSegment::from_ident(id, DUMMY_SP)).collect(),
     }
 }
 
@@ -600,7 +583,7 @@ fn mk_tests(cx: &TestCtxt) -> P<ast::Item> {
     let struct_type = ecx.ty_path(ecx.path(sp, vec![ecx.ident_of("self"),
                                                     ecx.ident_of("test"),
                                                     ecx.ident_of("TestDescAndFn")]));
-    let static_lt = ecx.lifetime(sp, keywords::StaticLifetime.name());
+    let static_lt = ecx.lifetime(sp, keywords::StaticLifetime.ident());
     // &'static [self::test::TestDescAndFn]
     let static_type = ecx.ty_rptr(sp,
                                   ecx.ty(sp, ast::TyKind::Slice(struct_type)),
@@ -615,7 +598,7 @@ fn mk_tests(cx: &TestCtxt) -> P<ast::Item> {
 
 fn is_test_crate(krate: &ast::Crate) -> bool {
     match attr::find_crate_name(&krate.attrs) {
-        Some(s) if "test" == &*s.as_str() => true,
+        Some(s) if "test" == s.as_str() => true,
         _ => false
     }
 }

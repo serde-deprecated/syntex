@@ -20,11 +20,13 @@ pub enum Abi {
     Stdcall,
     Fastcall,
     Vectorcall,
+    Thiscall,
     Aapcs,
     Win64,
     SysV64,
     PtxKernel,
     Msp430Interrupt,
+    X86Interrupt,
 
     // Multiplatform / generic ABIs
     Rust,
@@ -54,11 +56,13 @@ const AbiDatas: &'static [AbiData] = &[
     AbiData {abi: Abi::Stdcall, name: "stdcall", generic: false },
     AbiData {abi: Abi::Fastcall, name: "fastcall", generic: false },
     AbiData {abi: Abi::Vectorcall, name: "vectorcall", generic: false},
+    AbiData {abi: Abi::Thiscall, name: "thiscall", generic: false},
     AbiData {abi: Abi::Aapcs, name: "aapcs", generic: false },
     AbiData {abi: Abi::Win64, name: "win64", generic: false },
     AbiData {abi: Abi::SysV64, name: "sysv64", generic: false },
     AbiData {abi: Abi::PtxKernel, name: "ptx-kernel", generic: false },
     AbiData {abi: Abi::Msp430Interrupt, name: "msp430-interrupt", generic: false },
+    AbiData {abi: Abi::X86Interrupt, name: "x86-interrupt", generic: false },
 
     // Cross-platform ABIs
     AbiData {abi: Abi::Rust, name: "Rust", generic: true },
