@@ -14,8 +14,7 @@ use ast;
 use codemap::CodeMap;
 use syntax_pos::{BytePos, CharPos, Pos};
 use parse::lexer::{is_block_doc_comment, is_pattern_whitespace};
-use parse::lexer::{self, StringReader, TokenAndSpan};
-use parse::ParseSess;
+use parse::lexer::{self, ParseSess, StringReader, TokenAndSpan};
 use print::pprust;
 use str::char_at;
 
@@ -78,7 +77,7 @@ pub fn strip_doc_comment_decoration(comment: &str) -> String {
         while j > i && lines[j - 1].trim().is_empty() {
             j -= 1;
         }
-        lines[i..j].iter().cloned().collect()
+        lines[i..j].to_vec()
     }
 
     /// remove a "[ \t]*\*" block from each line, if possible
@@ -349,8 +348,8 @@ pub fn gather_comments_and_literals(sess: &ParseSess, path: String, srdr: &mut R
     let mut src = Vec::new();
     srdr.read_to_end(&mut src).unwrap();
     let src = String::from_utf8(src).unwrap();
-    let cm = CodeMap::new();
-    let filemap = cm.new_filemap(path, None, src);
+    let cm = CodeMap::new(sess.codemap().path_mapping().clone());
+    let filemap = cm.new_filemap(path, src);
     let mut rdr = lexer::StringReader::new_raw(sess, filemap);
 
     let mut comments: Vec<Comment> = Vec::new();

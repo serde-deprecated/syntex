@@ -14,12 +14,23 @@
 //!
 //! This API is completely unstable and subject to change.
 
+#![crate_name = "syntax_pos"]
 #![crate_type = "dylib"]
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
       html_favicon_url = "https://doc.rust-lang.org/favicon.ico",
       html_root_url = "https://doc.rust-lang.org/nightly/")]
 #![deny(warnings)]
+
+#![feature(const_fn)]
+#![feature(custom_attribute)]
+#![feature(optin_builtin_traits)]
+#![allow(unused_attributes)]
+#![feature(specialization)]
+
+#![cfg_attr(stage0, unstable(feature = "rustc_private", issue = "27812"))]
+#![cfg_attr(stage0, feature(rustc_private))]
+#![cfg_attr(stage0, feature(staged_api))]
 
 use std::cell::{Cell, RefCell};
 use std::ops::{Add, Sub};
@@ -30,8 +41,13 @@ use std::fmt;
 
 use serialize::{Encodable, Decodable, Encoder, Decoder};
 
-extern crate rustc_serialize;
-extern crate rustc_serialize as serialize;
+extern crate serialize;
+extern crate serialize as rustc_serialize; // used by deriving
+
+pub mod hygiene;
+pub use hygiene::{SyntaxContext, ExpnInfo, ExpnFormat, NameAndSpan};
+
+pub mod symbol;
 
 pub type FileName = String;
 
@@ -49,7 +65,7 @@ pub struct Span {
     pub hi: BytePos,
     /// Information about where the macro came from, if this piece of
     /// code was created by a macro expansion.
-    pub expn_id: ExpnId
+    pub ctxt: SyntaxContext,
 }
 
 /// A collection of spans. Spans have two orthogonal attributes:
@@ -58,7 +74,7 @@ pub struct Span {
 ///   the error, and would be rendered with `^^^`.
 /// - they can have a *label*. In this case, the label is written next
 ///   to the mark in the snippet when we render.
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, RustcEncodable, RustcDecodable)]
 pub struct MultiSpan {
     primary_spans: Vec<Span>,
     span_labels: Vec<(Span, String)>,
@@ -68,7 +84,13 @@ impl Span {
     /// Returns a new span representing just the end-point of this span
     pub fn end_point(self) -> Span {
         let lo = cmp::max(self.hi.0 - 1, self.lo.0);
-        Span { lo: BytePos(lo), hi: self.hi, expn_id: self.expn_id}
+        Span { lo: BytePos(lo), ..self }
+    }
+
+    /// Returns a new span representing the next character after the end-point of this span
+    pub fn next_point(self) -> Span {
+        let lo = cmp::max(self.hi.0, self.lo.0 + 1);
+        Span { lo: BytePos(lo), hi: BytePos(lo), ..self }
     }
 
     /// Returns `self` if `self` is not the dummy span, and `other` otherwise.
@@ -96,6 +118,102 @@ impl Span {
             None
         }
     }
+
+    /// Return the source span - this is either the supplied span, or the span for
+    /// the macro callsite that expanded to it.
+    pub fn source_callsite(self) -> Span {
+        self.ctxt.outer().expn_info().map(|info| info.call_site.source_callsite()).unwrap_or(self)
+    }
+
+    /// Return the source callee.
+    ///
+    /// Returns None if the supplied span has no expansion trace,
+    /// else returns the NameAndSpan for the macro definition
+    /// corresponding to the source callsite.
+    pub fn source_callee(self) -> Option<NameAndSpan> {
+        fn source_callee(info: ExpnInfo) -> NameAndSpan {
+            match info.call_site.ctxt.outer().expn_info() {
+                Some(info) => source_callee(info),
+                None => info.callee,
+            }
+        }
+        self.ctxt.outer().expn_info().map(source_callee)
+    }
+
+    /// Check if a span is "internal" to a macro in which #[unstable]
+    /// items can be used (that is, a macro marked with
+    /// `#[allow_internal_unstable]`).
+    pub fn allows_unstable(&self) -> bool {
+        match self.ctxt.outer().expn_info() {
+            Some(info) => info.callee.allow_internal_unstable,
+            None => false,
+        }
+    }
+
+    pub fn macro_backtrace(mut self) -> Vec<MacroBacktrace> {
+        let mut prev_span = DUMMY_SP;
+        let mut result = vec![];
+        loop {
+            let info = match self.ctxt.outer().expn_info() {
+                Some(info) => info,
+                None => break,
+            };
+
+            let (pre, post) = match info.callee.format {
+                ExpnFormat::MacroAttribute(..) => ("#[", "]"),
+                ExpnFormat::MacroBang(..) => ("", "!"),
+                ExpnFormat::CompilerDesugaring(..) => ("desugaring of `", "`"),
+            };
+            let macro_decl_name = format!("{}{}{}", pre, info.callee.name(), post);
+            let def_site_span = info.callee.span;
+
+            // Don't print recursive invocations
+            if !info.call_site.source_equal(&prev_span) {
+                result.push(MacroBacktrace {
+                    call_site: info.call_site,
+                    macro_decl_name: macro_decl_name,
+                    def_site_span: def_site_span,
+                });
+            }
+
+            prev_span = self;
+            self = info.call_site;
+        }
+        result
+    }
+
+    pub fn to(self, end: Span) -> Span {
+        // FIXME(jseyfried): self.ctxt should always equal end.ctxt here (c.f. issue #23480)
+        if end.ctxt == SyntaxContext::empty() {
+            Span { lo: self.lo, ..end }
+        } else {
+            Span { hi: end.hi, ..self }
+        }
+    }
+
+    pub fn between(self, end: Span) -> Span {
+        Span {
+            lo: self.hi,
+            hi: end.lo,
+            ctxt: if end.ctxt == SyntaxContext::empty() {
+                end.ctxt
+            } else {
+                self.ctxt
+            }
+        }
+    }
+
+    pub fn until(self, end: Span) -> Span {
+        Span {
+            lo: self.lo,
+            hi: end.lo,
+            ctxt: if end.ctxt == SyntaxContext::empty() {
+                end.ctxt
+            } else {
+                self.ctxt
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -111,12 +229,12 @@ pub struct SpanLabel {
     pub label: Option<String>,
 }
 
-impl Encodable for Span {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+impl serialize::UseSpecializedEncodable for Span {
+    fn default_encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
         s.emit_struct("Span", 2, |s| {
-            try!(s.emit_struct_field("lo", 0, |s| {
+            s.emit_struct_field("lo", 0, |s| {
                 self.lo.encode(s)
-            }));
+            })?;
 
             s.emit_struct_field("hi", 1, |s| {
                 self.hi.encode(s)
@@ -125,19 +243,19 @@ impl Encodable for Span {
     }
 }
 
-impl Decodable for Span {
-    fn decode<D: Decoder>(d: &mut D) -> Result<Span, D::Error> {
+impl serialize::UseSpecializedDecodable for Span {
+    fn default_decode<D: Decoder>(d: &mut D) -> Result<Span, D::Error> {
         d.read_struct("Span", 2, |d| {
-            let lo = try!(d.read_struct_field("lo", 0, Decodable::decode));
-            let hi = try!(d.read_struct_field("hi", 1, Decodable::decode));
-            Ok(mk_sp(lo, hi))
+            let lo = d.read_struct_field("lo", 0, Decodable::decode)?;
+            let hi = d.read_struct_field("hi", 1, Decodable::decode)?;
+            Ok(Span { lo: lo, hi: hi, ctxt: NO_EXPANSION })
         })
     }
 }
 
 fn default_span_debug(span: Span, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "Span {{ lo: {:?}, hi: {:?}, expn_id: {:?} }}",
-           span.lo, span.hi, span.expn_id)
+    write!(f, "Span {{ lo: {:?}, hi: {:?}, ctxt: {:?} }}",
+           span.lo, span.hi, span.ctxt)
 }
 
 impl fmt::Debug for Span {
@@ -146,12 +264,7 @@ impl fmt::Debug for Span {
     }
 }
 
-pub const DUMMY_SP: Span = Span { lo: BytePos(0), hi: BytePos(0), expn_id: NO_EXPANSION };
-
-// Generic span to be used for code originating from the command line
-pub const COMMAND_LINE_SP: Span = Span { lo: BytePos(0),
-                                         hi: BytePos(0),
-                                         expn_id: COMMAND_LINE_EXPN };
+pub const DUMMY_SP: Span = Span { lo: BytePos(0), hi: BytePos(0), ctxt: NO_EXPANSION };
 
 impl MultiSpan {
     pub fn new() -> MultiSpan {
@@ -245,26 +358,7 @@ impl From<Span> for MultiSpan {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Hash, RustcEncodable, RustcDecodable, Copy, Ord, PartialOrd)]
-pub struct ExpnId(pub u32);
-
-pub const NO_EXPANSION: ExpnId = ExpnId(!0);
-// For code appearing from the command line
-pub const COMMAND_LINE_EXPN: ExpnId = ExpnId(!1);
-
-// For code generated by a procedural macro, without knowing which
-// Used in `qquote!`
-pub const PROC_EXPN: ExpnId = ExpnId(!2);
-
-impl ExpnId {
-    pub fn from_u32(id: u32) -> ExpnId {
-        ExpnId(id)
-    }
-
-    pub fn into_u32(self) -> u32 {
-        self.0
-    }
-}
+pub const NO_EXPANSION: SyntaxContext = SyntaxContext::empty();
 
 /// Identifies an offset of a multi-byte character in a FileMap
 #[derive(Copy, Clone, RustcEncodable, RustcDecodable, Eq, PartialEq)]
@@ -276,13 +370,16 @@ pub struct MultiByteChar {
 }
 
 /// A single source in the CodeMap.
+#[derive(Clone)]
 pub struct FileMap {
     /// The name of the file that the source came from, source that doesn't
     /// originate from files has names between angle brackets by convention,
     /// e.g. `<anon>`
     pub name: FileName,
-    /// The absolute path of the file that the source came from.
-    pub abs_path: Option<FileName>,
+    /// True if the `name` field above has been modified by -Zremap-path-prefix
+    pub name_was_remapped: bool,
+    /// Indicates which crate this FileMap was imported from.
+    pub crate_of_origin: u32,
     /// The complete source code
     pub src: Option<Rc<String>>,
     /// The start position of this source in the CodeMap
@@ -298,14 +395,14 @@ pub struct FileMap {
 impl Encodable for FileMap {
     fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
         s.emit_struct("FileMap", 6, |s| {
-            try!(s.emit_struct_field("name", 0, |s| self.name.encode(s)));
-            try!(s.emit_struct_field("abs_path", 1, |s| self.abs_path.encode(s)));
-            try!(s.emit_struct_field("start_pos", 2, |s| self.start_pos.encode(s)));
-            try!(s.emit_struct_field("end_pos", 3, |s| self.end_pos.encode(s)));
-            try!(s.emit_struct_field("lines", 4, |s| {
+            s.emit_struct_field("name", 0, |s| self.name.encode(s))?;
+            s.emit_struct_field("name_was_remapped", 1, |s| self.name_was_remapped.encode(s))?;
+            s.emit_struct_field("start_pos", 2, |s| self.start_pos.encode(s))?;
+            s.emit_struct_field("end_pos", 3, |s| self.end_pos.encode(s))?;
+            s.emit_struct_field("lines", 4, |s| {
                 let lines = self.lines.borrow();
                 // store the length
-                try!(s.emit_u32(lines.len() as u32));
+                s.emit_u32(lines.len() as u32)?;
 
                 if !lines.is_empty() {
                     // In order to preserve some space, we exploit the fact that
@@ -330,24 +427,24 @@ impl Encodable for FileMap {
                     };
 
                     // Encode the number of bytes used per diff.
-                    try!(bytes_per_diff.encode(s));
+                    bytes_per_diff.encode(s)?;
 
                     // Encode the first element.
-                    try!(lines[0].encode(s));
+                    lines[0].encode(s)?;
 
                     let diff_iter = (&lines[..]).windows(2)
                                                 .map(|w| (w[1] - w[0]));
 
                     match bytes_per_diff {
-                        1 => for diff in diff_iter { try!((diff.0 as u8).encode(s)) },
-                        2 => for diff in diff_iter { try!((diff.0 as u16).encode(s)) },
-                        4 => for diff in diff_iter { try!(diff.0.encode(s)) },
+                        1 => for diff in diff_iter { (diff.0 as u8).encode(s)? },
+                        2 => for diff in diff_iter { (diff.0 as u16).encode(s)? },
+                        4 => for diff in diff_iter { diff.0.encode(s)? },
                         _ => unreachable!()
                     }
                 }
 
                 Ok(())
-            }));
+            })?;
             s.emit_struct_field("multibyte_chars", 5, |s| {
                 (*self.multibyte_chars.borrow()).encode(s)
             })
@@ -359,28 +456,28 @@ impl Decodable for FileMap {
     fn decode<D: Decoder>(d: &mut D) -> Result<FileMap, D::Error> {
 
         d.read_struct("FileMap", 6, |d| {
-            let name: String = try!(d.read_struct_field("name", 0, |d| Decodable::decode(d)));
-            let abs_path: Option<String> =
-                try!(d.read_struct_field("abs_path", 1, |d| Decodable::decode(d)));
-            let start_pos: BytePos = try!(d.read_struct_field("start_pos", 2, |d| Decodable::decode(d)));
-            let end_pos: BytePos = try!(d.read_struct_field("end_pos", 3, |d| Decodable::decode(d)));
-            let lines: Vec<BytePos> = try!(d.read_struct_field("lines", 4, |d| {
-                let num_lines: u32 = try!(Decodable::decode(d));
+            let name: String = d.read_struct_field("name", 0, |d| Decodable::decode(d))?;
+            let name_was_remapped: bool =
+                d.read_struct_field("name_was_remapped", 1, |d| Decodable::decode(d))?;
+            let start_pos: BytePos = d.read_struct_field("start_pos", 2, |d| Decodable::decode(d))?;
+            let end_pos: BytePos = d.read_struct_field("end_pos", 3, |d| Decodable::decode(d))?;
+            let lines: Vec<BytePos> = d.read_struct_field("lines", 4, |d| {
+                let num_lines: u32 = Decodable::decode(d)?;
                 let mut lines = Vec::with_capacity(num_lines as usize);
 
                 if num_lines > 0 {
                     // Read the number of bytes used per diff.
-                    let bytes_per_diff: u8 = try!(Decodable::decode(d));
+                    let bytes_per_diff: u8 = Decodable::decode(d)?;
 
                     // Read the first element.
-                    let mut line_start: BytePos = try!(Decodable::decode(d));
+                    let mut line_start: BytePos = Decodable::decode(d)?;
                     lines.push(line_start);
 
                     for _ in 1..num_lines {
                         let diff = match bytes_per_diff {
-                            1 => try!(d.read_u8()) as u32,
-                            2 => try!(d.read_u16()) as u32,
-                            4 => try!(d.read_u32()),
+                            1 => d.read_u8()? as u32,
+                            2 => d.read_u16()? as u32,
+                            4 => d.read_u32()?,
                             _ => unreachable!()
                         };
 
@@ -391,12 +488,16 @@ impl Decodable for FileMap {
                 }
 
                 Ok(lines)
-            }));
+            })?;
             let multibyte_chars: Vec<MultiByteChar> =
-                try!(d.read_struct_field("multibyte_chars", 5, |d| Decodable::decode(d)));
+                d.read_struct_field("multibyte_chars", 5, |d| Decodable::decode(d))?;
             Ok(FileMap {
                 name: name,
-                abs_path: abs_path,
+                name_was_remapped: name_was_remapped,
+                // `crate_of_origin` has to be set by the importer.
+                // This value matches up with rustc::hir::def_id::INVALID_CRATE.
+                // That constant is not available here unfortunately :(
+                crate_of_origin: ::std::u32::MAX - 1,
                 start_pos: start_pos,
                 end_pos: end_pos,
                 src: None,
@@ -565,7 +666,7 @@ impl Encodable for BytePos {
 
 impl Decodable for BytePos {
     fn decode<D: Decoder>(d: &mut D) -> Result<BytePos, D::Error> {
-        Ok(BytePos(try!(d.read_u32())))
+        Ok(BytePos(d.read_u32()?))
     }
 }
 
@@ -641,11 +742,6 @@ pub struct FileLines {
 
 thread_local!(pub static SPAN_DEBUG: Cell<fn(Span, &mut fmt::Formatter) -> fmt::Result> =
                 Cell::new(default_span_debug));
-
-/* assuming that we're not in macro expansion */
-pub fn mk_sp(lo: BytePos, hi: BytePos) -> Span {
-    Span {lo: lo, hi: hi, expn_id: NO_EXPANSION}
-}
 
 pub struct MacroBacktrace {
     /// span where macro was applied to generate this code

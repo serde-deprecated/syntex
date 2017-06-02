@@ -8,16 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ==== SYNTEX ====
-macro_rules! __register_diagnostic {
-    ($code:tt, $description:tt) => ();
-    ($code:tt) => ();
-}
-macro_rules! __diagnostic_used {
-    ($code:tt) => ();
-}
-// ==== SYNTEX ====
-
 #[macro_export]
 macro_rules! register_diagnostic {
     ($code:tt, $description:tt) => (__register_diagnostic! { $code, $description });
@@ -45,6 +35,14 @@ macro_rules! span_warn {
     ($session:expr, $span:expr, $code:ident, $($message:tt)*) => ({
         __diagnostic_used!($code);
         $session.span_warn_with_code($span, &format!($($message)*), stringify!($code))
+    })
+}
+
+#[macro_export]
+macro_rules! struct_err {
+    ($session:expr, $code:ident, $($message:tt)*) => ({
+        __diagnostic_used!($code);
+        $session.struct_err_with_code(&format!($($message)*), stringify!($code))
     })
 }
 
