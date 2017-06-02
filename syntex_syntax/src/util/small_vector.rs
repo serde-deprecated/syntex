@@ -300,7 +300,7 @@ mod tests {
     fn test_move_iter() {
         let v = SmallVector::new();
         let v: Vec<isize> = v.into_iter().collect();
-        assert_eq!(v, Vec::new());
+        assert_eq!(v, Vec::<isize>::new());
 
         let v = SmallVector::one(1);
         assert_eq!(v.into_iter().collect::<Vec<_>>(), [1]);

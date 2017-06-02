@@ -1938,16 +1938,3 @@ impl ForeignItemKind {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use serialize;
-    use super::*;
-
-    // are ASTs encodable?
-    #[test]
-    fn check_asts_encodable() {
-        fn assert_encodable<T: serialize::Encodable>() {}
-        assert_encodable::<Crate>();
-    }
-}

@@ -63,7 +63,7 @@ pub struct CodeSuggestion {
     /// `foo.bar` might be replaced with `a.b` or `x.y` by replacing
     /// `foo` and `bar` on their own:
     ///
-    /// ```
+    /// ```ignore
     /// vec![
     ///     (0..3, vec!["a", "x"]),
     ///     (4..7, vec!["b", "y"]),
@@ -72,7 +72,7 @@ pub struct CodeSuggestion {
     ///
     /// or by replacing the entire span:
     ///
-    /// ```
+    /// ```ignore
     /// vec![(0..7, vec!["a.b", "x.y"])]
     /// ```
     pub substitution_parts: Vec<Substitution>,
