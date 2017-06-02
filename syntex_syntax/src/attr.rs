@@ -625,7 +625,7 @@ pub fn cfg_matches(cfg: &ast::MetaItem, sess: &ParseSess, features: Option<&Feat
 }
 
 /// Represents the #[stable], #[unstable] and #[rustc_deprecated] attributes.
-#[derive(RustcEncodable, RustcDecodable, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Stability {
     pub level: StabilityLevel,
     pub feature: Symbol,
@@ -633,20 +633,20 @@ pub struct Stability {
 }
 
 /// The available stability levels.
-#[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Clone, Debug, Eq, Hash)]
+#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Clone, Debug, Eq, Hash)]
 pub enum StabilityLevel {
     // Reason for the current stability level and the relevant rust-lang issue
     Unstable { reason: Option<Symbol>, issue: u32 },
     Stable { since: Symbol },
 }
 
-#[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Clone, Debug, Eq, Hash)]
+#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Clone, Debug, Eq, Hash)]
 pub struct RustcDeprecation {
     pub since: Symbol,
     pub reason: Symbol,
 }
 
-#[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Clone, Debug, Eq, Hash)]
+#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Clone, Debug, Eq, Hash)]
 pub struct Deprecation {
     pub since: Option<Symbol>,
     pub note: Option<Symbol>,
@@ -1023,7 +1023,7 @@ fn int_type_of_word(s: &str) -> Option<IntType> {
     }
 }
 
-#[derive(PartialEq, Debug, RustcEncodable, RustcDecodable, Copy, Clone)]
+#[derive(PartialEq, Debug, Serialize, Deserialize, Copy, Clone)]
 pub enum ReprAttr {
     ReprInt(IntType),
     ReprExtern,
@@ -1032,7 +1032,7 @@ pub enum ReprAttr {
     ReprAlign(u16),
 }
 
-#[derive(Eq, Hash, PartialEq, Debug, RustcEncodable, RustcDecodable, Copy, Clone)]
+#[derive(Eq, Hash, PartialEq, Debug, Serialize, Deserialize, Copy, Clone)]
 pub enum IntType {
     SignedInt(ast::IntTy),
     UnsignedInt(ast::UintTy)

@@ -14,10 +14,11 @@
 
 use hygiene::SyntaxContext;
 
-use serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
+
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Ident {
@@ -52,21 +53,25 @@ impl fmt::Display for Ident {
     }
 }
 
-impl Encodable for Ident {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+impl Serialize for Ident {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
         if self.ctxt.modern() == SyntaxContext::empty() {
-            s.emit_str(&self.name.as_str())
+            serializer.serialize_str(&self.name.as_str())
         } else { // FIXME(jseyfried) intercrate hygiene
             let mut string = "#".to_owned();
             string.push_str(&self.name.as_str());
-            s.emit_str(&string)
+            serializer.serialize_str(&string)
         }
     }
 }
 
-impl Decodable for Ident {
-    fn decode<D: Decoder>(d: &mut D) -> Result<Ident, D::Error> {
-        let string = d.read_str()?;
+impl<'de> Deserialize<'de> for Ident {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>
+    {
+        let string = String::deserialize(deserializer)?;
         Ok(if !string.starts_with('#') {
             Ident::from_str(&string)
         } else { // FIXME(jseyfried) intercrate hygiene
@@ -127,15 +132,19 @@ impl fmt::Display for Symbol {
     }
 }
 
-impl Encodable for Symbol {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        s.emit_str(&self.as_str())
+impl Serialize for Symbol {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        serializer.serialize_str(&self.as_str())
     }
 }
 
-impl Decodable for Symbol {
-    fn decode<D: Decoder>(d: &mut D) -> Result<Symbol, D::Error> {
-        Ok(Symbol::intern(&d.read_str()?))
+impl<'de> Deserialize<'de> for Symbol {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>
+    {
+        String::deserialize(deserializer).map(|s| Symbol::intern(&s))
     }
 }
 
@@ -390,15 +399,19 @@ impl fmt::Display for InternedString {
     }
 }
 
-impl Decodable for InternedString {
-    fn decode<D: Decoder>(d: &mut D) -> Result<InternedString, D::Error> {
-        Ok(Symbol::intern(&d.read_str()?).as_str())
+impl<'de> Deserialize<'de> for InternedString {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>
+    {
+        Symbol::deserialize(deserializer).map(Symbol::as_str)
     }
 }
 
-impl Encodable for InternedString {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        s.emit_str(self.string)
+impl Serialize for InternedString {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        serializer.serialize_str(self.string)
     }
 }
 

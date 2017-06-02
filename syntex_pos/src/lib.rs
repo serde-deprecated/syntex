@@ -26,10 +26,11 @@ use std::cmp;
 
 use std::fmt;
 
-use serialize::{Encodable, Decodable, Encoder, Decoder};
-
-extern crate rustc_serialize as serialize;
-extern crate rustc_serialize;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde;
+use serde::ser::{Serializer, SerializeSeq};
+use serde::de::{self, Deserializer, Visitor, SeqAccess, Unexpected};
 
 pub mod hygiene;
 pub use hygiene::{SyntaxContext, ExpnInfo, ExpnFormat, NameAndSpan};
@@ -46,12 +47,13 @@ pub type FileName = String;
 /// able to use many of the functions on spans in codemap and you cannot assume
 /// that the length of the span = hi - lo; there may be space in the BytePos
 /// range between files.
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct Span {
     pub lo: BytePos,
     pub hi: BytePos,
     /// Information about where the macro came from, if this piece of
     /// code was created by a macro expansion.
+    #[serde(skip)]
     pub ctxt: SyntaxContext,
 }
 
@@ -61,7 +63,7 @@ pub struct Span {
 ///   the error, and would be rendered with `^^^`.
 /// - they can have a *label*. In this case, the label is written next
 ///   to the mark in the snippet when we render.
-#[derive(Clone, Debug, Hash, PartialEq, Eq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MultiSpan {
     primary_spans: Vec<Span>,
     span_labels: Vec<(Span, String)>,
@@ -216,30 +218,6 @@ pub struct SpanLabel {
     pub label: Option<String>,
 }
 
-impl Encodable for Span {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        s.emit_struct("Span", 2, |s| {
-            s.emit_struct_field("lo", 0, |s| {
-                self.lo.encode(s)
-            })?;
-
-            s.emit_struct_field("hi", 1, |s| {
-                self.hi.encode(s)
-            })
-        })
-    }
-}
-
-impl Decodable for Span {
-    fn decode<D: Decoder>(d: &mut D) -> Result<Span, D::Error> {
-        d.read_struct("Span", 2, |d| {
-            let lo = d.read_struct_field("lo", 0, Decodable::decode)?;
-            let hi = d.read_struct_field("hi", 1, Decodable::decode)?;
-            Ok(Span { lo: lo, hi: hi, ctxt: NO_EXPANSION })
-        })
-    }
-}
-
 fn default_span_debug(span: Span, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "Span {{ lo: {:?}, hi: {:?}, ctxt: {:?} }}",
            span.lo, span.hi, span.ctxt)
@@ -348,7 +326,7 @@ impl From<Span> for MultiSpan {
 pub const NO_EXPANSION: SyntaxContext = ::hygiene::NO_EXPANSION;
 
 /// Identifies an offset of a multi-byte character in a FileMap
-#[derive(Copy, Clone, RustcEncodable, RustcDecodable, Eq, PartialEq)]
+#[derive(Copy, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct MultiByteChar {
     /// The absolute offset of the character in the CodeMap
     pub pos: BytePos,
@@ -357,7 +335,7 @@ pub struct MultiByteChar {
 }
 
 /// A single source in the CodeMap.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct FileMap {
     /// The name of the file that the source came from, source that doesn't
     /// originate from files has names between angle brackets by convention,
@@ -366,133 +344,124 @@ pub struct FileMap {
     /// True if the `name` field above has been modified by -Zremap-path-prefix
     pub name_was_remapped: bool,
     /// Indicates which crate this FileMap was imported from.
+    #[serde(skip, default = "invalid_crate")]
     pub crate_of_origin: u32,
     /// The complete source code
+    #[serde(skip)]
     pub src: Option<Rc<String>>,
     /// The start position of this source in the CodeMap
     pub start_pos: BytePos,
     /// The end position of this source in the CodeMap
     pub end_pos: BytePos,
     /// Locations of lines beginnings in the source code
+    #[serde(serialize_with = "serialize_lines", deserialize_with = "deserialize_lines")]
     pub lines: RefCell<Vec<BytePos>>,
     /// Locations of multi-byte characters in the source code
     pub multibyte_chars: RefCell<Vec<MultiByteChar>>,
 }
 
-impl Encodable for FileMap {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        s.emit_struct("FileMap", 6, |s| {
-            s.emit_struct_field("name", 0, |s| self.name.encode(s))?;
-            s.emit_struct_field("name_was_remapped", 1, |s| self.name_was_remapped.encode(s))?;
-            s.emit_struct_field("start_pos", 2, |s| self.start_pos.encode(s))?;
-            s.emit_struct_field("end_pos", 3, |s| self.end_pos.encode(s))?;
-            s.emit_struct_field("lines", 4, |s| {
-                let lines = self.lines.borrow();
-                // store the length
-                s.emit_u32(lines.len() as u32)?;
+fn invalid_crate() -> u32 {
+    // `crate_of_origin` has to be set by the importer.
+    // This value matches up with rustc::hir::def_id::INVALID_CRATE.
+    // That constant is not available here unfortunately :(
+    ::std::u32::MAX - 1
+}
 
-                if !lines.is_empty() {
-                    // In order to preserve some space, we exploit the fact that
-                    // the lines list is sorted and individual lines are
-                    // probably not that long. Because of that we can store lines
-                    // as a difference list, using as little space as possible
-                    // for the differences.
-                    let max_line_length = if lines.len() == 1 {
-                        0
-                    } else {
-                        lines.windows(2)
-                             .map(|w| w[1] - w[0])
-                             .map(|bp| bp.to_usize())
-                             .max()
-                             .unwrap()
-                    };
+fn serialize_lines<S>(lines: &RefCell<Vec<BytePos>>, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer
+{
+    let lines = lines.borrow();
 
-                    let bytes_per_diff: u8 = match max_line_length {
-                        0 ... 0xFF => 1,
-                        0x100 ... 0xFFFF => 2,
-                        _ => 4
-                    };
+    if lines.is_empty() {
+        serializer.serialize_seq(Some(0))?.end()
+    } else {
+        let mut seq = serializer.serialize_seq(Some(lines.len() + 1))?;
 
-                    // Encode the number of bytes used per diff.
-                    bytes_per_diff.encode(s)?;
+        // In order to preserve some space, we exploit the fact that
+        // the lines list is sorted and individual lines are
+        // probably not that long. Because of that we can store lines
+        // as a difference list, using as little space as possible
+        // for the differences.
+        let max_line_length = if lines.len() == 1 {
+            0
+        } else {
+            lines.windows(2)
+                    .map(|w| w[1] - w[0])
+                    .map(|bp| bp.to_usize())
+                    .max()
+                    .unwrap()
+        };
 
-                    // Encode the first element.
-                    lines[0].encode(s)?;
+        let bytes_per_diff: u8 = match max_line_length {
+            0 ... 0xFF => 1,
+            0x100 ... 0xFFFF => 2,
+            _ => 4
+        };
 
-                    let diff_iter = (&lines[..]).windows(2)
-                                                .map(|w| (w[1] - w[0]));
+        // Encode the number of bytes used per diff.
+        seq.serialize_element(&bytes_per_diff)?;
 
-                    match bytes_per_diff {
-                        1 => for diff in diff_iter { (diff.0 as u8).encode(s)? },
-                        2 => for diff in diff_iter { (diff.0 as u16).encode(s)? },
-                        4 => for diff in diff_iter { diff.0.encode(s)? },
-                        _ => unreachable!()
-                    }
-                }
+        // Encode the first element.
+        seq.serialize_element(&lines[0])?;
 
-                Ok(())
-            })?;
-            s.emit_struct_field("multibyte_chars", 5, |s| {
-                (*self.multibyte_chars.borrow()).encode(s)
-            })
-        })
+        let diff_iter = (&lines[..]).windows(2)
+                                    .map(|w| (w[1] - w[0]));
+
+        match bytes_per_diff {
+            1 => for diff in diff_iter { seq.serialize_element(&(diff.0 as u8))? },
+            2 => for diff in diff_iter { seq.serialize_element(&(diff.0 as u16))? },
+            4 => for diff in diff_iter { seq.serialize_element(&diff.0)? },
+            _ => unreachable!()
+        }
+
+        seq.end()
     }
 }
 
-impl Decodable for FileMap {
-    fn decode<D: Decoder>(d: &mut D) -> Result<FileMap, D::Error> {
+fn deserialize_lines<'de, D>(deserializer: D) -> Result<RefCell<Vec<BytePos>>, D::Error>
+    where D: Deserializer<'de>
+{
+    struct LinesVisitor;
 
-        d.read_struct("FileMap", 6, |d| {
-            let name: String = d.read_struct_field("name", 0, |d| Decodable::decode(d))?;
-            let name_was_remapped: bool =
-                d.read_struct_field("name_was_remapped", 1, |d| Decodable::decode(d))?;
-            let start_pos: BytePos = d.read_struct_field("start_pos", 2, |d| Decodable::decode(d))?;
-            let end_pos: BytePos = d.read_struct_field("end_pos", 3, |d| Decodable::decode(d))?;
-            let lines: Vec<BytePos> = d.read_struct_field("lines", 4, |d| {
-                let num_lines: u32 = Decodable::decode(d)?;
-                let mut lines = Vec::with_capacity(num_lines as usize);
+    impl<'de> Visitor<'de> for LinesVisitor {
+        type Value = RefCell<Vec<BytePos>>;
 
-                if num_lines > 0 {
-                    // Read the number of bytes used per diff.
-                    let bytes_per_diff: u8 = Decodable::decode(d)?;
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("compressed locations of lines beginnings in the source code")
+        }
 
-                    // Read the first element.
-                    let mut line_start: BytePos = Decodable::decode(d)?;
-                    lines.push(line_start);
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where A: SeqAccess<'de>
+        {
+            let mut lines = Vec::with_capacity(seq.size_hint().unwrap_or(0));
 
-                    for _ in 1..num_lines {
-                        let diff = match bytes_per_diff {
-                            1 => d.read_u8()? as u32,
-                            2 => d.read_u16()? as u32,
-                            4 => d.read_u32()?,
-                            _ => unreachable!()
-                        };
+            // Read the number of bytes used per diff.
+            if let Some(bytes_per_diff) = seq.next_element::<u8>()? {
+                // Read the first element.
+                let mut line_start: BytePos = seq.next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+                lines.push(line_start);
 
-                        line_start = line_start + BytePos(diff);
-
-                        lines.push(line_start);
+                while let Some(diff) = match bytes_per_diff {
+                    1 => seq.next_element::<u8>()?.map(|u| u as u32),
+                    2 => seq.next_element::<u16>()?.map(|u| u as u32),
+                    4 => seq.next_element::<u32>()?,
+                    _ => {
+                        return Err(de::Error::invalid_value(
+                                Unexpected::Unsigned(bytes_per_diff as u64),
+                                &"bytes per diff"));
                     }
+                } {
+                    line_start = line_start + BytePos(diff);
+                    lines.push(line_start);
                 }
+            }
 
-                Ok(lines)
-            })?;
-            let multibyte_chars: Vec<MultiByteChar> =
-                d.read_struct_field("multibyte_chars", 5, |d| Decodable::decode(d))?;
-            Ok(FileMap {
-                name: name,
-                name_was_remapped: name_was_remapped,
-                // `crate_of_origin` has to be set by the importer.
-                // This value matches up with rustc::hir::def_id::INVALID_CRATE.
-                // That constant is not available here unfortunately :(
-                crate_of_origin: ::std::u32::MAX - 1,
-                start_pos: start_pos,
-                end_pos: end_pos,
-                src: None,
-                lines: RefCell::new(lines),
-                multibyte_chars: RefCell::new(multibyte_chars)
-            })
-        })
+            Ok(RefCell::new(lines))
+        }
     }
+
+    deserializer.deserialize_seq(LinesVisitor)
 }
 
 impl fmt::Debug for FileMap {
@@ -612,7 +581,7 @@ pub trait Pos {
 
 /// A byte offset. Keep this small (currently 32-bits), as AST contains
 /// a lot of them.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct BytePos(pub u32);
 
 /// A character offset. Because of multibyte utf8 characters, a byte offset
@@ -642,18 +611,6 @@ impl Sub for BytePos {
 
     fn sub(self, rhs: BytePos) -> BytePos {
         BytePos((self.to_usize() - rhs.to_usize()) as u32)
-    }
-}
-
-impl Encodable for BytePos {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        s.emit_u32(self.0)
-    }
-}
-
-impl Decodable for BytePos {
-    fn decode<D: Decoder>(d: &mut D) -> Result<BytePos, D::Error> {
-        Ok(BytePos(d.read_u32()?))
     }
 }
 

@@ -496,7 +496,7 @@ pub type BuiltinDeriveFn =
     for<'cx> fn(&'cx mut ExtCtxt, Span, &MetaItem, &Annotatable, &mut FnMut(Annotatable));
 
 /// Represents different kinds of macro invocations that can be resolved.
-#[derive(Clone, Copy, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash, Debug)]
 pub enum MacroKind {
     /// A bang macro - foo!()
     Bang,

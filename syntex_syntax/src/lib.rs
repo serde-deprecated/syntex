@@ -18,18 +18,18 @@
        html_favicon_url = "https://doc.rust-lang.org/favicon.ico",
        html_root_url = "https://doc.rust-lang.org/nightly/",
        test(attr(deny(warnings))))]
-//#![deny(warnings)]
+#![deny(warnings)]
 
-extern crate rustc_serialize as serialize;
 #[macro_use] extern crate log;
 #[macro_use] extern crate bitflags;
 pub extern crate syntex_errors as errors;
 extern crate syntex_pos as syntax_pos;
 mod rustc_data_structures;
 
-extern crate rustc_serialize; // used by deriving
-
 extern crate extprim;
+extern crate serde;
+#[macro_use] extern crate serde_derive;
+extern crate serde_json;
 extern crate unicode_xid;
 
 // A variant of 'try!' that panics on an Err. This is used as a crutch on the

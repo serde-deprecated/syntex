@@ -29,7 +29,7 @@ use std::rc::Rc;
 use std::io::{self, Write};
 use std::vec;
 
-use rustc_serialize::json::as_json;
+use serde_json;
 
 pub struct JsonEmitter {
     dst: Box<Write + Send>,
@@ -66,7 +66,7 @@ impl JsonEmitter {
 impl Emitter for JsonEmitter {
     fn emit(&mut self, db: &DiagnosticBuilder) {
         let data = Diagnostic::from_diagnostic_builder(db, self);
-        if let Err(e) = writeln!(&mut self.dst, "{}", as_json(&data)) {
+        if let Err(e) = serde_json::to_writer(&mut self.dst, &data) {
             panic!("failed to print diagnostics: {:?}", e);
         }
     }
@@ -74,7 +74,7 @@ impl Emitter for JsonEmitter {
 
 // The following data types are provided just for serialisation.
 
-#[derive(RustcEncodable)]
+#[derive(Serialize)]
 struct Diagnostic {
     /// The primary error message.
     message: String,
@@ -90,7 +90,7 @@ struct Diagnostic {
     rendered: Option<String>,
 }
 
-#[derive(RustcEncodable)]
+#[derive(Serialize)]
 struct DiagnosticSpan {
     file_name: String,
     byte_start: u32,
@@ -117,7 +117,7 @@ struct DiagnosticSpan {
     expansion: Option<Box<DiagnosticSpanMacroExpansion>>,
 }
 
-#[derive(RustcEncodable)]
+#[derive(Serialize)]
 struct DiagnosticSpanLine {
     text: String,
 
@@ -127,7 +127,7 @@ struct DiagnosticSpanLine {
     highlight_end: usize,
 }
 
-#[derive(RustcEncodable)]
+#[derive(Serialize)]
 struct DiagnosticSpanMacroExpansion {
     /// span where macro was applied to generate this code; note that
     /// this may itself derive from a macro (if
@@ -141,7 +141,7 @@ struct DiagnosticSpanMacroExpansion {
     def_site_span: Option<DiagnosticSpan>,
 }
 
-#[derive(RustcEncodable)]
+#[derive(Serialize)]
 struct DiagnosticCode {
     /// The code itself.
     code: String,

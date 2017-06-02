@@ -15,7 +15,6 @@
 
 extern crate term;
 extern crate libc;
-extern crate rustc_serialize;
 extern crate syntex_pos as syntax_pos;
 
 pub use emitter::ColorConfig;
@@ -36,9 +35,13 @@ pub mod registry;
 pub mod styled_buffer;
 mod lock;
 
+#[macro_use]
+extern crate serde_derive;
+extern crate serde;
+
 use syntax_pos::{BytePos, Loc, FileLinesResult, FileName, MultiSpan, Span, NO_EXPANSION};
 
-#[derive(Clone, Debug, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum RenderSpan {
     /// A FullSpan renders with both with an initial line for the
     /// message, prefixed by file:linenum, followed by a summary of
@@ -52,7 +55,7 @@ pub enum RenderSpan {
     Suggestion(CodeSuggestion),
 }
 
-#[derive(Clone, Debug, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CodeSuggestion {
     /// Each substitute can have multiple variants due to multiple
     /// applicable suggestions
@@ -76,7 +79,7 @@ pub struct CodeSuggestion {
     pub msg: String,
 }
 
-#[derive(Clone, Debug, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 /// See the docs on `CodeSuggestion::substitutions`
 pub struct Substitution {
     pub span: Span,
@@ -527,7 +530,7 @@ impl Handler {
 }
 
 
-#[derive(Copy, PartialEq, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Copy, PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub enum Level {
     Bug,
     Fatal,

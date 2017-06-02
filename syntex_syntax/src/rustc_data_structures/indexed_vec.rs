@@ -17,7 +17,7 @@ use std::fmt;
 use std::vec;
 use std::u32;
 
-use rustc_serialize as serialize;
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
 
 /// Represents some newtyped `usize` wrapper.
 ///
@@ -43,15 +43,25 @@ pub struct IndexVec<I: Idx, T> {
     _marker: PhantomData<Fn(&I)>
 }
 
-impl<I: Idx, T: serialize::Encodable> serialize::Encodable for IndexVec<I, T> {
-    fn encode<S: serialize::Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        serialize::Encodable::encode(&self.raw, s)
+impl<I, T> Serialize for IndexVec<I, T>
+    where I: Idx,
+          T: Serialize
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        self.raw.serialize(serializer)
     }
 }
 
-impl<I: Idx, T: serialize::Decodable> serialize::Decodable for IndexVec<I, T> {
-    fn decode<D: serialize::Decoder>(d: &mut D) -> Result<Self, D::Error> {
-        serialize::Decodable::decode(d).map(|v| {
+impl<'de, I, T> Deserialize<'de> for IndexVec<I, T>
+    where I: Idx,
+          T: Deserialize<'de>
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>
+    {
+        Deserialize::deserialize(deserializer).map(|v| {
             IndexVec { raw: v, _marker: PhantomData }
         })
     }
