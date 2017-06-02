@@ -17,6 +17,9 @@ use ext::base::ExtCtxt;
 use ptr::P;
 use symbol::{Symbol, keywords};
 
+use extprim::i128::i128;
+use extprim::u128::u128;
+
 // Transitional reexports so qquote can find the paths it is looking for
 mod syntax {
     pub use ext;
@@ -699,26 +702,26 @@ impl<'a> AstBuilder for ExtCtxt<'a> {
         self.expr(sp, ast::ExprKind::Lit(P(respan(sp, lit))))
     }
     fn expr_usize(&self, span: Span, i: usize) -> P<ast::Expr> {
-        self.expr_lit(span, ast::LitKind::Int(i as u64,
+        self.expr_lit(span, ast::LitKind::Int(u128::from(i as u64),
                                               ast::LitIntType::Unsigned(ast::UintTy::Us)))
     }
     fn expr_isize(&self, sp: Span, i: isize) -> P<ast::Expr> {
         if i < 0 {
-            let i = (-i) as u64;
+            let i = (-i128::from(i as i64)).as_u128();
             let lit_ty = ast::LitIntType::Signed(ast::IntTy::Is);
             let lit = self.expr_lit(sp, ast::LitKind::Int(i, lit_ty));
             self.expr_unary(sp, ast::UnOp::Neg, lit)
         } else {
-            self.expr_lit(sp, ast::LitKind::Int(i as u64,
+            self.expr_lit(sp, ast::LitKind::Int(i128::from(i as i64).as_u128(),
                                                 ast::LitIntType::Signed(ast::IntTy::Is)))
         }
     }
     fn expr_u32(&self, sp: Span, u: u32) -> P<ast::Expr> {
-        self.expr_lit(sp, ast::LitKind::Int(u as u64,
+        self.expr_lit(sp, ast::LitKind::Int(u128::from(u),
                                             ast::LitIntType::Unsigned(ast::UintTy::U32)))
     }
     fn expr_u8(&self, sp: Span, u: u8) -> P<ast::Expr> {
-        self.expr_lit(sp, ast::LitKind::Int(u as u64, ast::LitIntType::Unsigned(ast::UintTy::U8)))
+        self.expr_lit(sp, ast::LitKind::Int(u128::from(u), ast::LitIntType::Unsigned(ast::UintTy::U8)))
     }
     fn expr_bool(&self, sp: Span, value: bool) -> P<ast::Expr> {
         self.expr_lit(sp, ast::LitKind::Bool(value))

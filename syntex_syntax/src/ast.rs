@@ -33,6 +33,9 @@ use std::fmt;
 use std::rc::Rc;
 use std::u32;
 
+use extprim::i128::i128;
+use extprim::u128::u128;
+
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Copy)]
 pub struct Lifetime {
     pub id: NodeId,
@@ -1065,7 +1068,7 @@ pub enum LitKind {
     /// A character literal (`'a'`)
     Char(char),
     /// An integer literal (`1`)
-    Int(u64, LitIntType),
+    Int(u128, LitIntType),
     /// A float literal (`1f64` or `1E10f64`)
     Float(Symbol, FloatTy),
     /// A float literal without a suffix (`1.0 or 1.0E10`)
@@ -1201,11 +1204,11 @@ impl IntTy {
         }
     }
 
-    pub fn val_to_string(&self, val: i64) -> String {
-        // cast to a u64 so we can correctly print INT64_MIN. All integral types
-        // are parsed as u64, so we wouldn't want to print an extra negative
+    pub fn val_to_string(&self, val: i128) -> String {
+        // cast to a u128 so we can correctly print INT128_MIN. All integral types
+        // are parsed as u128, so we wouldn't want to print an extra negative
         // sign.
-        format!("{}{}", val as u64, self.ty_to_string())
+        format!("{}{}", val.as_u128(), self.ty_to_string())
     }
 
     pub fn bit_width(&self) -> Option<usize> {
@@ -1242,7 +1245,7 @@ impl UintTy {
         }
     }
 
-    pub fn val_to_string(&self, val: u64) -> String {
+    pub fn val_to_string(&self, val: u128) -> String {
         format!("{}{}", val, self.ty_to_string())
     }
 

@@ -41,6 +41,8 @@ pub mod common;
 pub mod classify;
 pub mod obsolete;
 
+use extprim::u128::u128;
+
 /// Info about a parsing session.
 pub struct ParseSess {
     pub span_diagnostic: Handler,
@@ -620,7 +622,7 @@ pub fn integer_lit(s: &str, suffix: Option<Symbol>, diag: Option<(Span, &Handler
     debug!("integer_lit: the type is {:?}, base {:?}, the new string is {:?}, the original \
            string was {:?}, the original suffix was {:?}", ty, base, s, orig, suffix);
 
-    Some(match u64::from_str_radix(s, base) {
+    Some(match u128::from_str_radix(s, base) {
         Ok(r) => ast::LitKind::Int(r, ty),
         Err(_) => {
             // small bases are lexed as if they were base 10, e.g, the string
@@ -634,7 +636,7 @@ pub fn integer_lit(s: &str, suffix: Option<Symbol>, diag: Option<(Span, &Handler
             if !already_errored {
                 err!(diag, |span, diag| diag.span_err(span, "int literal is too large"));
             }
-            ast::LitKind::Int(0, ty)
+            ast::LitKind::Int(u128::from(0u64), ty)
         }
     })
 }

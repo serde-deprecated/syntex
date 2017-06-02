@@ -637,7 +637,7 @@ pub trait PrintState<'a> {
             ast::LitKind::Int(i, t) => {
                 match t {
                     ast::LitIntType::Signed(st) => {
-                        word(self.writer(), &st.val_to_string(i as i64))
+                        word(self.writer(), &st.val_to_string(i.as_i128()))
                     }
                     ast::LitIntType::Unsigned(ut) => {
                         word(self.writer(), &ut.val_to_string(i))
