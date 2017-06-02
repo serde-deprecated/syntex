@@ -8,28 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![crate_name = "rustc_errors"]
-#![crate_type = "dylib"]
-#![crate_type = "rlib"]
 #![doc(html_logo_url = "https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
       html_favicon_url = "https://doc.rust-lang.org/favicon.ico",
       html_root_url = "https://doc.rust-lang.org/nightly/")]
 #![deny(warnings)]
 
-#![feature(custom_attribute)]
-#![allow(unused_attributes)]
-#![feature(range_contains)]
-#![feature(libc)]
-#![feature(conservative_impl_trait)]
-
-#![cfg_attr(stage0, unstable(feature = "rustc_private", issue = "27812"))]
-#![cfg_attr(stage0, feature(rustc_private))]
-#![cfg_attr(stage0, feature(staged_api))]
-
 extern crate term;
 extern crate libc;
-extern crate serialize as rustc_serialize;
-extern crate syntax_pos;
+extern crate rustc_serialize;
+extern crate syntex_pos as syntax_pos;
 
 pub use emitter::ColorConfig;
 
@@ -111,8 +98,11 @@ impl CodeSuggestion {
     }
 
     /// Returns the number of substitutions
-    pub fn substitution_spans<'a>(&'a self) -> impl Iterator<Item = Span> + 'a {
-        self.substitution_parts.iter().map(|sub| sub.span)
+    pub fn substitution_spans<'a>(&'a self) -> std::iter::Map<<&'a Vec<Substitution> as IntoIterator>::IntoIter, fn(&Substitution) -> Span> {
+        fn substitution_span(sub: &Substitution) -> Span {
+            sub.span
+        }
+        self.substitution_parts.iter().map(substitution_span)
     }
 
     /// Returns the assembled code suggestions.
