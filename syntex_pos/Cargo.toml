@@ -5,7 +5,7 @@ authors = ["Erick Tryzelaar <erick.tryzelaar@gmail.com>", "David Tolnay <dtolnay
 license = "MIT/Apache-2.0"
 description = "Backport of libsyntax_pos"
 repository = "https://github.com/serde-rs/syntex"
-readme = "../README.md"
+readme = "README.md"
 include = ["Cargo.toml", "src/**/*.rs", "README.md", "LICENSE-APACHE", "LICENSE-MIT"]
 
 [dependencies]
