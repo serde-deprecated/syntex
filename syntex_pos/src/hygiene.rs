@@ -27,6 +27,8 @@ use std::fmt;
 #[derive(Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord, Hash)]
 pub struct SyntaxContext(u32);
 
+pub const NO_EXPANSION: SyntaxContext = SyntaxContext(0);
+
 #[derive(Copy, Clone, Default)]
 pub struct SyntaxContextData {
     pub outer_mark: Mark,
@@ -136,8 +138,8 @@ pub fn clear_markings() {
 }
 
 impl SyntaxContext {
-    pub const fn empty() -> Self {
-        SyntaxContext(0)
+    pub fn empty() -> Self {
+        NO_EXPANSION
     }
 
     /// Extend a syntax context with a given mark

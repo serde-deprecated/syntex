@@ -14,23 +14,10 @@
 //!
 //! This API is completely unstable and subject to change.
 
-#![crate_name = "syntax_pos"]
-#![crate_type = "dylib"]
-#![crate_type = "rlib"]
 #![doc(html_logo_url = "https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
       html_favicon_url = "https://doc.rust-lang.org/favicon.ico",
       html_root_url = "https://doc.rust-lang.org/nightly/")]
 #![deny(warnings)]
-
-#![feature(const_fn)]
-#![feature(custom_attribute)]
-#![feature(optin_builtin_traits)]
-#![allow(unused_attributes)]
-#![feature(specialization)]
-
-#![cfg_attr(stage0, unstable(feature = "rustc_private", issue = "27812"))]
-#![cfg_attr(stage0, feature(rustc_private))]
-#![cfg_attr(stage0, feature(staged_api))]
 
 use std::cell::{Cell, RefCell};
 use std::ops::{Add, Sub};
@@ -41,8 +28,8 @@ use std::fmt;
 
 use serialize::{Encodable, Decodable, Encoder, Decoder};
 
-extern crate serialize;
-extern crate serialize as rustc_serialize; // used by deriving
+extern crate rustc_serialize as serialize;
+extern crate rustc_serialize;
 
 pub mod hygiene;
 pub use hygiene::{SyntaxContext, ExpnInfo, ExpnFormat, NameAndSpan};
@@ -229,8 +216,8 @@ pub struct SpanLabel {
     pub label: Option<String>,
 }
 
-impl serialize::UseSpecializedEncodable for Span {
-    fn default_encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+impl Encodable for Span {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
         s.emit_struct("Span", 2, |s| {
             s.emit_struct_field("lo", 0, |s| {
                 self.lo.encode(s)
@@ -243,8 +230,8 @@ impl serialize::UseSpecializedEncodable for Span {
     }
 }
 
-impl serialize::UseSpecializedDecodable for Span {
-    fn default_decode<D: Decoder>(d: &mut D) -> Result<Span, D::Error> {
+impl Decodable for Span {
+    fn decode<D: Decoder>(d: &mut D) -> Result<Span, D::Error> {
         d.read_struct("Span", 2, |d| {
             let lo = d.read_struct_field("lo", 0, Decodable::decode)?;
             let hi = d.read_struct_field("hi", 1, Decodable::decode)?;
@@ -358,7 +345,7 @@ impl From<Span> for MultiSpan {
     }
 }
 
-pub const NO_EXPANSION: SyntaxContext = SyntaxContext::empty();
+pub const NO_EXPANSION: SyntaxContext = ::hygiene::NO_EXPANSION;
 
 /// Identifies an offset of a multi-byte character in a FileMap
 #[derive(Copy, Clone, RustcEncodable, RustcDecodable, Eq, PartialEq)]

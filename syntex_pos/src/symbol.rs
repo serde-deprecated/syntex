@@ -26,7 +26,7 @@ pub struct Ident {
 }
 
 impl Ident {
-    pub const fn with_empty_ctxt(name: Symbol) -> Ident {
+    pub fn with_empty_ctxt(name: Symbol) -> Ident {
         Ident { name: name, ctxt: SyntaxContext::empty() }
     }
 
@@ -79,8 +79,9 @@ impl Decodable for Ident {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Symbol(u32);
 
+// FIXME syntex
 // The interner in thread-local, so `Symbol` shouldn't move between threads.
-impl !Send for Symbol { }
+// impl !Send for Symbol { }
 
 impl Symbol {
     /// Maps a string to its interned representation.
@@ -221,7 +222,10 @@ macro_rules! declare_keywords {(
         $(
             #[allow(non_upper_case_globals)]
             pub const $konst: Keyword = Keyword {
-                ident: Ident::with_empty_ctxt(super::Symbol($index))
+                ident: Ident {
+                    name: super::Symbol($index),
+                    ctxt: ::NO_EXPANSION,
+                }
             };
         )*
     }
@@ -366,7 +370,8 @@ impl<'a> ::std::cmp::PartialEq<InternedString> for &'a String {
     }
 }
 
-impl !Send for InternedString { }
+// FIXME syntex
+// impl !Send for InternedString { }
 
 impl ::std::ops::Deref for InternedString {
     type Target = str;
