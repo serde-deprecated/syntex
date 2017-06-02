@@ -9,4 +9,4 @@ readme = "../README.md"
 include = ["Cargo.toml", "src/**/*.rs", "README.md", "LICENSE-APACHE", "LICENSE-MIT"]
 
 [dependencies]
-rustc-serialize = "0.3.16"
+rustc-serialize = "0.3"

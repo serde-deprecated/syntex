@@ -64,9 +64,9 @@ use std::path::{self, Path, PathBuf};
 use std::slice;
 
 bitflags! {
-    pub flags Restrictions: u8 {
-        const RESTRICTION_STMT_EXPR         = 1 << 0,
-        const RESTRICTION_NO_STRUCT_LITERAL = 1 << 1,
+    pub struct Restrictions: u8 {
+        const RESTRICTION_STMT_EXPR         = 1 << 0;
+        const RESTRICTION_NO_STRUCT_LITERAL = 1 << 1;
     }
 }
 
