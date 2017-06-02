@@ -1,8 +1,0 @@
-[package]
-name = "hello_world_macros"
-version = "0.8.0"
-authors = [ "erick.tryzelaar@gmail.com" ]
-
-[dependencies]
-syntex = { version = "*", path = "../../syntex" }
-syntex_syntax = { version = "*", path = "../../syntex_syntax" }
