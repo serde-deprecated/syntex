@@ -5,6 +5,4 @@ rust:
 - beta
 - nightly
 script:
-- (cd hello_world && cargo run --verbose)
-- (cd syntex && cargo test --verbose && cargo doc --no-deps)
-- (cd syntex_syntax && cargo doc --no-deps)
+- cd syntex_syntax && cargo build
