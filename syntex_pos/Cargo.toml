@@ -1,6 +1,6 @@
 [package]
 name = "syntex_pos"
-version = "0.59.0"
+version = "0.59.0" # remember to update html_root_url
 authors = ["Erick Tryzelaar <erick.tryzelaar@gmail.com>", "David Tolnay <dtolnay@gmail.com>"]
 license = "MIT/Apache-2.0"
 description = "Backport of libsyntax_pos"
