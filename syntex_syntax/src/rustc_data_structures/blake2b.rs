@@ -31,7 +31,7 @@ pub struct Blake2bCtx {
     outlen: u16,
     finalized: bool,
 
-    //#[cfg(debug_assertions)]
+    #[cfg(debug_assertions)]
     fnv_hash: u64,
 }
 
