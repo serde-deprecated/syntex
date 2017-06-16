@@ -63,10 +63,12 @@ use std::mem;
 use std::path::{self, Path, PathBuf};
 use std::slice;
 
+use extprim::u128::u128;
+
 bitflags! {
-    pub flags Restrictions: u8 {
-        const RESTRICTION_STMT_EXPR         = 1 << 0,
-        const RESTRICTION_NO_STRUCT_LITERAL = 1 << 1,
+    pub struct Restrictions: u8 {
+        const RESTRICTION_STMT_EXPR         = 1 << 0;
+        const RESTRICTION_NO_STRUCT_LITERAL = 1 << 1;
     }
 }
 
@@ -2063,7 +2065,7 @@ impl<'a> Parser<'a> {
     pub fn mk_lit_u32(&mut self, i: u32, attrs: ThinVec<Attribute>) -> P<Expr> {
         let span = &self.span;
         let lv_lit = P(codemap::Spanned {
-            node: LitKind::Int(i as u128, ast::LitIntType::Unsigned(UintTy::U32)),
+            node: LitKind::Int(u128::from(i), ast::LitIntType::Unsigned(UintTy::U32)),
             span: *span
         });
 

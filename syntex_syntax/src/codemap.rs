@@ -43,7 +43,7 @@ pub fn original_sp(sp: Span, enclosing_sp: Span) -> Span {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash, Debug, Copy)]
 pub struct Spanned<T> {
     pub node: T,
     pub span: Span,
@@ -103,7 +103,7 @@ impl FileLoader for RealFileLoader {
 //
 
 pub struct CodeMap {
-    pub(super) files: RefCell<Vec<Rc<FileMap>>>,
+    pub files: RefCell<Vec<Rc<FileMap>>>,
     file_loader: Box<FileLoader>,
     // This is used to apply the file path remapping as specified via
     // -Zremap-path-prefix to all FileMaps allocated within this CodeMap.

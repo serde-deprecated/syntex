@@ -16,19 +16,19 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::fs::{remove_file, create_dir_all, File};
-use std::io::Write;
 use std::error::Error;
-use rustc_serialize::json::as_json;
 
 use syntax_pos::Span;
 use ext::base::ExtCtxt;
 use diagnostics::plugin::{ErrorMap, ErrorInfo};
 
+use serde_json;
+
 // Default metadata directory to use for extended error JSON.
 const ERROR_METADATA_PREFIX: &'static str = "tmp/extended-errors";
 
 /// JSON encodable/decodable version of `ErrorInfo`.
-#[derive(PartialEq, RustcDecodable, RustcEncodable)]
+#[derive(PartialEq, Deserialize, Serialize)]
 pub struct ErrorMetadata {
     pub description: Option<String>,
     pub use_site: Option<ErrorLocation>
@@ -38,7 +38,7 @@ pub struct ErrorMetadata {
 pub type ErrorMetadataMap = BTreeMap<String, ErrorMetadata>;
 
 /// JSON encodable error location type with filename and line number.
-#[derive(PartialEq, RustcDecodable, RustcEncodable)]
+#[derive(PartialEq, Deserialize, Serialize)]
 pub struct ErrorLocation {
     pub filename: String,
     pub line: usize
@@ -93,7 +93,7 @@ pub fn output_metadata(ecx: &ExtCtxt, prefix: &str, name: &str, err_map: &ErrorM
     }).collect::<ErrorMetadataMap>();
 
     // Write the data to the file, deleting it if the write fails.
-    let result = write!(&mut metadata_file, "{}", as_json(&json_map));
+    let result = serde_json::to_writer(&mut metadata_file, &json_map);
     if result.is_err() {
         remove_file(&metadata_path)?;
     }

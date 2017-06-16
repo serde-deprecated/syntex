@@ -8,28 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![crate_name = "rustc_errors"]
-#![crate_type = "dylib"]
-#![crate_type = "rlib"]
 #![doc(html_logo_url = "https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
       html_favicon_url = "https://doc.rust-lang.org/favicon.ico",
-      html_root_url = "https://doc.rust-lang.org/nightly/")]
+      html_root_url = "https://docs.rs/syntex_errors/0.59.1")]
 #![deny(warnings)]
-
-#![feature(custom_attribute)]
-#![allow(unused_attributes)]
-#![feature(range_contains)]
-#![feature(libc)]
-#![feature(conservative_impl_trait)]
-
-#![cfg_attr(stage0, unstable(feature = "rustc_private", issue = "27812"))]
-#![cfg_attr(stage0, feature(rustc_private))]
-#![cfg_attr(stage0, feature(staged_api))]
 
 extern crate term;
 extern crate libc;
-extern crate serialize as rustc_serialize;
-extern crate syntax_pos;
+extern crate syntex_pos as syntax_pos;
 
 pub use emitter::ColorConfig;
 
@@ -49,9 +35,13 @@ pub mod registry;
 pub mod styled_buffer;
 mod lock;
 
+#[macro_use]
+extern crate serde_derive;
+extern crate serde;
+
 use syntax_pos::{BytePos, Loc, FileLinesResult, FileName, MultiSpan, Span, NO_EXPANSION};
 
-#[derive(Clone, Debug, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum RenderSpan {
     /// A FullSpan renders with both with an initial line for the
     /// message, prefixed by file:linenum, followed by a summary of
@@ -65,7 +55,7 @@ pub enum RenderSpan {
     Suggestion(CodeSuggestion),
 }
 
-#[derive(Clone, Debug, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CodeSuggestion {
     /// Each substitute can have multiple variants due to multiple
     /// applicable suggestions
@@ -73,7 +63,7 @@ pub struct CodeSuggestion {
     /// `foo.bar` might be replaced with `a.b` or `x.y` by replacing
     /// `foo` and `bar` on their own:
     ///
-    /// ```
+    /// ```ignore
     /// vec![
     ///     (0..3, vec!["a", "x"]),
     ///     (4..7, vec!["b", "y"]),
@@ -82,14 +72,14 @@ pub struct CodeSuggestion {
     ///
     /// or by replacing the entire span:
     ///
-    /// ```
+    /// ```ignore
     /// vec![(0..7, vec!["a.b", "x.y"])]
     /// ```
     pub substitution_parts: Vec<Substitution>,
     pub msg: String,
 }
 
-#[derive(Clone, Debug, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 /// See the docs on `CodeSuggestion::substitutions`
 pub struct Substitution {
     pub span: Span,
@@ -111,8 +101,11 @@ impl CodeSuggestion {
     }
 
     /// Returns the number of substitutions
-    pub fn substitution_spans<'a>(&'a self) -> impl Iterator<Item = Span> + 'a {
-        self.substitution_parts.iter().map(|sub| sub.span)
+    pub fn substitution_spans<'a>(&'a self) -> std::iter::Map<<&'a Vec<Substitution> as IntoIterator>::IntoIter, fn(&Substitution) -> Span> {
+        fn substitution_span(sub: &Substitution) -> Span {
+            sub.span
+        }
+        self.substitution_parts.iter().map(substitution_span)
     }
 
     /// Returns the assembled code suggestions.
@@ -537,7 +530,7 @@ impl Handler {
 }
 
 
-#[derive(Copy, PartialEq, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Copy, PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub enum Level {
     Bug,
     Fatal,

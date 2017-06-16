@@ -1,0 +1,21 @@
+[package]
+name = "syntex_syntax"
+version = "0.59.1" # remember to update html_root_url
+authors = ["Erick Tryzelaar <erick.tryzelaar@gmail.com>", "David Tolnay <dtolnay@gmail.com>"]
+license = "MIT/Apache-2.0"
+description = "Backport of libsyntax"
+repository = "https://github.com/serde-rs/syntex"
+documentation = "https://docs.rs/syntex_syntax"
+readme = "README.md"
+include = ["Cargo.toml", "src/**/*.rs", "README.md", "LICENSE-APACHE", "LICENSE-MIT"]
+
+[dependencies]
+bitflags = "0.9"
+extprim = "1.0"
+log = "0.3"
+serde = { version = "1.0", features = ["rc"] }
+serde_derive = "1.0"
+serde_json = "1.0"
+syntex_errors = { version = "0.59", path = "../syntex_errors" }
+syntex_pos = { version = "0.59", path = "../syntex_pos" }
+unicode-xid = "0.1"

@@ -28,14 +28,15 @@ use ext::tt::{macro_parser, quoted};
 use parse::Directory;
 use parse::token::{self, Token};
 use print::pprust;
-use serialize::{Decoder, Decodable, Encoder, Encodable};
 use util::RcSlice;
 
 use std::{fmt, iter, mem};
 use std::hash::{self, Hash};
 
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
+
 /// A delimited sequence of token trees
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash, Debug)]
 pub struct Delimited {
     /// The type of delimiter
     pub delim: token::DelimToken,
@@ -92,7 +93,7 @@ impl Delimited {
 ///
 /// The RHS of an MBE macro is the only place `SubstNt`s are substituted.
 /// Nothing special happens to misnamed or misplaced `SubstNt`s.
-#[derive(Debug, Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum TokenTree {
     /// A single token
     Token(Span, token::Token),
@@ -372,15 +373,19 @@ impl fmt::Display for TokenStream {
     }
 }
 
-impl Encodable for TokenStream {
-    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), E::Error> {
-        self.trees().collect::<Vec<_>>().encode(encoder)
+impl Serialize for TokenStream {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        self.trees().collect::<Vec<_>>().serialize(serializer)
     }
 }
 
-impl Decodable for TokenStream {
-    fn decode<D: Decoder>(decoder: &mut D) -> Result<TokenStream, D::Error> {
-        Vec::<TokenTree>::decode(decoder).map(|vec| vec.into_iter().collect())
+impl<'de> Deserialize<'de> for TokenStream {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>
+    {
+        Vec::<TokenTree>::deserialize(deserializer).map(|vec| vec.into_iter().collect())
     }
 }
 
@@ -392,15 +397,19 @@ impl Hash for TokenStream {
     }
 }
 
-impl Encodable for ThinTokenStream {
-    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), E::Error> {
-        TokenStream::from(self.clone()).encode(encoder)
+impl Serialize for ThinTokenStream {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        TokenStream::from(self.clone()).serialize(serializer)
     }
 }
 
-impl Decodable for ThinTokenStream {
-    fn decode<D: Decoder>(decoder: &mut D) -> Result<ThinTokenStream, D::Error> {
-        TokenStream::decode(decoder).map(Into::into)
+impl<'de> Deserialize<'de> for ThinTokenStream {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>
+    {
+        TokenStream::deserialize(deserializer).map(Into::into)
     }
 }
 

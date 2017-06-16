@@ -18,14 +18,17 @@
 use Span;
 use symbol::{Ident, Symbol};
 
-use serialize::{Encodable, Decodable, Encoder, Decoder};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
+
 /// A SyntaxContext represents a chain of macro expansions (represented by marks).
 #[derive(Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord, Hash)]
 pub struct SyntaxContext(u32);
+
+pub const NO_EXPANSION: SyntaxContext = SyntaxContext(0);
 
 #[derive(Copy, Clone, Default)]
 pub struct SyntaxContextData {
@@ -35,7 +38,7 @@ pub struct SyntaxContextData {
 }
 
 /// A mark is a unique id associated with a macro expansion.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default, RustcEncodable, RustcDecodable)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default, Serialize, Deserialize)]
 pub struct Mark(u32);
 
 #[derive(Default)]
@@ -136,8 +139,8 @@ pub fn clear_markings() {
 }
 
 impl SyntaxContext {
-    pub const fn empty() -> Self {
-        SyntaxContext(0)
+    pub fn empty() -> Self {
+        NO_EXPANSION
     }
 
     /// Extend a syntax context with a given mark
@@ -343,15 +346,21 @@ pub enum ExpnFormat {
     CompilerDesugaring(Symbol)
 }
 
-impl Encodable for SyntaxContext {
-    fn encode<E: Encoder>(&self, _: &mut E) -> Result<(), E::Error> {
-        Ok(()) // FIXME(jseyfried) intercrate hygiene
+impl Serialize for SyntaxContext {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        // FIXME(jseyfried) intercrate hygiene
+        serializer.serialize_unit()
     }
 }
 
-impl Decodable for SyntaxContext {
-    fn decode<D: Decoder>(_: &mut D) -> Result<SyntaxContext, D::Error> {
-        Ok(SyntaxContext::empty()) // FIXME(jseyfried) intercrate hygiene
+impl<'de> Deserialize<'de> for SyntaxContext {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>
+    {
+        // FIXME(jseyfried) intercrate hygiene
+        Deserialize::deserialize(deserializer).map(|()| SyntaxContext::empty())
     }
 }
 

@@ -80,20 +80,20 @@
 //! will be made to flow subsequent breaks together onto lines. Inconsistent
 //! is the opposite. Inconsistent breaking example would be, say:
 //!
-//! ```
+//! ```ignore
 //! foo(hello, there, good, friends)
 //! ```
 //!
 //! breaking inconsistently to become
 //!
-//! ```
+//! ```ignore
 //! foo(hello, there
 //!     good, friends);
 //! ```
 //!
 //! whereas a consistent breaking would yield:
 //!
-//! ```
+//! ```ignore
 //! foo(hello,
 //!     there
 //!     good,

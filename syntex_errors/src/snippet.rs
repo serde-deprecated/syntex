@@ -203,7 +203,7 @@ pub struct StyledString {
     pub style: Style,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Style {
     HeaderMsg,
     FileNameStyle,

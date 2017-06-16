@@ -15,12 +15,13 @@ use errors::{FatalError, DiagnosticBuilder};
 use parse::{token, ParseSess};
 use str::char_at;
 use symbol::{Symbol, keywords};
-use std_unicode::property::Pattern_White_Space;
 
 use std::borrow::Cow;
 use std::char;
 use std::mem::replace;
 use std::rc::Rc;
+
+use unicode_xid::UnicodeXID;
 
 pub mod comments;
 mod tokentrees;
@@ -1635,7 +1636,11 @@ impl<'a> StringReader<'a> {
 // This tests the character for the unicode property 'PATTERN_WHITE_SPACE' which
 // is guaranteed to be forward compatible. http://unicode.org/reports/tr31/#R3
 pub fn is_pattern_whitespace(c: Option<char>) -> bool {
-    c.map_or(false, Pattern_White_Space)
+    // FIXME syntex
+    match c.unwrap_or('\x00') {
+        ' ' | '\n' | '\t' | '\r' => true,
+        _ => false
+    }
 }
 
 fn in_range(c: Option<char>, lo: char, hi: char) -> bool {
@@ -1670,7 +1675,7 @@ fn ident_start(c: Option<char>) -> bool {
         None => return false,
     };
 
-    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (c > '\x7f' && c.is_xid_start())
+    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (c > '\x7f' && UnicodeXID::is_xid_start(c))
 }
 
 fn ident_continue(c: Option<char>) -> bool {
@@ -1680,7 +1685,7 @@ fn ident_continue(c: Option<char>) -> bool {
     };
 
     (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' ||
-    (c > '\x7f' && c.is_xid_continue())
+    (c > '\x7f' && UnicodeXID::is_xid_continue(c))
 }
 
 #[cfg(test)]

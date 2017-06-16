@@ -34,6 +34,8 @@ use util::ThinVec;
 use std::cell::{RefCell, Cell};
 use std::iter;
 
+use extprim::u128::u128;
+
 thread_local! {
     static USED_ATTRS: RefCell<Vec<u64>> = RefCell::new(Vec::new());
     static KNOWN_ATTRS: RefCell<Vec<u64>> = RefCell::new(Vec::new());
@@ -623,7 +625,7 @@ pub fn cfg_matches(cfg: &ast::MetaItem, sess: &ParseSess, features: Option<&Feat
 }
 
 /// Represents the #[stable], #[unstable] and #[rustc_deprecated] attributes.
-#[derive(RustcEncodable, RustcDecodable, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Stability {
     pub level: StabilityLevel,
     pub feature: Symbol,
@@ -631,20 +633,20 @@ pub struct Stability {
 }
 
 /// The available stability levels.
-#[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Clone, Debug, Eq, Hash)]
+#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Clone, Debug, Eq, Hash)]
 pub enum StabilityLevel {
     // Reason for the current stability level and the relevant rust-lang issue
     Unstable { reason: Option<Symbol>, issue: u32 },
     Stable { since: Symbol },
 }
 
-#[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Clone, Debug, Eq, Hash)]
+#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Clone, Debug, Eq, Hash)]
 pub struct RustcDeprecation {
     pub since: Symbol,
     pub reason: Symbol,
 }
 
-#[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Clone, Debug, Eq, Hash)]
+#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Clone, Debug, Eq, Hash)]
 pub struct Deprecation {
     pub since: Option<Symbol>,
     pub note: Option<Symbol>,
@@ -975,8 +977,8 @@ pub fn find_repr_attrs(diagnostic: &Handler, attr: &Attribute) -> Vec<ReprAttr> 
                         if let ast::LitKind::Int(align, ast::LitIntType::Unsuffixed) = value.node {
                             if align.is_power_of_two() {
                                 // rustc::ty::layout::Align restricts align to <= 32768
-                                if align <= 32768 {
-                                    acc.push(ReprAlign(align as u16));
+                                if align <= u128::from(32768u64) {
+                                    acc.push(ReprAlign(align.low64() as u16));
                                 } else {
                                     align_error = Some("larger than 32768");
                                 }
@@ -1021,7 +1023,7 @@ fn int_type_of_word(s: &str) -> Option<IntType> {
     }
 }
 
-#[derive(PartialEq, Debug, RustcEncodable, RustcDecodable, Copy, Clone)]
+#[derive(PartialEq, Debug, Serialize, Deserialize, Copy, Clone)]
 pub enum ReprAttr {
     ReprInt(IntType),
     ReprExtern,
@@ -1030,7 +1032,7 @@ pub enum ReprAttr {
     ReprAlign(u16),
 }
 
-#[derive(Eq, Hash, PartialEq, Debug, RustcEncodable, RustcDecodable, Copy, Clone)]
+#[derive(Eq, Hash, PartialEq, Debug, Serialize, Deserialize, Copy, Clone)]
 pub enum IntType {
     SignedInt(ast::IntTy),
     UnsignedInt(ast::UintTy)

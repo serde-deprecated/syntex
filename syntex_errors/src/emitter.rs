@@ -1198,14 +1198,24 @@ fn draw_multiline_line(buffer: &mut StyledBuffer,
     buffer.putc(line, offset + depth - 1, '|', style);
 }
 
+trait SyntexContains<Idx> {
+    fn syntex_contains(&self, item: Idx) -> bool;
+}
+
+impl<Idx> SyntexContains<Idx> for ::std::ops::Range<Idx> where Idx: PartialOrd {
+    fn syntex_contains(&self, item: Idx) -> bool {
+        (self.start <= item) && (item < self.end)
+    }
+}
+
 fn num_overlap(a_start: usize, a_end: usize, b_start: usize, b_end:usize, inclusive: bool) -> bool {
     let extra = if inclusive {
         1
     } else {
         0
     };
-    (b_start..b_end + extra).contains(a_start) ||
-    (a_start..a_end + extra).contains(b_start)
+    (b_start..b_end + extra).syntex_contains(a_start) ||
+    (a_start..a_end + extra).syntex_contains(b_start)
 }
 fn overlaps(a1: &Annotation, a2: &Annotation, padding: usize) -> bool {
     num_overlap(a1.start_col, a1.end_col + padding, a2.start_col, a2.end_col, false)
